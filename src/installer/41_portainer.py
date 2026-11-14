@@ -351,10 +351,12 @@ class StackStep(Step):
     """One Portainer stack: deploy it from its Compose file and wait until its containers run. Stacks marked parallel are deployed together."""
     group = "Services"
     parallel = True
+    after_homepage = True
 
     def __init__(self, name, needs, title, wait=300):
         self.name, self.needs, self.title, self.wait = name, tuple(needs), title, wait
         self.id = "stack-" + name
+        self.after_homepage = name != "homepage"
 
     def applies(self):
         return self.name != "adguard" or adguard_wanted()
@@ -380,7 +382,7 @@ def _register_stacks():
     """Create one checklist step for every Portainer stack."""
     base = ("portainer-env", "folders")
     spec = [
-        ("homepage", base + ("tailscale-login", "homepage-files"), "Homepage stack (the dashboard)"),
+        ("homepage", base + ("tailscale-login", "homepage-files", "theme-pictures"), "Homepage stack (the dashboard)"),
         ("adguard", base + ("port53", "restore-configs"), "AdGuard Home stack (DNS ad blocking)"),
         ("beszel", base, "Beszel stack (server health)"),
         ("netdata", base, "Netdata stack (live metrics)"),
@@ -395,6 +397,35 @@ def _register_stacks():
 
 
 _register_stacks()
+
+
+def homepage_answers():
+    """Homepage is healthy when its container runs and both the page and its small hash check answer with 200."""
+    if "homepage" not in containers_running():
+        return False
+    return all(http("GET", url("homepage", path), timeout=15, raw=True)[0] == 200 for path in ("/", "/api/hash"))
+
+
+@step
+class HomepageUp(Step):
+    """The dashboard is the first thing the person opens, so every other service waits until it is completely up (see waits_for_homepage)."""
+    id, group, title = HOMEPAGE_GATE, "Services", "Homepage is up and answering, before the other services are installed"
+    needs = ("stack-homepage",)
+
+    def applies(self):
+        return not Mode.existing
+
+    def probe(self):
+        return "done" if homepage_answers() else "todo"
+
+    def run(self):
+        if Opt.dry:
+            out("      would wait until Homepage answers on port %d" % PORTS["homepage"])
+            return
+        wait_for(homepage_answers, "Homepage to answer (up to 5 minutes)", 300, every=3)
+
+    def help(self):
+        return "Homepage did not answer in time. Look at what it says:\n$ sudo docker logs --tail 40 homepage\nThen run:  sudo homelab-setup refresh"
 
 
 def filebrowser_destinations():

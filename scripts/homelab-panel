@@ -4,6 +4,7 @@
   homelab-panel serve                  run the panel (the installer starts this as the service homelab-panel)
   homelab-panel set-password           choose the panel's password (asks twice; or: --stdin reads it from a pipe)
   homelab-panel status                 is a password set, and where are the files
+  homelab-panel theme-pictures         store the picture of every theme in the Homepage folder (--check only looks; the installer runs this)
   homelab-panel version | help
 
 What the panel is:
@@ -1003,6 +1004,26 @@ def api_bg_upload(data):
     return bg_store(data)
 
 
+def theme_file(theme_id):
+    """The stored picture of a theme (name in the images folder), or None."""
+    for f in (sorted(os.listdir(IMAGES)) if os.path.isdir(IMAGES) else []):
+        if re.fullmatch(r"theme-%s\.\w+" % re.escape(theme_id), f):
+            return f
+    return None
+
+
+def theme_download(t, timeout=30):
+    """Fetch the picture of a theme from the address in the list above (or from HLP_THEME_PICTURE_BASE in tests). Returns the bytes, or None."""
+    base = os.environ.get("HLP_THEME_PICTURE_BASE")
+    try:
+        req = urllib.request.Request(base.rstrip("/") + "/" + t["id"] + ".png" if base else t["background"]["url"], headers={"User-Agent": "homelab-panel"})
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            data = r.read(MAX_UPLOAD + 1)
+        return data if len(data) <= MAX_UPLOAD and sniff_image(data) else None
+    except (OSError, ValueError, urllib.error.URLError):
+        return None
+
+
 def theme_picture(body):
     """Return the picture of a theme. The panel only names the theme and the address comes from the list above, so it cannot be made to fetch any other address."""
     t = next((x for x in LOOK_THEMES if x["id"] == body.get("theme")), None)
@@ -1010,22 +1031,13 @@ def theme_picture(body):
         raise Fail("That theme has no picture.")
     url = t["background"]["url"]
     with LOCK:
-        have = [f for f in (sorted(os.listdir(IMAGES)) if os.path.isdir(IMAGES) else []) if re.fullmatch(r"theme-%s\.\w+" % t["id"], f)]
+        have = theme_file(t["id"])
         if have:
             tx = Tx("Background picture changed")
-            tx.put(SETTINGS, bg_numbers(body, bg_set(tx.get(SETTINGS), "image", "/images/" + have[0])))
+            tx.put(SETTINGS, bg_numbers(body, bg_set(tx.get(SETTINGS), "image", "/images/" + have)))
             tx.commit()
-            return {"restarting": False, "image": "/images/" + have[0], "stored": True, "cached": True}
-    base = os.environ.get("HLP_THEME_PICTURE_BASE")
-    data = None
-    try:
-        req = urllib.request.Request(base.rstrip("/") + "/" + t["id"] + ".png" if base else url, headers={"User-Agent": "homelab-panel"})
-        with urllib.request.urlopen(req, timeout=30) as r:
-            data = r.read(MAX_UPLOAD + 1)
-        if len(data) > MAX_UPLOAD or not sniff_image(data):
-            data = None
-    except (OSError, ValueError, urllib.error.URLError):
-        data = None
+            return {"restarting": False, "image": "/images/" + have, "stored": True, "cached": True}
+    data = theme_download(t)
     with LOCK:
         if data:
             return dict(bg_store(data, body, "theme-" + t["id"]), stored=True)
@@ -2948,6 +2960,24 @@ def refresh_alerts():
         pass
 
 
+ALERTS_REFRESH = {"lock": threading.Lock(), "at": 0.0}
+ALERTS_MIN_GAP = float(os.environ.get("HLP_ALERTS_GAP") or 10)
+
+
+def alerts_refresh_now():
+    """Look at everything again for the bell on the dashboard. At most once every few seconds, however often the button is pressed. Returns True when it ran."""
+    if not ALERTS_REFRESH["lock"].acquire(blocking=False):
+        return False
+    try:
+        if time.time() - ALERTS_REFRESH["at"] < ALERTS_MIN_GAP:
+            return False
+        refresh_alerts()
+        ALERTS_REFRESH["at"] = time.time()
+        return True
+    finally:
+        ALERTS_REFRESH["lock"].release()
+
+
 def api_updates_state(fresh=False):
     if fresh:
         APT_CACHE["n"] = None
@@ -3496,6 +3526,16 @@ class Handler(BaseHTTPRequestHandler):
         if not session_ok(self.cookie_token()):
             raise Fail("Please log in again.", 401)
 
+    def alerts_refresh(self):
+        """The bell on the dashboard asks for a new look at what needs attention. It needs no login because it only re-runs the read-only check and returns nothing private.
+        It is accepted only from a page on this same machine (any port), so another website cannot use it."""
+        origin = self.headers.get("Origin") or ""
+        host = (self.headers.get("Host") or "").lower().rsplit(":", 1)[0].strip("[]")
+        net = urllib.parse.urlparse(origin).hostname or ""
+        if not origin or net.lower() != host:
+            raise Fail("This request did not come from the dashboard.", 403)
+        return self.send(200, {"ok": True, "ran": alerts_refresh_now()}, extra={"Access-Control-Allow-Origin": origin, "Vary": "Origin"})
+
     def do_HEAD(self):
         self.do_GET()
 
@@ -3663,6 +3703,8 @@ class Handler(BaseHTTPRequestHandler):
                 tok = login(body.get("password"))
                 flags = "; HttpOnly; SameSite=Lax; Path=/; Max-Age=%d" % SESSION_MAX + ("" if os.environ.get("HLP_COOKIE_PLAIN") else "; Secure")
                 return self.send(200, {"ok": True}, extra={"Set-Cookie": "%s=%s%s" % (COOKIE, tok, flags)})
+            if path == "/api/alerts/refresh":
+                return self.alerts_refresh()
             self.api_guard()
             if path == "/api/logout":
                 SESSIONS.pop(self.cookie_token(), None)
@@ -3841,8 +3883,32 @@ def cmd_status():
     return 0
 
 
+def cmd_theme_pictures(args):
+    """Store the picture of every theme in the images folder. Homepage serves a picture only if it was there when Homepage started, so having them all in place
+    means choosing a theme later never needs a restart. With --check nothing is downloaded: the answer is the exit status (0 = all stored)."""
+    os.makedirs(IMAGES, exist_ok=True)
+    new = missing = 0
+    for t in LOOK_THEMES:
+        if not t.get("background") or theme_file(t["id"]):
+            continue
+        data = None if "--check" in args else theme_download(t, 20)
+        ext = sniff_image(data) if data else None
+        if not ext:
+            missing += 1
+            continue
+        path = os.path.join(IMAGES, "theme-%s%s" % (t["id"], ext))
+        with open(path, "wb") as f:
+            f.write(data)
+        os.chmod(path, 0o644)
+        new += 1
+    print("new %d missing %d" % (new, missing))
+    return 1 if missing else 0
+
+
 def main(argv):
     cmd = argv[1] if len(argv) > 1 else "help"
+    if cmd == "theme-pictures":
+        return cmd_theme_pictures(argv[2:])
     if cmd == "serve":
         cmd_serve()
         return 0

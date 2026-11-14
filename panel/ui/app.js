@@ -1893,8 +1893,8 @@ async function saveLook() {
     if (lookDirty()) {
       clearTimeout(pvTimer); pvSeq++;
       await api("POST", "/api/look", { look: lookOut() });
-      clearTimeout(pvTimer); pvSeq++; send({ type: "saved", bg: !!bgSaved });
     }
+    if (lookDirty() || bgSaved) { clearTimeout(pvTimer); pvSeq++; send({ type: "saved", bg: !!bgSaved }); }
     const what = both ? "Look and background saved." : (bgDirty() ? "Background saved." : "Look saved.");
     toast(restarting ? what + " The dashboard restarts for about 10 seconds…" : what);
     await afterChange(false);

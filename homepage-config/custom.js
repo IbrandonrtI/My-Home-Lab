@@ -546,7 +546,7 @@
     });
   }
 
-  var BELL = { data: null, at: 0, busy: false, failed: false };
+  var BELL = { data: null, at: 0, busy: false, failed: false, checking: false, note: "" };
   var BELL_ICON = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9a6 6 0 0 1 12 0c0 6 2.5 7.5 2.5 7.5h-17S6 15 6 9z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg>';
   function panelUrl(hash) { return "https://" + window.location.hostname + ":1100/" + (hash ? "#" + hash : ""); }
   function ago(sec) {
@@ -560,6 +560,20 @@
       .then(function (j) { BELL.data = j && Array.isArray(j.items) ? j : null; BELL.failed = !BELL.data; })
       .catch(function () { BELL.failed = true; })
       .then(function () { BELL.busy = false; BELL.at = Date.now(); bellDraw(); });
+  }
+  function bellRefresh() {
+    if (BELL.checking) return;
+    BELL.checking = true;
+    BELL.note = "";
+    bellDraw();
+    var stop = new AbortController(), timer = setTimeout(function () { stop.abort(); }, 70000);
+    fetch(panelUrl("") + "api/alerts/refresh", { method: "POST", signal: stop.signal })
+      .then(function (r) { if (!r.ok) throw new Error("refused"); })
+      .catch(function () { BELL.note = "The control panel did not answer, so this is the last saved list."; })
+      .then(function () { clearTimeout(timer); return fetch("/images/alerts.json?t=" + Date.now(), { cache: "no-store" }).then(function (r) { if (!r.ok) throw new Error("no file"); return r.json(); }); })
+      .then(function (j) { BELL.data = j && Array.isArray(j.items) ? j : null; BELL.failed = !BELL.data; })
+      .catch(function () { BELL.failed = true; })
+      .then(function () { BELL.checking = false; BELL.at = Date.now(); bellDraw(); });
   }
   function bellDraw() {
     var box = document.getElementById("hl-bell");
@@ -575,8 +589,17 @@
     var head = el("div", "hl-bellhead");
     head.appendChild(el("strong", "", "Notifications"));
     var stale = d && d.updated && (Date.now() / 1000 - d.updated) > 1200;
-    head.appendChild(el("span", "hl-bellsub", !d ? "" : (stale ? "Not updated for a while" : "Checked " + ago(Date.now() / 1000 - (d.updated || 0)))));
+    var side = el("span", "hl-bellside");
+    side.appendChild(el("span", "hl-bellsub", BELL.checking ? "Checking..." : !d ? "" : (stale ? "Not updated for a while" : "Checked " + ago(Date.now() / 1000 - (d.updated || 0)))));
+    var rb = el("button", "hl-bellrefresh", "Refresh");
+    rb.type = "button";
+    rb.disabled = BELL.checking;
+    rb.setAttribute("aria-label", "Check for new notifications now");
+    rb.onclick = function (e) { e.stopPropagation(); bellRefresh(); };
+    side.appendChild(rb);
+    head.appendChild(side);
     pop.appendChild(head);
+    if (BELL.note) pop.appendChild(el("p", "hl-bellempty", BELL.note));
     if (!d) pop.appendChild(el("p", "hl-bellempty", BELL.failed ? "The list is not there yet. It is generated every 5 minutes (run sudo homelab-alerts to generate it now)." : "Looking..."));
     else if (!items.length) pop.appendChild(el("p", "hl-bellempty hl-allgood", "All good. Nothing needs attention."));
     items.forEach(function (it) {
@@ -685,10 +708,10 @@
     head.appendChild(el("strong", "", mode === "running" ? "Finishing the install" : mode === "failed" ? "A step needs attention" : mode === "waiting" ? "Some steps are waiting" : "No recent progress"));
     head.appendChild(el("span", "hl-bellsub", d.done + " of " + d.total + " steps done"));
     pop.appendChild(head);
-    var note = mode === "running" ? "These steps run in the background. The terminal can be closed."
+    var note = mode === "running" ? ""
       : mode === "stale" ? "The status has not changed for a while. Check it with: sudo homelab-setup status"
       : "Check what is left with: sudo homelab-setup status";
-    pop.appendChild(el("p", "hl-bellempty", note));
+    if (note) pop.appendChild(el("p", "hl-bellempty", note));
     var list = el("div", "hl-steplist");
     (Array.isArray(d.steps) ? d.steps : []).forEach(function (st) {
       var k = st && STEP_MARK[st.s] ? st.s : "wait";

@@ -996,6 +996,19 @@ html[data-hl-fit="1440"] #information-widgets { zoom: 0.80; }
 }
 #hl-bell .hl-bellhead, #hl-install .hl-bellhead { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 8px 10px 6px; }
 #hl-bell .hl-bellsub, #hl-install .hl-bellsub { font-size: 12px; color: var(--hl-pop-muted); }
+#hl-bell .hl-bellside { display: flex; align-items: center; gap: 8px; }
+#hl-bell button.hl-bellrefresh {
+  padding: 3px 10px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  color: var(--hl-pop-text);
+  background: color-mix(in srgb, rgb(var(--lk-accent)) 18%, transparent);
+  border: 1px solid color-mix(in srgb, rgb(var(--lk-accent)) 45%, transparent);
+}
+#hl-bell button.hl-bellrefresh:hover:not(:disabled) { background: color-mix(in srgb, rgb(var(--lk-accent)) 32%, transparent); }
+#hl-bell button.hl-bellrefresh:disabled { opacity: 0.6; cursor: default; }
 #hl-bell .hl-bellempty, #hl-install .hl-bellempty { margin: 0; padding: 10px 10px 14px; font-size: 14px; color: var(--hl-pop-muted); }
 #hl-bell .hl-bellempty.hl-allgood { color: var(--hl-pop-text); }
 #hl-bell .hl-bellrow { display: flex; align-items: center; gap: 10px; padding: 9px 10px; border-radius: 10px; border-top: 1px solid var(--hl-pop-line); }

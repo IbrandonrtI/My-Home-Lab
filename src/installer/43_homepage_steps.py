@@ -82,6 +82,48 @@ class HomepageFiles(Step):
                 write_file(hp_path("services.yaml"), navidrome_card_added(svc, Ctx.lan or svc_host()), 0o644, (Ctx.uid, Ctx.gid))
 
 
+def theme_pictures_run(check):
+    """Ask the control panel's own script to store the picture of every theme. Returns True when all are stored."""
+    script = repo_file("scripts", "homelab-panel")
+    env = dict(os.environ, HLP_HOME=P(Ctx.home), HOMELAB_HOMEPAGE_DIR=hp_path(""))
+    rc, _ = run([sys.executable, script, "theme-pictures"] + (["--check"] if check else []), env=env, timeout=60 if check else 600)
+    return rc == 0
+
+
+@step
+class ThemePictures(Step):
+    """Store the pictures of all the themes in the Homepage folder. Homepage serves a picture only if it was there when Homepage started, so with them in place
+    choosing a theme later never has to restart Homepage (which shows "API Error" on the tiles for a few seconds and reloads the page)."""
+    id, group, title = "theme-pictures", "Homepage", "The pictures of the themes stored, so changing a theme never restarts the dashboard"
+    needs = ("homepage-files",)
+
+    def applies(self):
+        return not Mode.existing and (not FAKE or bool(os.environ.get("HLP_THEME_PICTURE_BASE")))
+
+    def probe(self):
+        if theme_pictures_run(True):
+            return "done"
+        return "done" if State.ran(self.id) else "todo"
+
+    def detail(self):
+        return "" if theme_pictures_run(True) else "some pictures could not be downloaded; the panel fetches one when its theme is chosen"
+
+    def run(self):
+        if Opt.dry:
+            out("      would download the picture of each theme into the Homepage folder")
+            return
+        before = set(os.listdir(hp_path("images"))) if os.path.isdir(hp_path("images")) else set()
+        theme_pictures_run(False)
+        State.mark(self.id)
+        images = hp_path("images")
+        added = (set(os.listdir(images)) - before) if os.path.isdir(images) else set()
+        for f in added:
+            chown(os.path.join(images, f), Ctx.uid, Ctx.gid)
+        if added and "homepage" in containers_running():
+            docker("restart", "homepage", timeout=120)
+            out("      Homepage was restarted once so that it serves the theme pictures")
+
+
 @step
 class HomepageTabs(Step):
     """Bring settings.yaml, custom.css, custom.js and services.yaml up to the shipped tabs layout once; a layout the user removed is not added again."""

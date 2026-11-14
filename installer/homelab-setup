@@ -2476,7 +2476,7 @@ def topo():
         if s.id in seen:
             return
         seen.add(s.id)
-        for n in s.needs:
+        for n in tuple(s.needs) + (("homepage-up",) if getattr(s, "after_homepage", False) and "homepage-up" in BY_ID else ()):
             visit(BY_ID[n])
         order.append(s)
     for s in STEPS:
@@ -2719,8 +2719,18 @@ def settle(s, exc, res, secs):
     return 0
 
 
+HOMEPAGE_GATE = "homepage-up"
+
+
+def waits_for_homepage(res, s):
+    """True for a service stack that must wait because Homepage is not up and answering yet. Only the install order is affected; the checklist still shows each stack's own state."""
+    gate = res.get(HOMEPAGE_GATE)
+    return bool(getattr(s, "after_homepage", False) and gate is not None and gate.state not in ("done", "na", "skip"))
+
+
 def ready(res, s, selected, skip):
-    return (res[s.id].state in ("todo", "failed") and s.kind == "auto" and not (selected and s.id not in selected) and not (skip and s.id in skip))
+    return (res[s.id].state in ("todo", "failed") and s.kind == "auto" and not (selected and s.id not in selected) and not (skip and s.id in skip)
+            and not waits_for_homepage(res, s))
 
 
 def run_pass(res, selected=None, skip=None):
@@ -3652,10 +3662,12 @@ class StackStep(Step):
     """One Portainer stack: deploy it from its Compose file and wait until its containers run. Stacks marked parallel are deployed together."""
     group = "Services"
     parallel = True
+    after_homepage = True
 
     def __init__(self, name, needs, title, wait=300):
         self.name, self.needs, self.title, self.wait = name, tuple(needs), title, wait
         self.id = "stack-" + name
+        self.after_homepage = name != "homepage"
 
     def applies(self):
         return self.name != "adguard" or adguard_wanted()
@@ -3681,7 +3693,7 @@ def _register_stacks():
     """Create one checklist step for every Portainer stack."""
     base = ("portainer-env", "folders")
     spec = [
-        ("homepage", base + ("tailscale-login", "homepage-files"), "Homepage stack (the dashboard)"),
+        ("homepage", base + ("tailscale-login", "homepage-files", "theme-pictures"), "Homepage stack (the dashboard)"),
         ("adguard", base + ("port53", "restore-configs"), "AdGuard Home stack (DNS ad blocking)"),
         ("beszel", base, "Beszel stack (server health)"),
         ("netdata", base, "Netdata stack (live metrics)"),
@@ -3696,6 +3708,35 @@ def _register_stacks():
 
 
 _register_stacks()
+
+
+def homepage_answers():
+    """Homepage is healthy when its container runs and both the page and its small hash check answer with 200."""
+    if "homepage" not in containers_running():
+        return False
+    return all(http("GET", url("homepage", path), timeout=15, raw=True)[0] == 200 for path in ("/", "/api/hash"))
+
+
+@step
+class HomepageUp(Step):
+    """The dashboard is the first thing the person opens, so every other service waits until it is completely up (see waits_for_homepage)."""
+    id, group, title = HOMEPAGE_GATE, "Services", "Homepage is up and answering, before the other services are installed"
+    needs = ("stack-homepage",)
+
+    def applies(self):
+        return not Mode.existing
+
+    def probe(self):
+        return "done" if homepage_answers() else "todo"
+
+    def run(self):
+        if Opt.dry:
+            out("      would wait until Homepage answers on port %d" % PORTS["homepage"])
+            return
+        wait_for(homepage_answers, "Homepage to answer (up to 5 minutes)", 300, every=3)
+
+    def help(self):
+        return "Homepage did not answer in time. Look at what it says:\n$ sudo docker logs --tail 40 homepage\nThen run:  sudo homelab-setup refresh"
 
 
 def filebrowser_destinations():
@@ -3960,6 +4001,48 @@ class HomepageFiles(Step):
             svc = read_file(hp_path("services.yaml"))
             if svc and card_widget_type(svc, "navidrome-card") is None:
                 write_file(hp_path("services.yaml"), navidrome_card_added(svc, Ctx.lan or svc_host()), 0o644, (Ctx.uid, Ctx.gid))
+
+
+def theme_pictures_run(check):
+    """Ask the control panel's own script to store the picture of every theme. Returns True when all are stored."""
+    script = repo_file("scripts", "homelab-panel")
+    env = dict(os.environ, HLP_HOME=P(Ctx.home), HOMELAB_HOMEPAGE_DIR=hp_path(""))
+    rc, _ = run([sys.executable, script, "theme-pictures"] + (["--check"] if check else []), env=env, timeout=60 if check else 600)
+    return rc == 0
+
+
+@step
+class ThemePictures(Step):
+    """Store the pictures of all the themes in the Homepage folder. Homepage serves a picture only if it was there when Homepage started, so with them in place
+    choosing a theme later never has to restart Homepage (which shows "API Error" on the tiles for a few seconds and reloads the page)."""
+    id, group, title = "theme-pictures", "Homepage", "The pictures of the themes stored, so changing a theme never restarts the dashboard"
+    needs = ("homepage-files",)
+
+    def applies(self):
+        return not Mode.existing and (not FAKE or bool(os.environ.get("HLP_THEME_PICTURE_BASE")))
+
+    def probe(self):
+        if theme_pictures_run(True):
+            return "done"
+        return "done" if State.ran(self.id) else "todo"
+
+    def detail(self):
+        return "" if theme_pictures_run(True) else "some pictures could not be downloaded; the panel fetches one when its theme is chosen"
+
+    def run(self):
+        if Opt.dry:
+            out("      would download the picture of each theme into the Homepage folder")
+            return
+        before = set(os.listdir(hp_path("images"))) if os.path.isdir(hp_path("images")) else set()
+        theme_pictures_run(False)
+        State.mark(self.id)
+        images = hp_path("images")
+        added = (set(os.listdir(images)) - before) if os.path.isdir(images) else set()
+        for f in added:
+            chown(os.path.join(images, f), Ctx.uid, Ctx.gid)
+        if added and "homepage" in containers_running():
+            docker("restart", "homepage", timeout=120)
+            out("      Homepage was restarted once so that it serves the theme pictures")
 
 
 @step

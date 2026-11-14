@@ -66,7 +66,7 @@ def topo():
         if s.id in seen:
             return
         seen.add(s.id)
-        for n in s.needs:
+        for n in tuple(s.needs) + (("homepage-up",) if getattr(s, "after_homepage", False) and "homepage-up" in BY_ID else ()):
             visit(BY_ID[n])
         order.append(s)
     for s in STEPS:
@@ -309,8 +309,18 @@ def settle(s, exc, res, secs):
     return 0
 
 
+HOMEPAGE_GATE = "homepage-up"
+
+
+def waits_for_homepage(res, s):
+    """True for a service stack that must wait because Homepage is not up and answering yet. Only the install order is affected; the checklist still shows each stack's own state."""
+    gate = res.get(HOMEPAGE_GATE)
+    return bool(getattr(s, "after_homepage", False) and gate is not None and gate.state not in ("done", "na", "skip"))
+
+
 def ready(res, s, selected, skip):
-    return (res[s.id].state in ("todo", "failed") and s.kind == "auto" and not (selected and s.id not in selected) and not (skip and s.id in skip))
+    return (res[s.id].state in ("todo", "failed") and s.kind == "auto" and not (selected and s.id not in selected) and not (skip and s.id in skip)
+            and not waits_for_homepage(res, s))
 
 
 def run_pass(res, selected=None, skip=None):
