@@ -214,6 +214,10 @@ def un_show_plan(f):
 def un_ask_choices(f):
     """Ask whether to wipe the data and whether to erase the drives. Returns (wipe_data, wipe_drives)."""
     wipe_data = wipe_drives = False
+    if Opt.dry and not Opt.yes:
+        # A dry run asks nothing: it shows the plan for the choices on the command line (keep everything unless --wipe-data or --wipe-drives is given).
+        say("This is a dry run, so nothing is asked. The plan below keeps the app data and the drives unless --wipe-data or --wipe-drives is given.")
+        return Opt.wipe_data, Opt.wipe_drives
     if f["data"] or f["containers"]:
         if Opt.yes:
             wipe_data = Opt.wipe_data
@@ -488,6 +492,9 @@ def un_remove_files(f, wipe_data, keep_drives_tool):
         files += ["/var/lib/homelab-drives", "/var/log/homelab-drives.log", "/etc/homelab-drives"]
     for p in files:
         un_rm(p)
+    boot_dir = P("/var/lib/homelab-boot-sections")
+    if not keep_drives_tool and os.path.isdir(boot_dir) and not os.listdir(boot_dir):
+        un_rm("/var/lib/homelab-boot-sections")
     good("HomeLab's programs, settings files and records are removed")
     if wipe_data:
         un_rm(SECRET_DIR[len(ROOT):])

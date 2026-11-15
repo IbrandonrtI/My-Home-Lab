@@ -19,6 +19,7 @@ import subprocess
 import sys
 import time
 
+VERSION = "1.0"
 STATE_DIR = os.environ.get("HOMELAB_STATE_DIR", "/var/lib/homelab")
 DOCKER = os.environ.get("HOMELAB_DOCKER", "docker")
 TAILSCALE = os.environ.get("HOMELAB_TAILSCALE", "tailscale")
@@ -288,8 +289,11 @@ def main(argv):
     if cmd in ("help", "--help", "-h"):
         print(__doc__)
         return 0
+    if cmd in ("version", "--version"):
+        print("homelab-alerts %s" % VERSION)
+        return 0
     if cmd not in ("run", "show"):
-        sys.stderr.write("Unknown option: %s\n%s\n" % (cmd, "Use: homelab-alerts [show|help]"))
+        sys.stderr.write("Unknown option: %s\n%s\n" % (cmd, "Use: homelab-alerts [show|help|version]"))
         return 1
     res = collect()
     if cmd == "show":

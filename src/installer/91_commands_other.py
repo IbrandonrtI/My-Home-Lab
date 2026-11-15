@@ -30,6 +30,32 @@ def cmd_adguard():
 LASTFM_KEY = re.compile(r"^[0-9a-fA-F]{32}$")
 
 
+def lastfm_key_check(key):
+    """Ask Last.fm whether this API key exists. True or False, or None when Last.fm could not be asked (no internet, or a test machine), so a missing connection never blocks the setup."""
+    base = os.environ.get("HLS_LASTFM_API") or ("" if FAKE else "https://ws.audioscrobbler.com/2.0/")
+    if not base:
+        return None
+    st, js, _ = http("GET", "%s?method=auth.gettoken&format=json&api_key=%s" % (base, key), headers={"User-Agent": "homelab-setup"}, timeout=10)
+    if st == 0 or not isinstance(js, dict):
+        return None
+    if js.get("error") == 10:
+        return False
+    return True if js.get("token") else None
+
+
+def listenbrainz_token_check(token):
+    """Ask ListenBrainz whose token this is. Returns the user name, "" when the token is not valid, or None when ListenBrainz could not be asked."""
+    base = os.environ.get("HLS_LB_API") or ("" if FAKE else "https://api.listenbrainz.org/1/")
+    if not base:
+        return None
+    st, js, _ = http("GET", base + "validate-token", headers={"Authorization": "Token " + token, "User-Agent": "homelab-setup"}, timeout=10)
+    if st == 0 or not isinstance(js, dict):
+        return None
+    if js.get("valid") is True:
+        return str(js.get("user_name") or "")
+    return "" if js.get("valid") is False else None
+
+
 def cmd_lastfm(rest):
     """`lastfm`: save your Last.fm API key and secret so Navidrome can suggest similar songs and artists. `lastfm remove` deletes them."""
     load_all()
@@ -67,6 +93,8 @@ def cmd_lastfm(rest):
     secret = ask_secret("Shared secret").strip()
     if not LASTFM_KEY.match(key) or not LASTFM_KEY.match(secret):
         raise Abort("That does not look like a Last.fm key: the API key and the Shared secret are each 32 letters and digits. Nothing was saved.")
+    if lastfm_key_check(key) is False:
+        raise Abort("Last.fm does not know that API key. Check that you copied the API key (not the Shared secret) from https://www.last.fm/api/accounts. Nothing was saved.")
     Secrets.set("LASTFM_APIKEY", key.lower())
     Secrets.set("LASTFM_SECRET", secret.lower())
     good("The keys are saved in %s (root only). Deploying Navidrome with them ..." % SECRET_FILE.replace(ROOT, ""))
@@ -206,6 +234,17 @@ def audiomuse_status():
         out("      right now: " + line)
 
 
+def forget_card(name):
+    """Remove the dashboard card, the Tailscale address and the color that homelab-cards made for a container that was removed on purpose."""
+    prog = installed_copy("homelab-cards", "/usr/local/sbin")
+    if FAKE or not prog:
+        return
+    try:
+        subprocess.call([prog, "forget", name], timeout=120)
+    except (OSError, subprocess.SubprocessError):
+        pass
+
+
 def audiomuse_remove():
     """`audiomuse remove`: remove the plugin from Navidrome and the three containers. The analysis data is kept."""
     if not audiomuse_wanted():
@@ -227,6 +266,7 @@ def audiomuse_remove():
     for k in ("audiomuse", "audiomuse_stack", "audiomuse_plugin", "audiomuse_paused"):
         State.data.pop(k, None)
     State.save()
+    forget_card("audiomuse")
     good("AudioMuse-AI is removed. Navidrome is deployed again without it.")
     say("Its analysis data is still in %s/audiomuse (it took hours to make, so a later setup reuses it). To free the space: sudo rm -rf %s/audiomuse\n"
         "The Navidrome login called %s stays too; you can delete it on Navidrome's Users page." % (Ctx.home, Ctx.home, AUDIOMUSE_ND_USER))
@@ -351,6 +391,12 @@ def cmd_navilist(rest):
         raise Abort("ListenBrainz needs both the user name and the token. Nothing was saved.")
     if lb_token and not LB_TOKEN.match(lb_token):
         raise Abort("That does not look like a ListenBrainz token: it is 36 characters with dashes, like 1b2c3d4e-0000-1111-2222-333344445555. Nothing was saved.")
+    if lb_token:
+        who = listenbrainz_token_check(lb_token)
+        if who == "":
+            raise Abort("ListenBrainz says that token is not valid. Copy the User token from https://listenbrainz.org/settings/. Nothing was saved.")
+        if who and lb_user and who.lower() != lb_user.lower():
+            raise Abort("That token belongs to the ListenBrainz user '%s', not '%s'. Nothing was saved." % (who, lb_user))
     fm_user = ""
     if Secrets.get("LASTFM_APIKEY"):
         fm_user = ask("Last.fm user name (Enter to skip the Last.fm charts)", Secrets.get("NAVILIST_LASTFM_USER")).strip()
@@ -443,6 +489,7 @@ def navilist_remove():
     for k in NAVILIST_SECRETS:
         Secrets.vals.pop(k, None)
     Secrets.save()
+    forget_card("navilist")
     good("naviList is removed.")
     say("The playlists it made are still in Navidrome (you can delete them there). Its data is still in %s/navilist/data; to free the space: sudo rm -rf %s/navilist\n"
         "The Navidrome login called %s stays too; you can delete it on Navidrome's Users page." % (Ctx.home, Ctx.home, NAVILIST_ND_USER))
@@ -623,6 +670,7 @@ def cmd_fill():
     load_all()
     res = evaluate()
     did = False
+    offered = 0
     rule("Walk-through")
     for s in topo():
         if res[s.id].state not in ("todo", "failed"):
@@ -631,6 +679,7 @@ def cmd_fill():
             continue
         if type(s).fill is Step.fill:
             continue
+        offered += 1
         out("  %s%s%s" % (B, s.title, N))
         h = s.fill_help()
         if h:
@@ -644,7 +693,9 @@ def cmd_fill():
                 res = evaluate()
         except Abort as e:
             bad(str(e))
-    if not did:
+    if not did and offered:
+        say("Nothing was saved, so %s still open. Run `sudo homelab-setup fill` again when you have the right value." % ("that step is" if offered == 1 else "those steps are"))
+    elif not did:
         say("No manual steps are waiting. Run `sudo homelab-setup refresh` to continue the automatic steps.")
     else:
         say("Run `sudo homelab-setup refresh` to continue.")
@@ -836,7 +887,7 @@ Commands:
   progress | version | help
 
 Options for install:  --yes  --backup FOLDER  --no-restore  --no-background  --repo FOLDER  --force-existing
-The installer never formats or erases a drive and never saves the admin password. The one change it can make to the drive layout
+The installer never formats or erases a drive and never saves the admin password in its own files (Nextcloud keeps it in its own container, as the Nextcloud image requires). The one change it can make to the drive layout
 is growing an LVM system volume into unused space of its drive, and only after you say yes.
 """
 

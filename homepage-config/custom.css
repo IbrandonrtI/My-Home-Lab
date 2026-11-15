@@ -875,6 +875,13 @@ html #inner_wrapper::-webkit-scrollbar-thumb:hover { background-color: rgba(255,
 #inner_wrapper #customize-card iframe, #inner_wrapper #linkedit-card iframe, #inner_wrapper #terminal-card iframe { display: block; width: 100% !important; max-width: none !important; height: var(--hl-h-customize, min(calc(88 * var(--hl-vh, 1vh)), 1200px)) !important; min-height: 520px; border: 0 !important; border-radius: 0 !important; background: #0a0f19; }
 #inner_wrapper #linkedit-card iframe { height: var(--hl-h-linkedit, min(calc(78 * var(--hl-vh, 1vh)), 900px)) !important; min-height: 420px; }
 #inner_wrapper #terminal-card iframe { height: var(--hl-h-terminal, min(calc(70 * var(--hl-vh, 1vh)), 720px)) !important; min-height: 240px; background: #0a0f19 !important; }
+/* Tabs that only hold links: the groups sit in rows of up to --hl-cols groups (2 unless the Layout screen says otherwise) and wrap downward. A narrow window shows fewer per row. */
+@media (min-width: 700px) {
+  #inner_wrapper #layout-groups:not(:has(#navidrome-card)):not(:has(#customize-card)):not(:has(li[id^="stat-"])) { display: grid !important; grid-template-columns: repeat(auto-fill, minmax(max(260px, calc((100% - (var(--hl-cols, 2) - 1) * 18px) / var(--hl-cols, 2) - 1px)), 1fr)); column-gap: 18px; row-gap: 8px; align-items: start; }
+  #inner_wrapper #layout-groups:not(:has(#navidrome-card)):not(:has(#customize-card)):not(:has(li[id^="stat-"])) > .services-group,
+  #inner_wrapper #layout-groups:not(:has(#navidrome-card)):not(:has(#customize-card)):not(:has(li[id^="stat-"])) > .bookmark-group { width: 100% !important; max-width: none !important; min-width: 0 !important; margin-bottom: 0; }
+  #inner_wrapper #layout-groups:not(:has(#navidrome-card)):not(:has(#customize-card)):not(:has(li[id^="stat-"])) > :has(#linkedit-card) { grid-column: 1 / -1; order: -1; }
+}
 @media (min-width: 1500px) {
   #inner_wrapper { --lk-player-h: clamp(420px, calc(54 * var(--hl-vh, 1vh)), 680px); }
   #inner_wrapper > .container { max-width: 2400px; }
@@ -886,10 +893,6 @@ html #inner_wrapper::-webkit-scrollbar-thumb:hover { background-color: rgba(255,
   #inner_wrapper #layout-groups:has(#navidrome-card) > .services-group { grid-column: 2; min-width: 0 !important; max-width: none !important; width: auto !important; }
   #inner_wrapper #layout-groups:has(#navidrome-card) > .services-group:has(#navidrome-card) { grid-column: 1; grid-row: 1 / span 3; }
   #inner_wrapper #layout-groups:has(#navidrome-card) > .services-group:has(li[id^="cal-"]) { grid-column: 1 / -1; grid-row: auto; }
-  #inner_wrapper #layout-groups:not(:has(#navidrome-card)):not(:has(#customize-card)):not(:has(li[id^="stat-"])) { display: grid !important; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); column-gap: 18px; row-gap: 8px; align-items: start; }
-  #inner_wrapper #layout-groups:not(:has(#navidrome-card)):not(:has(#customize-card)):not(:has(li[id^="stat-"])) > .services-group,
-  #inner_wrapper #layout-groups:not(:has(#navidrome-card)):not(:has(#customize-card)):not(:has(li[id^="stat-"])) > .bookmark-group { width: 100% !important; max-width: none !important; min-width: 0 !important; margin-bottom: 0; }
-  #inner_wrapper #layout-groups:not(:has(#navidrome-card)):not(:has(#customize-card)):not(:has(li[id^="stat-"])) > :has(#linkedit-card) { grid-column: 1 / -1; order: -1; }
   #inner_wrapper li[id^="stat-"] .service-block { padding: 10px 6px !important; min-width: 0; }
   #inner_wrapper li[id^="stat-"] .service-block-label { overflow-wrap: break-word; line-height: 1.25; }
   #inner_wrapper li[id^="stat-"] .service-block-value { font-size: 1.08rem !important; }

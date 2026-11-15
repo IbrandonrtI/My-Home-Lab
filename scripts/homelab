@@ -157,7 +157,7 @@ open_section() {
 }
 
 show_docs() {
-  local f
+  local f shown=0
   if [ ! -d "$DOCS_DIR" ]; then
     echo "The documents are not on this server yet. Clone them once:"
     echo "  git clone $REPO_URL \"$DOCS_DIR\""
@@ -165,11 +165,16 @@ show_docs() {
   fi
   for f in README.md $(cd "$DOCS_DIR" 2>/dev/null && ls docs/*.md 2>/dev/null); do
     [ -f "$DOCS_DIR/$f" ] || continue
+    shown=1
     rule "$f"
     echo "   open a section with:  less +LINE $DOCS_DIR/$f"
     echo
     grep -n '^## ' "$DOCS_DIR/$f" | sed 's/^\([0-9]*\):## /   \1\t/'
   done
+  if [ "$shown" = 0 ]; then
+    echo "There are no guides in $DOCS_DIR yet, so there is nothing to list."
+    return 1
+  fi
   echo
 }
 

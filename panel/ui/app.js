@@ -2498,6 +2498,8 @@ function viewLayout() {
     try { await api("POST", "/api/layout", { tabs: T.filter(t => t.groups.length) }); toast("Layout saved."); await afterChange(true); } catch (e) { fail(e); }
   }
   const tabNames = () => T.map(t => t.name);
+  // Only a tab of links (with the Edit Links box) puts groups side by side, so only there is "Groups in a row" offered.
+  const takesRows = t => t.groups.some(g => /bookmarks/.test(g.kind)) && t.groups.every(g => /bookmarks/.test(g.kind) || ["Customize", "Edit Links", "Terminal"].includes(g.name));
   function moveTo(gi, ti, name) {
     const g = T[ti].groups.splice(gi, 1)[0];
     let dest = T.find(t => t.name === name);
@@ -2552,7 +2554,11 @@ function viewLayout() {
         if (!n || n === t.name) return;
         if (T.some(x => x.name === n)) return toast("There is already a tab with that name.", true);
         t.name = n; redraw();
-      } }, "Rename")), t.groups.map((g, gi) => groupRow(g, ti, gi)),
+      } }, "Rename")),
+    takesRows(t) ? h("div", { class: "row", style: { margin: "4px 0 10px" } }, h("label", { for: "per-row-" + ti, class: "muted small" }, "Groups in a row"),
+      h("select", { id: "per-row-" + ti, title: "How many groups sit side by side on this tab. More groups start a new row. A narrow window shows fewer.", onchange: ev => { t.perRow = ev.target.value; redraw(); } },
+        h("option", { value: "", selected: !t.perRow }, "Standard (2)"), [1, 2, 3, 4].map(n => h("option", { value: String(n), selected: String(t.perRow) === String(n) }, String(n))))) : null,
+    t.groups.map((g, gi) => groupRow(g, ti, gi)),
     t.groups.length ? null : h("p", { class: "muted small" }, "Empty. A tab with no group is not kept."));
     return col;
   }

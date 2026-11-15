@@ -276,10 +276,15 @@ def _ask_secret(prompt):
 def yesno(prompt, default=False):
     if Opt.yes:
         return True
-    v = ask(prompt + (" [Y/n]" if default else " [y/N]"), "").lower()
-    if v == "":
-        return default
-    return v in ("y", "yes")
+    while True:
+        v = ask(prompt + (" [Y/n]" if default else " [y/N]"), "").lower()
+        if v == "":
+            return default
+        if v in ("y", "yes"):
+            return True
+        if v in ("n", "no"):
+            return False
+        say("Please answer y or n (or press Enter for the default).")
 
 
 def typed(word, prompt):

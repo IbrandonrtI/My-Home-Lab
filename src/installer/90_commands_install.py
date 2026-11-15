@@ -226,7 +226,11 @@ def show_dashboard_links():
     """Print where to open the dashboard (Homepage): the address on this network and the one over Tailscale."""
     Ctx.refresh_tailscale()
     rule("Open the dashboard")
-    out("  Homepage, on this network:   %s" % mark(url("homepage")))
+    if svc_host() == "127.0.0.1":
+        # Another device cannot use 127.0.0.1, so it is not shown as the address on this network.
+        out("  Homepage, on this network:   this machine's network address is not known yet (open it on this machine at %s)" % mark(url("homepage")))
+    else:
+        out("  Homepage, on this network:   %s" % mark(url("homepage")))
     if Ctx.fqdn:
         out("  Homepage, over Tailscale:    %s" % mark("https://%s:%d" % (Ctx.fqdn, SERVE[0][0])))
         out("  %sThe Tailscale address works from your other devices, not from this machine itself.%s" % (D, N))
@@ -395,8 +399,9 @@ def cmd_verify():
     load_all()
     if Mode.existing and not Opt.force_existing:
         say("This machine already runs the lab. The system check is for machines set up by the installer.")
-        return
-    system_check()
+        return 0
+    # The exit code is 1 when the check found problems, so a script or a scheduled job can use it.
+    return 1 if system_check() else 0
 
 
 def cmd_checklist():

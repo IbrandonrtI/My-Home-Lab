@@ -1215,6 +1215,43 @@ def group_kinds():
     return kinds
 
 
+ROWS_B1 = "/* >>> homelab groups per row >>> written by the control panel; change it on the Layout screen */"
+ROWS_B2 = "/* <<< homelab groups per row <<< */"
+ROWS_RULE = 'html[data-tab="%s"] body #inner_wrapper { --hl-cols: %d; }'
+
+
+def rows_get(css):
+    """Read the groups-per-row setting of every tab from the block in custom.css: {tab name: 1 to 4}."""
+    a = css.find(ROWS_B1)
+    z = css.find(ROWS_B2, a) if a >= 0 else -1
+    if a < 0 or z < 0:
+        return {}
+    return {m.group(1): int(m.group(2)) for m in re.finditer(r'html\[data-tab="([^"]+)"\] body #inner_wrapper \{ --hl-cols: ([1-4]); \}', css[a:z])}
+
+
+def rows_put(css, rows):
+    """Write the groups-per-row block of custom.css (removed when no tab has a setting). Everything else in the file is left as it was."""
+    a = css.find(ROWS_B1)
+    z = css.find(ROWS_B2, a) if a >= 0 else -1
+    if a >= 0 and z >= 0:
+        end = z + len(ROWS_B2)
+        if css[end:end + 1] == "\n":
+            end += 1
+        css = css[:a].rstrip("\n") + ("\n" if css[:a].strip() else "") + css[end:]
+    if not rows:
+        return css
+    block = "\n".join([ROWS_B1] + [ROWS_RULE % (n, rows[n]) for n in sorted(rows)] + [ROWS_B2]) + "\n"
+    return css.rstrip("\n") + "\n\n" + block
+
+
+def tab_takes_rows(groups, kinds):
+    """True for a tab that holds bookmark groups and nothing but bookmark groups and the Edit Links box: the only kind of tab where groups sit side by side."""
+    names = [g["name"] for g in groups]
+    has = any("bookmarks" in kinds.get(n, ()) for n in names)
+    other = any(n not in PROTECTED and "bookmarks" not in kinds.get(n, ()) for n in names)
+    return has and not other
+
+
 def layout_state():
     text = read(SETTINGS)
     groups = layout_groups(text)
@@ -1226,8 +1263,9 @@ def layout_state():
     for n in dict.fromkeys(extra):
         groups.append({"name": n, "props": {"tab": (layout_tabs(groups)[0]["name"] if groups else "Home")}, "extra": [], "unlisted": True})
     tabs = []
+    rows = rows_get(read(CSS))
     for t in layout_tabs(groups):
-        tabs.append({"name": t["name"], "groups": [{
+        tabs.append({"name": t["name"], "rowsOk": tab_takes_rows(t["groups"], kinds), "perRow": rows.get(t["name"], ""), "groups": [{
             "name": g["name"], "icon": g["props"].get("icon", ""), "style": g["props"].get("style", ""), "columns": g["props"].get("columns", ""),
             "kind": "+".join(sorted(kinds.get(g["name"], ()))) or "empty", "locked": g["name"] in AUTOMATIC or g["name"] in PROTECTED,
             "automatic": g["name"] in AUTOMATIC, "count": svc.get(g["name"], 0) + bm.get(g["name"], 0)} for g in t["groups"]]})
@@ -1248,6 +1286,7 @@ def api_layout_save(body):
             state[n] = {"name": n, "props": {}, "extra": []}
     out, seen = [], set()
     names = set()
+    rows = {}
     for t in want:
         tname = clean_text(t.get("name"), "A tab name", 24)
         if not re.fullmatch(r"[^\"'\\{};<>/*:#]+", tname):
@@ -1255,6 +1294,12 @@ def api_layout_save(body):
         if tname in names:
             raise Fail("Two tabs are called '%s'." % tname)
         names.add(tname)
+        if t.get("perRow") not in ("", None):
+            per = number(t["perRow"], "The number of groups in a row", 1, 4)
+            if per != int(per):
+                raise Fail("The number of groups in a row must be a whole number from 1 to 4.")
+            if tab_takes_rows([{"name": g.get("name")} for g in t.get("groups") or []], group_kinds()):
+                rows[tname] = per
         for g in t.get("groups") or []:
             n = g.get("name")
             if n not in state or n in seen:
@@ -1285,6 +1330,9 @@ def api_layout_save(body):
     if missing:
         raise Fail("These groups are missing from the layout: %s. Reload the panel and try again." % ", ".join(missing))
     tx.put(SETTINGS, layout_write(text, out))
+    css = tx.get(CSS)
+    if rows_get(css) != rows:
+        tx.put(CSS, rows_put(css, rows))
     tx.commit()
     return {}
 
@@ -2203,17 +2251,22 @@ SESSIONS = {}
 FAILS = {"count": 0, "until": 0.0}
 
 
+LOGIN_LOCK = threading.Lock()
+
+
 def login(pw):
-    now = time.time()
-    if now < FAILS["until"]:
-        raise Fail("Too many wrong passwords. Wait %d seconds and try again." % int(FAILS["until"] - now + 1), 429)
-    if not os.path.exists(PASSFILE):
-        raise Fail("No password is set yet. In a terminal on the server, run:  homelab panel password", 403)
-    if not isinstance(pw, str) or not check_password(pw):
-        FAILS["count"] += 1
-        FAILS["until"] = now + min(300, 2 ** min(FAILS["count"], 8)) if FAILS["count"] >= 4 else 0.0
-        raise Fail("That is not the password.", 401)
-    FAILS["count"], FAILS["until"] = 0, 0.0
+    """Check the password. Checks go one at a time, so a burst of wrong guesses is stopped by the wait after the fourth one and cannot all be tried first."""
+    with LOGIN_LOCK:
+        now = time.time()
+        if now < FAILS["until"]:
+            raise Fail("Too many wrong passwords. Wait %d seconds and try again." % int(FAILS["until"] - now + 1), 429)
+        if not os.path.exists(PASSFILE):
+            raise Fail("No password is set yet. In a terminal on the server, run:  homelab panel password", 403)
+        if not isinstance(pw, str) or not check_password(pw):
+            FAILS["count"] += 1
+            FAILS["until"] = now + min(300, 2 ** min(FAILS["count"], 8)) if FAILS["count"] >= 4 else 0.0
+            raise Fail("That is not the password.", 401)
+        FAILS["count"], FAILS["until"] = 0, 0.0
     tok = secrets.token_urlsafe(32)
     SESSIONS[tok] = {"created": now, "seen": now, "pw": pw_version()}
     for t in [t for t, s in SESSIONS.items() if now - s["seen"] > SESSION_IDLE or now - s["created"] > SESSION_MAX]:
@@ -2564,6 +2617,15 @@ def drive_message(out, err, limit=600, problem=False):
     return " ".join(lines)[-limit:]
 
 
+def drive_listed(kind, ident):
+    """True if the drives tool lists this drive under "rename" (drives in a pool) or "spare" (drives that can be set up or wiped). When the list cannot be read the request goes through, because the tool itself still checks everything."""
+    try:
+        acts = drives_json("actions")
+    except Fail:
+        return True
+    return any(isinstance(x, dict) and x.get("id") == ident for x in acts.get(kind) or [])
+
+
 def api_drives_do(action, body):
     """Run rename, sleep, wake or remount and return what the drives tool said."""
     words = [action]
@@ -2581,6 +2643,8 @@ def api_drives_do(action, body):
             raise Fail("A name may have up to 40 letters, numbers, spaces and these marks: . ( ) + , -")
         if name != "auto" and (name[0] in " .-" or name[-1] in " .-"):
             raise Fail("A name cannot start or end with a space, a dot or a dash.")
+        if not drive_listed("rename", body.get("id")):
+            raise Fail("Only a drive that is in the Main or Backup pool can be renamed.")
         words.append(name)
     rc, out, err = drives_run(words, DRIVE_TIMEOUT.get(action, 90))
     msg = drive_message(out, err)
@@ -2714,6 +2778,8 @@ def job_thread(words):
 
 def api_drives_job_start(action, body):
     words = job_words(action, body)
+    if action == "wipe" and not drive_listed("spare", body.get("id")):
+        raise Fail("That drive is not a spare drive, so it cannot be wiped here. The boot drive and the drives in a pool are never wiped.")
     items = [t.split(":")[0] for t in job_ids(body)] if action not in ("wipe", "setup", "bootadd", "appsfix", "moveboot") else ([body.get("id")] if action == "wipe" else ["bootadd"] if action == "bootadd" else ["moveboot"] if action == "moveboot" else ["appsfix"] if action == "appsfix" else [str(t).split(":")[0] for t in (body.get("ids") or [])])
     drives_change_begin()
     with JOB_LOCK:

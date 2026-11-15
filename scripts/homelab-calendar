@@ -449,7 +449,6 @@ def feed_cmd(hp, a):
 
 def run(argv):
     """Read the command line and run the requested command."""
-    hp = homepage_dir()
     cmd = argv[0] if argv else ""
     if cmd in ("version", "--version"):
         print("homelab-calendar %s" % VERSION)
@@ -457,6 +456,9 @@ def run(argv):
     if cmd in ("", "help", "--help", "-h"):
         print(__doc__.strip())
         return 0
+    if cmd.startswith("-"):
+        raise Fail("Unknown option '%s'. Try:  homelab-calendar help" % cmd)
+    hp = homepage_dir()
     if cmd == "holidays":
         today = datetime.date.today()
         rows = sorted((d, n, "") for y in (today.year, today.year + 1) for d, n in official(y) + observances(y) if d >= today)[:12]

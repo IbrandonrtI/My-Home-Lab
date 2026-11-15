@@ -7,6 +7,7 @@
   sudo homelab-cards move CARD SECTION   put a card in another section (CARD is the container name, card id or title)
   sudo homelab-cards ignore NAME      never make a card for this container (and remove the one it made)
   sudo homelab-cards unignore NAME    allow it again
+  sudo homelab-cards forget NAME      remove the card (and its Tailscale address and color) of a container that was removed on purpose, without waiting
   sudo homelab-cards sync --dry-run   show what would change and change nothing
   homelab-cards version | help
 
@@ -106,6 +107,7 @@ GITHUB_API = os.environ.get("HOMELAB_DESC_GITHUB", "https://api.github.com").rst
 
 ICON_CDN = os.environ.get("HOMELAB_ICON_CDN", "https://cdn.jsdelivr.net").rstrip("/")
 GENERIC_ICON = "mdi-docker"
+KNOWN_ICONS = {"navilist": "mdi-playlist-music", "audiomuse": "mdi-music-box-multiple"}
 
 
 def lab_user():
@@ -394,6 +396,10 @@ def url_exists(url):
 
 
 def find_icon(c):
+    for s in icon_slugs(c):
+        for known, icon in KNOWN_ICONS.items():
+            if s.replace("-", "").startswith(known):
+                return icon
     if os.environ.get("HOMELAB_CARDS_OFFLINE"):
         return GENERIC_ICON
     for s in icon_slugs(c):
@@ -827,6 +833,30 @@ def cmd_move(args):
     return 0
 
 
+def cmd_forget(args):
+    """`forget NAME`: remove the card of containers whose name starts with NAME, together with the Tailscale address and the color, and do not wait for the two looks."""
+    if not args:
+        print("Usage: sudo homelab-cards forget NAME")
+        return 1
+    st = load_state()
+    t = args[0].lower()
+    names = [n for n, m in st["managed"].items() if n.lower().startswith(t) or m["card"].lower() == t]
+    if not names:
+        print("There is no card for %s." % args[0])
+        return 0
+    f = Files()
+    serve = serve_map()
+    for n in names:
+        m = st["managed"].pop(n)
+        remove_card(f.lines, m["card"])
+        f.css = css_remove(f.css, m["card"])
+        drop_serve(m.get("serve"), serve)
+        note("Removed the card %s." % m["name"])
+    f.save()
+    save_state(st)
+    return 0
+
+
 def cmd_ignore(args, undo):
     """`ignore NAME`: never make a card for this container and remove the one already made."""
     if not args:
@@ -926,7 +956,7 @@ def main(argv):
         return cmd_list()
     if cmd == "check":
         return cmd_check()
-    if cmd not in ("sync", "auto", "move", "ignore", "unignore"):
+    if cmd not in ("sync", "auto", "move", "ignore", "unignore", "forget"):
         print("Unknown command '%s'. Try: sudo homelab-cards help" % cmd)
         return 1
     if os.geteuid() != 0 and not os.environ.get("HOMELAB_CARDS_NOROOT"):
@@ -947,6 +977,8 @@ def main(argv):
         return cmd_move(rest)
     if cmd in ("ignore", "unignore"):
         return cmd_ignore(rest, cmd == "unignore")
+    if cmd == "forget":
+        return cmd_forget(rest)
     try:
         return sync()
     except RuntimeError as e:

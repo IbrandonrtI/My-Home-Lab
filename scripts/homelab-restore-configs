@@ -44,7 +44,11 @@ Never restored: /etc/fstab, /usr/local/, root-crontab.txt, /var/lib/docker/. Not
 EOF
 }
 
-[ "$(id -u)" -eq 0 ] || [ "${1:-}" = version ] || [ "${1:-}" = help ] || [ "${1:-}" = --help ] || die "Run it with sudo."
+case "${1:-}" in
+  --version|--help|-h) ;;
+  -*) echo "Unknown option: $1" >&2; echo >&2; usage >&2; exit 1 ;;
+esac
+[ "$(id -u)" -eq 0 ] || [ "${1:-}" = version ] || [ "${1:-}" = --version ] || [ "${1:-}" = help ] || [ "${1:-}" = --help ] || [ "${1:-}" = -h ] || die "Run it with sudo."
 
 has_configs() { [ -d "$1/boot-configs" ]; }
 

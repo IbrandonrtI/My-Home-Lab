@@ -69,6 +69,7 @@ main() {
     preset|snapraid) if [ $# -gt 2 ]; then note "Unexpected word: ${*:3}"; note "Nothing was done."; note ""; usage_text >&2; exit 1; fi ;;
     *) if [ $# -gt 1 ]; then note "Unexpected word: ${*:2}"; note "Nothing was done."; note ""; usage_text >&2; exit 1; fi ;;
   esac
+  [ "${1:-}" = version ] && { echo "drives $VERSION"; exit 0; }
   [ "$(id -u)" = 0 ] || die "Run this with sudo:  sudo drives"
   take_lock
   case "${1:-menu}" in

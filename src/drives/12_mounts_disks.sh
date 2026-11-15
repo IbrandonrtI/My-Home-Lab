@@ -84,7 +84,8 @@ managed_disks() {
 }
 
 all_disks() {
-  lsblk -dnpo NAME,TYPE 2>/dev/null | awk '$2 == "disk" && $1 !~ /zram|\/ram[0-9]/ {print $1}'
+  # A device with no size has no disk in it (an empty card reader, an unused network block device), so it is not a drive.
+  lsblk -dnbpo NAME,TYPE,SIZE 2>/dev/null | awk '$2 == "disk" && $3 > 0 && $1 !~ /zram|\/ram[0-9]/ {print $1}'
   if [ "$TEST_MODE" = 1 ]; then
     losetup -ln -O NAME,BACK-FILE 2>/dev/null | awk -v s="$STATE_DIR/disk" 'index($2, s) == 1 {print $1}'
   fi

@@ -52,6 +52,12 @@ def main(argv):
     if cmd not in COMMANDS and cmd not in ("done", "skip", "unskip", "cards", "lastfm", "audiomuse", "navilist"):
         out("Unknown command '%s'. Try: homelab-setup help" % cmd)
         return 1
+    if (Opt.wipe_data or Opt.wipe_drives) and cmd != "uninstall":
+        out("%s only belongs to the uninstall command, so '%s' was not run. Try: homelab-setup help" % ("--wipe-data" if Opt.wipe_data else "--wipe-drives", cmd))
+        return 1
+    if Opt.backup and not os.path.isdir(Opt.backup):
+        out("The backup folder %s does not exist, so '%s' was not run." % (Opt.backup, cmd))
+        return 1
     ensure_root()
     try:
         take_command_lock(cmd, pos[1:])
@@ -69,7 +75,8 @@ def main(argv):
         elif cmd == "navilist":
             return cmd_navilist(pos[1:])
         else:
-            COMMANDS[cmd]()
+            if COMMANDS[cmd]() and cmd == "verify":
+                return 1
     except Abort as e:
         Live.close()
         out("")
