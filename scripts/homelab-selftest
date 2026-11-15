@@ -26,7 +26,7 @@ The full report is saved in your home folder as homelab-selftest-<date>.txt. Kno
 HELP
 }
 
-VERSION="1.7"
+VERSION="1.8"
 case "${1:-}" in
   version|--version) echo "homelab-selftest $VERSION"; exit 0 ;;
   -h|--help|help) usage; exit 0 ;;
@@ -113,7 +113,7 @@ run_cmd() {
     warn "$label: the output contains: $errwords"
     return
   fi
-  if [ "$elapsed" -gt 30 ]; then warn "$label: slow (${elapsed}s)"; return; fi
+  if [ "$elapsed" -gt "${SLOW_AFTER:-30}" ]; then warn "$label: slow (${elapsed}s)"; return; fi
   ok "$label (${elapsed}s)"
 }
 
@@ -147,7 +147,7 @@ part_commands() {
   fi
   local repo; repo=$(repo_dir)
   if [ -n "$repo" ] && command -v homelab-repocheck >/dev/null 2>&1; then
-    run_cmd "homelab-repocheck (the repo copy)" 120 user "0" -- homelab-repocheck "$repo"
+    SLOW_AFTER=150 run_cmd "homelab-repocheck (the repo copy)" 180 user "0" -- homelab-repocheck "$repo"
   else
     info "homelab-repocheck was not run (no repository folder in $REAL_HOME)"
   fi
@@ -353,6 +353,9 @@ PY
     info "no secrets file (this machine was not built by the installer)"
   fi
   if [ -f "$REAL_HOME/homepage-config/services.yaml" ] && [ "$(stat -c %U "$REAL_HOME/homepage-config/services.yaml")" != "$REAL_USER" ]; then warn "the Homepage config files are not owned by $REAL_USER"; fi
+  if [ -f "$REAL_HOME/homepage-config/services.yaml" ]; then
+    if [ $(( 0$(mode_of "$REAL_HOME/homepage-config/services.yaml") & 077 )) -eq 0 ]; then ok "services.yaml (it holds the widget keys) can be read by its owner only"; else warn "services.yaml holds the widget keys but other users can read it (mode $(mode_of "$REAL_HOME/homepage-config/services.yaml")); sudo homelab-setup refresh closes it"; fi
+  fi
   for f in drives homelab-backup homelab-update homelab-restore-configs homelab-sample homelab-cards homelab-setup homelab; do
     p=$(command -v "$f" 2>/dev/null) || continue
     [ -x "$p" ] || fail "$p is not executable"
@@ -360,7 +363,7 @@ PY
   done
   check_scripts_vs_repo
 
-  local known=" 22 53 2283 3000 3001 8081 8082 8088 8090 9000 9443 19999 " unknown=""
+  local known=" 22 53 2283 3000 3001 4533 8000 8081 8082 8088 8090 8100 8185 8200 9000 9443 19999 " unknown=""
   while read -r port proc; do
     case "$known" in *" $port "*) continue ;; esac
     unknown="$unknown $port${proc:+ ($proc)};"

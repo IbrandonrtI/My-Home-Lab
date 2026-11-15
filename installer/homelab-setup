@@ -538,17 +538,29 @@ def read_file(path, default=""):
         return default
 
 
+def existing_mode(path):
+    """The permission bits of a file that is already there, or 0o644 for a new file."""
+    try:
+        return os.stat(path).st_mode & 0o777
+    except OSError:
+        return 0o644
+
+
+def private_open(path, flags):
+    """Open a new file that only its owner can read until its final mode is set."""
+    return os.open(path, flags, 0o600)
+
+
 def write_file(path, text, mode=None, owner=None):
-    """Write a text file atomically with the given mode and owner; a dry run only reports it."""
+    """Write a text file atomically with the given mode and owner (an existing file keeps its mode); a dry run only reports it."""
     if Opt.dry:
         out("      would write: %s" % path)
         return
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp = path + ".tmp-hls"
-    with open(tmp, "w") as f:
+    with open(tmp, "w", opener=private_open) as f:
         f.write(text)
-    if mode is not None:
-        os.chmod(tmp, mode)
+    os.chmod(tmp, existing_mode(path) if mode is None else mode)
     os.replace(tmp, path)
     if owner:
         chown(path, *owner)
@@ -560,10 +572,9 @@ def write_bytes(path, data, mode=None, owner=None):
         return
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp = path + ".tmp-hls"
-    with open(tmp, "wb") as f:
+    with open(tmp, "wb", opener=private_open) as f:
         f.write(data)
-    if mode is not None:
-        os.chmod(tmp, mode)
+    os.chmod(tmp, existing_mode(path) if mode is None else mode)
     os.replace(tmp, path)
     if owner:
         chown(path, *owner)
@@ -2291,6 +2302,43 @@ def hp_dir():
 
 def hp_path(name="services.yaml"):
     return P(hp_dir() + "/" + name)
+
+
+def hp_mode(name):
+    """services.yaml and its saved copies hold the widget keys and logins, so only their owner may read them."""
+    return 0o600 if os.path.basename(name).startswith("services.yaml") else 0o644
+
+
+def key_files_open():
+    """The Homepage files that hold keys and are readable by other users, plus the panel's undo history if it is open."""
+    found = []
+    d = hp_dir()
+    try:
+        names = sorted(os.listdir(P(d)))
+    except OSError:
+        return found
+    for n in names:
+        p = P(d + "/" + n)
+        if n.startswith("services.yaml") and os.path.isfile(p) and os.stat(p).st_mode & 0o077:
+            found.append(p)
+    hist = P(d + "/.panel-history")
+    if os.path.isdir(hist) and os.stat(hist).st_mode & 0o077:
+        found.append(hist)
+    return found
+
+
+def protect_key_files():
+    """Make services.yaml, its saved copies and the panel's undo history readable by the owner only. Homepage runs as root in its container, so it still reads them."""
+    if Opt.dry:
+        return
+    for p in key_files_open():
+        if os.path.isdir(p):
+            for dp, _dirs, files in os.walk(p):
+                os.chmod(dp, 0o700)
+                for n in files:
+                    os.chmod(os.path.join(dp, n), 0o600)
+        else:
+            os.chmod(p, 0o600)
 
 
 def _indent(line):
@@ -4025,6 +4073,8 @@ class HomepageFiles(Step):
             return "todo"
         if not Mode.existing and any(not os.path.exists(hp_path("images/" + n)) for n in DASH_PLACEHOLDERS):
             return "todo"
+        if not Mode.existing and key_files_open():
+            return "todo"
         return "done"
 
     def run(self):
@@ -4040,19 +4090,20 @@ class HomepageFiles(Step):
                         body = hp_remove_card(body, "adguard-card")
                 if f == "widgets.yaml":
                     body = widgets_for_machine(body)
-                write_file(dst, body, 0o644, (Ctx.uid, Ctx.gid))
+                write_file(dst, body, hp_mode(f), (Ctx.uid, Ctx.gid))
             elif f in ("services.yaml", "bookmarks.yaml"):
                 old = read_file(dst)
                 new = subst(old)
                 if new != old:
-                    write_file(dst, new, 0o644, (Ctx.uid, Ctx.gid))
+                    write_file(dst, new, hp_mode(f), (Ctx.uid, Ctx.gid))
         if dashboard_placeholders():
             out("      Homepage was restarted once so that it serves the progress ring's status files")
         if "navidrome" in adopted():
             # Navidrome's card is normally added together with its login; for the person's own copy it is a plain link.
             svc = read_file(hp_path("services.yaml"))
             if svc and card_widget_type(svc, "navidrome-card") is None:
-                write_file(hp_path("services.yaml"), navidrome_card_added(svc, Ctx.lan or svc_host()), 0o644, (Ctx.uid, Ctx.gid))
+                write_file(hp_path("services.yaml"), navidrome_card_added(svc, Ctx.lan or svc_host()), 0o600, (Ctx.uid, Ctx.gid))
+        protect_key_files()
 
 
 def theme_pictures_run(check):
@@ -4171,8 +4222,8 @@ class HomepageTabs(Step):
             if new == old:
                 continue
             if old and not os.path.exists(hp_path(name) + ".before-tabs"):
-                write_file(hp_path(name) + ".before-tabs", old, 0o644, own)
-            write_file(hp_path(name), new, 0o644, own)
+                write_file(hp_path(name) + ".before-tabs", old, hp_mode(name), own)
+            write_file(hp_path(name), new, hp_mode(name), own)
         self.remember(seen)
         State.mark("homepage-tabs")
         State.mark("homepage-stats")
@@ -4339,8 +4390,8 @@ class NavidromeCard(Step):
         new = navidrome_card_named(new)
         if new != old:
             if not os.path.exists(hp_path("services.yaml") + ".before-navidrome"):
-                write_file(hp_path("services.yaml") + ".before-navidrome", old, 0o644, (Ctx.uid, Ctx.gid))
-            write_file(hp_path("services.yaml"), new, 0o644, (Ctx.uid, Ctx.gid))
+                write_file(hp_path("services.yaml") + ".before-navidrome", old, 0o600, (Ctx.uid, Ctx.gid))
+            write_file(hp_path("services.yaml"), new, 0o600, (Ctx.uid, Ctx.gid))
             out("      The Navidrome card is first in its group, called Navidrome (\"Music Streaming Server\"), and has Navidrome's own player inside "
                 "(previous, next, shuffle, repeat). Clicking its title opens the full Navidrome page.")
 

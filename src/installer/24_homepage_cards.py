@@ -141,6 +141,43 @@ def hp_path(name="services.yaml"):
     return P(hp_dir() + "/" + name)
 
 
+def hp_mode(name):
+    """services.yaml and its saved copies hold the widget keys and logins, so only their owner may read them."""
+    return 0o600 if os.path.basename(name).startswith("services.yaml") else 0o644
+
+
+def key_files_open():
+    """The Homepage files that hold keys and are readable by other users, plus the panel's undo history if it is open."""
+    found = []
+    d = hp_dir()
+    try:
+        names = sorted(os.listdir(P(d)))
+    except OSError:
+        return found
+    for n in names:
+        p = P(d + "/" + n)
+        if n.startswith("services.yaml") and os.path.isfile(p) and os.stat(p).st_mode & 0o077:
+            found.append(p)
+    hist = P(d + "/.panel-history")
+    if os.path.isdir(hist) and os.stat(hist).st_mode & 0o077:
+        found.append(hist)
+    return found
+
+
+def protect_key_files():
+    """Make services.yaml, its saved copies and the panel's undo history readable by the owner only. Homepage runs as root in its container, so it still reads them."""
+    if Opt.dry:
+        return
+    for p in key_files_open():
+        if os.path.isdir(p):
+            for dp, _dirs, files in os.walk(p):
+                os.chmod(dp, 0o700)
+                for n in files:
+                    os.chmod(os.path.join(dp, n), 0o600)
+        else:
+            os.chmod(p, 0o600)
+
+
 def _indent(line):
     return len(line) - len(line.lstrip(" "))
 

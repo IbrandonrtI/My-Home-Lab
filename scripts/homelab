@@ -173,7 +173,7 @@ show_docs() {
   done
   if [ "$shown" = 0 ]; then
     echo "There are no guides in $DOCS_DIR yet, so there is nothing to list."
-    return 1
+    return 0
   fi
   echo
 }

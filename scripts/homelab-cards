@@ -184,10 +184,10 @@ def write_text(path, text, like=None):
     except OSError:
         st = None
     tmp = path + ".homelab-cards.tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
+    with open(tmp, "w", encoding="utf-8", opener=lambda p, fl: os.open(p, fl, 0o600)) as f:
         f.write(text)
+    os.chmod(tmp, (st.st_mode & 0o777) if st else 0o644)
     if st:
-        os.chmod(tmp, st.st_mode & 0o777)
         try:
             os.chown(tmp, st.st_uid, st.st_gid)
         except OSError:
@@ -197,7 +197,9 @@ def write_text(path, text, like=None):
 
 def backup_once(path, suffix=".before-cards"):
     if os.path.exists(path) and not os.path.exists(path + suffix):
-        shutil.copy2(path, path + suffix)
+        with open(path, "rb") as src, open(path + suffix, "wb", opener=lambda p, fl: os.open(p, fl, 0o600)) as dst:
+            shutil.copyfileobj(src, dst)
+        shutil.copystat(path, path + suffix)
 
 
 def load_state():

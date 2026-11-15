@@ -63,17 +63,29 @@ def read_file(path, default=""):
         return default
 
 
+def existing_mode(path):
+    """The permission bits of a file that is already there, or 0o644 for a new file."""
+    try:
+        return os.stat(path).st_mode & 0o777
+    except OSError:
+        return 0o644
+
+
+def private_open(path, flags):
+    """Open a new file that only its owner can read until its final mode is set."""
+    return os.open(path, flags, 0o600)
+
+
 def write_file(path, text, mode=None, owner=None):
-    """Write a text file atomically with the given mode and owner; a dry run only reports it."""
+    """Write a text file atomically with the given mode and owner (an existing file keeps its mode); a dry run only reports it."""
     if Opt.dry:
         out("      would write: %s" % path)
         return
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp = path + ".tmp-hls"
-    with open(tmp, "w") as f:
+    with open(tmp, "w", opener=private_open) as f:
         f.write(text)
-    if mode is not None:
-        os.chmod(tmp, mode)
+    os.chmod(tmp, existing_mode(path) if mode is None else mode)
     os.replace(tmp, path)
     if owner:
         chown(path, *owner)
@@ -85,10 +97,9 @@ def write_bytes(path, data, mode=None, owner=None):
         return
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp = path + ".tmp-hls"
-    with open(tmp, "wb") as f:
+    with open(tmp, "wb", opener=private_open) as f:
         f.write(data)
-    if mode is not None:
-        os.chmod(tmp, mode)
+    os.chmod(tmp, existing_mode(path) if mode is None else mode)
     os.replace(tmp, path)
     if owner:
         chown(path, *owner)

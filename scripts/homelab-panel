@@ -104,9 +104,14 @@ def read(p):
         return ""
 
 
+def private_open(path, flags):
+    return os.open(path, flags, 0o600)
+
+
 def write_atomic(p, text, mode=None):
+    """Write a file in one step. The new file keeps the permissions of the old one, and nobody else can read it before that is set."""
     tmp = p + ".panel-tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
+    with open(tmp, "w", encoding="utf-8", opener=private_open) as f:
         f.write(text)
     if mode is not None:
         os.chmod(tmp, mode)
@@ -195,17 +200,18 @@ def check_text(path, text):
 
 
 def snap(label, olds):
-    os.makedirs(HISTORY, exist_ok=True)
+    os.makedirs(HISTORY, mode=0o700, exist_ok=True)
+    os.chmod(HISTORY, 0o700)
     name = "%s-%04d" % (time.strftime("%Y%m%d-%H%M%S"), int(time.time() * 1000) % 10000)
     d = os.path.join(HISTORY, name)
-    os.makedirs(d)
+    os.makedirs(d, mode=0o700)
     meta = {"label": label, "time": int(time.time()), "files": {}}
     for i, (p, text) in enumerate(sorted(olds.items())):
         fn = "f%d" % i
-        with open(os.path.join(d, fn), "w", encoding="utf-8") as f:
+        with open(os.path.join(d, fn), "w", encoding="utf-8", opener=private_open) as f:
             f.write(text)
         meta["files"][fn] = {"path": p, "existed": os.path.exists(p)}
-    with open(os.path.join(d, "meta.json"), "w", encoding="utf-8") as f:
+    with open(os.path.join(d, "meta.json"), "w", encoding="utf-8", opener=private_open) as f:
         json.dump(meta, f)
     old = sorted(x for x in os.listdir(HISTORY) if os.path.isdir(os.path.join(HISTORY, x)))
     for x in old[:-KEEP_HISTORY]:

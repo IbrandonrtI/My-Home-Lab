@@ -52,6 +52,8 @@ class HomepageFiles(Step):
             return "todo"
         if not Mode.existing and any(not os.path.exists(hp_path("images/" + n)) for n in DASH_PLACEHOLDERS):
             return "todo"
+        if not Mode.existing and key_files_open():
+            return "todo"
         return "done"
 
     def run(self):
@@ -67,19 +69,20 @@ class HomepageFiles(Step):
                         body = hp_remove_card(body, "adguard-card")
                 if f == "widgets.yaml":
                     body = widgets_for_machine(body)
-                write_file(dst, body, 0o644, (Ctx.uid, Ctx.gid))
+                write_file(dst, body, hp_mode(f), (Ctx.uid, Ctx.gid))
             elif f in ("services.yaml", "bookmarks.yaml"):
                 old = read_file(dst)
                 new = subst(old)
                 if new != old:
-                    write_file(dst, new, 0o644, (Ctx.uid, Ctx.gid))
+                    write_file(dst, new, hp_mode(f), (Ctx.uid, Ctx.gid))
         if dashboard_placeholders():
             out("      Homepage was restarted once so that it serves the progress ring's status files")
         if "navidrome" in adopted():
             # Navidrome's card is normally added together with its login; for the person's own copy it is a plain link.
             svc = read_file(hp_path("services.yaml"))
             if svc and card_widget_type(svc, "navidrome-card") is None:
-                write_file(hp_path("services.yaml"), navidrome_card_added(svc, Ctx.lan or svc_host()), 0o644, (Ctx.uid, Ctx.gid))
+                write_file(hp_path("services.yaml"), navidrome_card_added(svc, Ctx.lan or svc_host()), 0o600, (Ctx.uid, Ctx.gid))
+        protect_key_files()
 
 
 def theme_pictures_run(check):
@@ -198,8 +201,8 @@ class HomepageTabs(Step):
             if new == old:
                 continue
             if old and not os.path.exists(hp_path(name) + ".before-tabs"):
-                write_file(hp_path(name) + ".before-tabs", old, 0o644, own)
-            write_file(hp_path(name), new, 0o644, own)
+                write_file(hp_path(name) + ".before-tabs", old, hp_mode(name), own)
+            write_file(hp_path(name), new, hp_mode(name), own)
         self.remember(seen)
         State.mark("homepage-tabs")
         State.mark("homepage-stats")
