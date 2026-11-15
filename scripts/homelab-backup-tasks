@@ -293,6 +293,27 @@ def inside(child, parent):
     return child.startswith(parent)
 
 
+def on_drive(path):
+    """True when the folder, with any links followed, is under a connected-drive folder (/mnt or /media)."""
+    real = os.path.realpath(path)
+    return any(inside(real, os.path.realpath(r)) for r in ROOTS)
+
+
+def check_source(source):
+    """Backups run as root, so a source outside the drives (such as /etc or /root) would let a panel user read any file. Only folders under the drives are allowed."""
+    if not on_drive(source):
+        raise Bad("The folder to back up must be on a connected drive (under %s)." % " or ".join(ROOTS))
+
+
+def folder_bytes(path):
+    """Size of the files in the folder (not of the whole drive it is on); 0 when it cannot be measured."""
+    rc, text = run_cmd(["du", "-sb", "--", path], timeout=3600)
+    try:
+        return int(text.split()[0]) if rc == 0 else 0
+    except (ValueError, IndexError):
+        return 0
+
+
 def clean_exclude(items):
     if items in (None, ""):
         return []
@@ -376,7 +397,7 @@ def clean_dest(d, source):
     kind = d.get("type")
     if kind == "local":
         path = clean_abs(d.get("path"), "The backup folder")
-        if not any(inside(path, r) for r in ROOTS):
+        if not on_drive(path):
             raise Bad("The backup folder must be on a connected drive (under %s)." % " or ".join(ROOTS))
         if inside(path, source) or inside(source, path):
             raise Bad("The backup folder and the source folder must not be inside each other.")
@@ -419,6 +440,7 @@ def clean_task(d, old=None):
     source = clean_abs(d.get("source"), "The folder to back up")
     if source == "/" or any(inside(source, s) for s in SKIP_SOURCE):
         raise Bad("That folder cannot be backed up. Choose a folder that contains your files.")
+    check_source(source)
     if not os.path.isdir(source):
         raise Bad("The folder to back up does not exist (check that the drive is connected).")
     dest = clean_dest(d.get("dest"), source)
@@ -718,11 +740,7 @@ def run_versions(task, dry):
         return True, "Dry run: %d files (%s) would be copied since the last version. Nothing was changed." % (st.get("sent_files", 0), human(st.get("sent_bytes", 0))), st
     need = 0
     if not versions:
-        try:
-            su = os.statvfs(task["source"])
-            need = (su.f_blocks - su.f_bfree) * su.f_frsize
-        except OSError:
-            need = 0
+        need = folder_bytes(task["source"])
     min_free = int(task.get("min_free_gb", 2)) * 1073741824
     place.mkdirs(root)
     free = place.free(root)
@@ -869,6 +887,8 @@ def run_task(tid, dry=False):
         if not dry:
             write_status(tid, dict(read_status(tid), running=True, last_start=stamp_of(start)))
         try:
+            if task["kind"] != "nightly":
+                check_source(task["source"])
             if task["kind"] == "nightly":
                 ok, msg, det = run_nightly(task, dry)
             elif kind == "cloud":
@@ -1070,6 +1090,8 @@ def restore(task, version, rel, target):
         raise Bad("Choose where to put the files back.")
     place, folder = version_path(task, version)
     src_root = task["source"].rstrip("/")
+    if task["kind"] != "nightly":
+        check_source(src_root)
     if not os.path.isdir(src_root):
         raise Bad("The original folder (%s) was not found. Connect its drive first." % src_root)
     try:

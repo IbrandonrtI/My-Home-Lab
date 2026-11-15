@@ -198,8 +198,29 @@ class TailscaleInstalled(Step):
         act(["systemctl", "enable", "--now", "tailscaled"])
 
 
+TS_KEY_TMP = "/run/homelab-ts-authkey"
+
+
+def ts_key_file():
+    """The Tailscale auth key as a file only root can read, so the key never shows up in the process list. It comes from the file named in TS_AUTHKEY_FILE, or from TS_AUTHKEY (written to a private temporary file). Returns (path, temporary); the path is empty when no key was given."""
+    path = os.environ.get("TS_AUTHKEY_FILE", "").strip()
+    key = read_file(path).strip() if path else os.environ.get("TS_AUTHKEY", "").strip()
+    if path and not key:
+        raise Abort("The Tailscale key file (%s) is empty or cannot be read." % path)
+    if not key:
+        return "", False
+    if key.startswith("tskey-api-"):
+        raise Abort("That is a Tailscale API token (it starts with tskey-api-), not an auth key. In the Tailscale admin page, open Settings, Keys and generate an auth key (it starts with tskey-auth-).")
+    if not key.startswith("tskey-"):
+        raise Abort("The Tailscale key does not look right. An auth key starts with tskey-auth-.")
+    if path:
+        return path, False
+    write_file(P(TS_KEY_TMP), key + "\n", mode=0o600)
+    return P(TS_KEY_TMP), True
+
+
 def do_tailscale_login():
-    """Show the Tailscale login link and wait for the user to sign in; uses TS_AUTHKEY when it is set."""
+    """Show the Tailscale login link and wait for the user to sign in. When an auth key is given (TS_AUTHKEY_FILE or TS_AUTHKEY) the login is done with it, without a link."""
     Ctx.refresh_tailscale()
     if Ctx.fqdn:
         return True
@@ -208,15 +229,18 @@ def do_tailscale_login():
         return True
     if not have("tailscale"):
         raise Abort("Tailscale is not installed yet.")
-    key = os.environ.get("TS_AUTHKEY", "")
+    key_path, key_temp = ts_key_file()
     args = ["tailscale", "up", "--hostname=" + Ctx.hostname.lower(), "--accept-dns=false"]
     stale = ts_status() or {}
     if stale.get("BackendState") == "Running" and ts_cut_off(stale):
         args.append("--force-reauth")
-    if key:
-        args.append("--auth-key=" + key)
+    if key_path:
+        args.append("--auth-key=file:" + key_path)
     out("")
-    say("Tailscale needs a login. Open the link below in any browser, sign in and approve this machine.")
+    if key_path:
+        say("Logging in to Tailscale with the auth key.")
+    else:
+        say("Tailscale needs a login. Open the link below in any browser, sign in and approve this machine.")
     proc = subprocess.Popen(args, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     shown = False
     end = time.time() + float(os.environ.get("HLS_TS_WAIT", "900"))
@@ -227,7 +251,7 @@ def do_tailscale_login():
             lines.append(line.rstrip())
     th = threading.Thread(target=reader, daemon=True)
     th.start()
-    Live.begin("Waiting for you to approve this machine in Tailscale (open the link above)", own_clock=True)
+    Live.begin("Logging in to Tailscale with the auth key" if key_path else "Waiting for you to approve this machine in Tailscale (open the link above)", own_clock=True)
     try:
         while time.time() < end:
             if not shown:
@@ -260,6 +284,11 @@ def do_tailscale_login():
             pass
     finally:
         Live.end()
+        if key_temp:
+            try:
+                os.remove(key_path)
+            except OSError:
+                pass
     raise Abort("The Tailscale login was not completed within 15 minutes. Run `sudo homelab-setup fill` to try again.")
 
 

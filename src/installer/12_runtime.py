@@ -140,6 +140,24 @@ def rand_app_key():
     return "base64:" + base64.b64encode(pysecrets.token_bytes(32)).decode()
 
 
+class Headers(dict):
+    """Response headers that can be looked up in any letter case, because servers differ (Downtify sends set-cookie in lower case)."""
+
+    def get(self, key, default=None):
+        for k, v in self.items():
+            if k.lower() == str(key).lower():
+                return v
+        return default
+
+
+def header_dict(msg):
+    """Turn the headers of a response into a Headers; a header sent more than once (Set-Cookie) is joined with commas."""
+    out = Headers()
+    for k in set(msg.keys()) if msg is not None else ():
+        out[k] = ", ".join(msg.get_all(k) or [])
+    return out
+
+
 def http(method, url, body=None, headers=None, timeout=20, form=None, raw=False):
     """Send an HTTP request and return (status, parsed JSON or text, headers). Status 0 means the connection failed."""
     hdr = dict(headers or {})
@@ -159,12 +177,12 @@ def http(method, url, body=None, headers=None, timeout=20, form=None, raw=False)
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
             txt = r.read().decode("utf-8", "replace")
-            st, hd = r.status, dict(r.headers)
+            st, hd = r.status, header_dict(r.headers)
     except urllib.error.HTTPError as e:
         txt = e.read().decode("utf-8", "replace") if e.fp else ""
-        st, hd = e.code, dict(e.headers or {})
+        st, hd = e.code, header_dict(e.headers)
     except (urllib.error.URLError, socket.timeout, ConnectionError, OSError) as e:
-        return 0, str(e), {}
+        return 0, str(e), Headers()
     if raw:
         return st, txt, hd
     try:

@@ -212,6 +212,11 @@ def terminal_unit_text():
         ""])
 
 
+def stock_ttyd_on():
+    """The ttyd package of Ubuntu also starts its own ttyd service, a login terminal for root on port 7681. This lab uses its own terminal service instead, so the stock one is not wanted."""
+    return run(["systemctl", "is-active", "ttyd"])[1].strip() == "active" or run(["systemctl", "is-enabled", "ttyd"])[1].strip() == "enabled"
+
+
 @step
 class TerminalFiles(Step):
     """Install ttyd and start the web terminal service used by the Terminal card."""
@@ -223,7 +228,7 @@ class TerminalFiles(Step):
         return panel_applies()
 
     def probe(self):
-        if not pkg_installed("ttyd") or read_file(P(TERMINAL_UNIT)) != terminal_unit_text():
+        if not pkg_installed("ttyd") or read_file(P(TERMINAL_UNIT)) != terminal_unit_text() or stock_ttyd_on():
             return "todo"
         return "done" if run(["systemctl", "is-active", "homelab-terminal"])[1].strip() == "active" else "todo"
 
@@ -232,6 +237,9 @@ class TerminalFiles(Step):
             rc, txt = act(["apt-get", "-oDPkg::Lock::Timeout=600", "install", "-y", "-q", "ttyd"], env=apt_env(), timeout=900)
             if rc != 0 and not Opt.dry:
                 raise Abort("The terminal program (ttyd) could not be installed: %s\n      Try it by hand: sudo apt-get install ttyd" % txt.strip()[-200:])
+        if stock_ttyd_on():
+            act(["systemctl", "disable", "--now", "ttyd"])
+            good("Ubuntu's own ttyd service (a root login on port 7681) was switched off")
         changed = read_file(P(TERMINAL_UNIT)) != terminal_unit_text()
         if changed:
             write_file(P(TERMINAL_UNIT), terminal_unit_text(), 0o644)
