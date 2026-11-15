@@ -20,6 +20,7 @@ import socket
 import string
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import urllib.error

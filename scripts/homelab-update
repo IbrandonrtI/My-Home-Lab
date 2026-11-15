@@ -1106,6 +1106,7 @@ cmd_clean() {
 
 
 [ "${HLU_SOURCE_ONLY:-}" = 1 ] && return 0
+for a in "$@"; do [ -n "$a" ] || { echo "An empty word was given, so nothing was done. Run  homelab-update help  to see the commands." >&2; exit 2; }; done
 YES=0; OLD=0; NOW=0; FULL_BACKUP=0; ARGS=()
 for a in "$@"; do case "$a" in --yes|-y) YES=1 ;; --old) OLD=1 ;; --now) NOW=1 ;; --backup) FULL_BACKUP=1 ;; *) ARGS+=("$a") ;; esac; done
 case "${ARGS[0]:-run}" in

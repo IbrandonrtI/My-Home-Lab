@@ -1,3 +1,25 @@
+def reexec_newer_installer(cmd, args):
+    """After `git pull` the repository holds a newer installer than the one installed in /usr/local/sbin. Run the newer one, so a single refresh uses the fixes that were just downloaded."""
+    if FAKE or cmd in ("upgrade", "uninstall") or os.environ.get("HLS_REEXEC"):
+        return
+    try:
+        State.load()
+        repo = Opt.repo or State.data.get("repo")
+        new = os.path.join(repo, "installer", "homelab-setup") if repo else ""
+        me = os.path.abspath(sys.argv[0])
+        if not new or not os.path.isfile(new) or os.path.realpath(new) == os.path.realpath(me):
+            return
+        text = read_file(new)
+        if not text or text == read_file(me):
+            return
+        compile(text, new, "exec")
+    except (OSError, SyntaxError, ValueError):
+        return
+    say("Using the newer installer from %s." % repo)
+    env = dict(os.environ, HLS_REEXEC="1")
+    os.execve(sys.executable, [sys.executable, new] + list(args), env)
+
+
 def main(argv):
     """Read the command line and run the requested command."""
     try:
@@ -59,6 +81,7 @@ def main(argv):
         out("The backup folder %s does not exist, so '%s' was not run." % (Opt.backup, cmd))
         return 1
     ensure_root()
+    reexec_newer_installer(cmd, args)
     try:
         take_command_lock(cmd, pos[1:])
         if cmd in ("done", "skip", "unskip"):

@@ -2,6 +2,7 @@
 
 import datetime
 import fcntl
+import glob
 import json
 import os
 import re
@@ -139,11 +140,40 @@ def read_json(path, default):
 def write_json(path, data, mode=0o644):
     os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
     tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=1, sort_keys=True)
         f.write("\n")
+        f.flush()
+        os.fsync(f.fileno())
     os.chmod(tmp, mode)
     os.replace(tmp, path)
+
+
+def keep_damaged_copy(path):
+    """A file that exists but cannot be read is kept under a new name before anything is written over it, so nothing the person made is lost."""
+    try:
+        with open(path, "rb") as f:
+            body = f.read()
+    except OSError:
+        return None
+    if not body.strip():
+        return None
+    for old in sorted(glob.glob(path + ".damaged-*")):
+        try:
+            with open(old, "rb") as f:
+                if f.read() == body:
+                    return old
+        except OSError:
+            continue
+    keep = "%s.damaged-%s" % (path, time.strftime("%Y%m%d-%H%M%S"))
+    try:
+        fd = os.open(keep, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        with os.fdopen(fd, "wb") as f:
+            f.write(body)
+    except OSError:
+        return None
+    return keep
 
 
 def legacy_setting(key, default):
@@ -204,8 +234,12 @@ def nightly_task():
 def load_tasks():
     data = read_json(CONF, None)
     if not isinstance(data, dict) or not isinstance(data.get("tasks"), list):
+        kept = keep_damaged_copy(CONF) if os.path.exists(CONF) else None
         data = {"version": 1, "tasks": [nightly_task()]}
-        if os.access(os.path.dirname(CONF) or ".", os.W_OK):
+        if kept:
+            # The list is damaged. Show the default one for now and keep the damaged file; nothing is written over it until a task is saved.
+            sys.stderr.write("The backup task list %s is damaged. It was kept as %s. Only the default nightly backup is shown until you save a change.\n" % (CONF, kept))
+        elif os.access(os.path.dirname(CONF) or ".", os.W_OK):
             write_json(CONF, data)
     return data["tasks"]
 
@@ -1017,6 +1051,11 @@ def browse(task, version, rel):
         except ValueError:
             raise Bad("Could not read that cloud folder.") from None
         return sorted(items, key=lambda e: (e["type"] != "dir", e["name"].lower()))
+    if isinstance(place, Local):
+        root = os.path.realpath(folder)
+        real = os.path.realpath(path)
+        if real != root and not real.startswith(root + os.sep):
+            raise Bad("That path is not in this version.")
     if not place.isdir(path):
         raise Bad("That folder is not in this version.")
     return sorted(place.entries(path), key=lambda e: (e["type"] != "dir", e["name"].lower()))

@@ -52,8 +52,6 @@ class HomepageFiles(Step):
             return "todo"
         if not Mode.existing and any(not os.path.exists(hp_path("images/" + n)) for n in DASH_PLACEHOLDERS):
             return "todo"
-        if not Mode.existing and key_files_open():
-            return "todo"
         return "done"
 
     def run(self):
@@ -82,6 +80,25 @@ class HomepageFiles(Step):
             svc = read_file(hp_path("services.yaml"))
             if svc and card_widget_type(svc, "navidrome-card") is None:
                 write_file(hp_path("services.yaml"), navidrome_card_added(svc, Ctx.lan or svc_host()), 0o600, (Ctx.uid, Ctx.gid))
+        protect_key_files()
+
+
+@step
+class HomepageKeyFiles(Step):
+    """Keep the files that hold the dashboard's widget keys readable by their owner only. Nothing waits for this step, so a permission problem shows as one item."""
+    id, group, title = "homepage-key-files", "Homepage", "The dashboard's key files (services.yaml and its copies) are readable by their owner only"
+    needs = ("homepage-files",)
+
+    def applies(self):
+        return not Mode.existing
+
+    def probe(self):
+        return "todo" if key_files_open() else "done"
+
+    def detail(self):
+        return "%d file(s) are readable by other users; `sudo homelab-setup refresh` fixes it" % len(key_files_open())
+
+    def run(self):
         protect_key_files()
 
 

@@ -27,7 +27,7 @@ const VIEWS = ONLY === "links" ? [["links", "Links"]]
 if (ONLY === "links") view = "links";
 
 try { const v = sessionStorage.getItem("hlp-view"); if (v && VIEWS.some(x => x[0] === v)) view = v; } catch (e) {  }
-if (ONLY !== "links" && ["updates", "drives"].includes(location.hash.slice(1))) view = location.hash.slice(1);
+if (ONLY !== "links" && VIEWS.some(x => x[0] === location.hash.slice(1))) view = location.hash.slice(1);
 
 function h(tag, attrs, ...kids) {
   const el = document.createElement(tag);
@@ -55,6 +55,7 @@ const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 function send(msg) { if (framed) { try { window.parent.postMessage(Object.assign({ hlp: 1 }, msg), "*"); } catch (e) {  } } }
 
 async function api(method, path, body, raw, undoGroup) {
+  noChange = false;
   const opt = { method, credentials: "same-origin", headers: { "X-Panel": "1" } };
   if (undoGroup) opt.headers["X-Undo-Merge"] = undoGroup;
   if (raw) { opt.body = raw; opt.headers["Content-Type"] = "application/octet-stream"; }
@@ -65,11 +66,14 @@ async function api(method, path, body, raw, undoGroup) {
   try { js = await r.json(); } catch (e) {  }
   if (r.status === 401 && path !== "/api/login") { S = null; showLogin(); throw new Error(js.error || "Please log in again."); }
   if (!r.ok) { const err = new Error(js.error || ("Something went wrong (" + r.status + ").")); err.status = r.status; throw err; }
+  noChange = method === "POST" && js.changed === false;
   return js;
 }
 
-let toastTimer = null;
+let toastTimer = null, noChange = false;
 function toast(msg, bad, action) {
+  if (noChange && !bad && !action && !/^Undone/.test(msg)) msg = "Nothing changed. It was already set that way.";
+  noChange = false;
   const t = document.getElementById("toast");
   t.className = "show" + (bad ? " bad" : "");
   put(t, h("span", {}, msg), action ? h("button", { class: "small", onclick: action[1] }, action[0]) : null);
@@ -238,6 +242,7 @@ function showLogin(passwordSet = true, msg = "") {
 function render() {
   if (!S) return;
   try { sessionStorage.setItem("hlp-view", view); } catch (e) {  }
+  if (ONLY !== "links" && location.hash.slice(1) !== view) { try { history.replaceState(null, "", "#" + view); } catch (e) {  } }
   const fns = { look: viewLook, layout: viewLayout, cards: viewCards, drives: viewDrives, updates: viewUpdates, links: viewLinks };
   if (ONLY === "links") { put(root, viewLinks()); applyAccent(); return; }
   footEl = h("div", { class: "hactions" });

@@ -112,6 +112,19 @@ def check_containers():
     return res
 
 
+def check_panel():
+    """The control panel and the web terminal are services of the machine, not containers, so the container check cannot see them."""
+    res = []
+    for unit, label in (("homelab-panel", "The control panel"), ("homelab-terminal", "The web terminal")):
+        rc, txt = run(["systemctl", "list-unit-files", unit + ".service"], 10)
+        if rc != 0 or unit not in txt:
+            continue
+        rc, txt = run(["systemctl", "is-active", unit], 10)
+        if txt.strip() != "active":
+            res.append(item("down:" + unit, "bad", "%s is not running" % label, "Start it with: sudo systemctl start %s" % unit, ""))
+    return res
+
+
 def apt_waiting():
     rc, out = run([APT_GET, "-s", "upgrade"], 40)
     if rc != 0:
@@ -259,7 +272,7 @@ def check_busy():
     return [item("storage:busy", "info", "Files are being written to a storage pool", "Probably an upload or a setup. Its size is not known, so there is no finish time. Updates and drive changes wait until it stops.", "")]
 
 
-CHECKS = (check_containers, check_updates, stats_items, check_space, check_tailscale, check_temps, check_busy)
+CHECKS = (check_containers, check_panel, check_updates, stats_items, check_space, check_tailscale, check_temps, check_busy)
 
 
 def collect():

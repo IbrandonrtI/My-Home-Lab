@@ -49,10 +49,14 @@ remount_flow() {
   repair_music_folder
   [ "$onboot" = 1 ] || apps_flow
   start_containers
+  [ "$onboot" = 1 ] || start_down_containers
+  local still; still=$(containers_still_down)
   if [ "$onboot" = 1 ]; then
     echo "The services are using the boot drive. Connect the missing Main drive and run  sudo drives remount  to use it again."
   elif [ -n "${APPS_HELD// /}" ]; then
     echo "The drives are mounted again. Still stopped:$APPS_HELD (their files are missing, see above)."
+  elif [ -n "$still" ]; then
+    echo "The drives are mounted again. These containers are still not running: $still. Look at one with:  sudo docker logs <name>   then try:  sudo docker start <name>"
   else
     echo "The drives are mounted again and the services are running."
   fi

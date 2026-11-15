@@ -30,7 +30,7 @@ set -euo pipefail
 
 SELF="${BASH_SOURCE[0]:-}"
 if [ -z "$SELF" ] || [ ! -f "$SELF" ]; then
-  echo "setup.sh: run it from a clone of the repository (git clone ... && cd My-Home-Lab- && sudo bash setup.sh)," >&2
+  echo "setup.sh: run it from a clone of the repository (git clone ... && cd My-Home-Lab- && bash setup.sh)," >&2
   echo "          not through a pipe or process substitution." >&2
   exit 1
 fi

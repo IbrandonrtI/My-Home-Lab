@@ -40,7 +40,7 @@ boot_view_close() {
 }
 
 boot_has_files() {
-  [ -d "$1" ] && [ -n "$(find "$1" ! -type d ! -name .immich ! -path '*/lost+found/*' -print -quit 2>/dev/null)" ]
+  [ -d "$1" ] && [ -n "$(find "$1" ! -type d ! -name .immich -size +0 ! -path '*/lost+found/*' -print -quit 2>/dev/null)" ]
 }
 
 boot_files_bytes() { du -sb --exclude=.immich --exclude=lost+found "$1" 2>/dev/null | awk '{print $1 + 0}'; }

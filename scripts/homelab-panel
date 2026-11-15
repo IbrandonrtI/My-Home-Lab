@@ -24,6 +24,7 @@ Written with the Python standard library only (PyYAML is used when it is install
 import base64
 import binascii
 import getpass
+import glob
 import hashlib
 import hmac
 import http.client
@@ -102,6 +103,8 @@ def read(p):
             return f.read()
     except FileNotFoundError:
         return ""
+    except PermissionError:
+        raise Fail("The panel is not allowed to read %s. Run  sudo homelab-setup refresh  to put its permissions right." % os.path.basename(p), 500) from None
 
 
 def private_open(path, flags):
@@ -111,8 +114,11 @@ def private_open(path, flags):
 def write_atomic(p, text, mode=None):
     """Write a file in one step. The new file keeps the permissions of the old one, and nobody else can read it before that is set."""
     tmp = p + ".panel-tmp"
-    with open(tmp, "w", encoding="utf-8", opener=private_open) as f:
-        f.write(text)
+    try:
+        with open(tmp, "w", encoding="utf-8", opener=private_open) as f:
+            f.write(text)
+    except PermissionError:
+        raise Fail("The panel is not allowed to change %s. Run  sudo homelab-setup refresh  to put its permissions right. Nothing was changed." % os.path.basename(p), 500) from None
     if mode is not None:
         os.chmod(tmp, mode)
     else:
@@ -178,7 +184,10 @@ class Tx:
         for p in changed:
             check_text(p, self.new[p])
         if not changed:
+            if getattr(LOCAL, "changed", None) is None:
+                LOCAL.changed = False
             return False
+        LOCAL.changed = True
         olds = {p: self.old[p] for p in changed}
         group = getattr(LOCAL, "merge", "")
         if not (group and snap_merge(group, olds)):
@@ -237,9 +246,21 @@ def undo():
     if not h:
         raise Fail("There is nothing to undo.")
     d, meta = h
+    gone = set()
+    for fn, info in meta["files"].items():
+        if info["path"] == SETTINGS:
+            gone |= set(re.findall(r"/images/(background-\d{14}\.\w+)", read(SETTINGS)))
     for fn, info in meta["files"].items():
         write_atomic(info["path"], read(os.path.join(d, fn)))
     shutil.rmtree(d, ignore_errors=True)
+    if gone:
+        now = read(SETTINGS) + read(CSS)
+        for name in gone:
+            if "/images/" + name not in now:
+                try:
+                    os.remove(os.path.join(IMAGES, name))
+                except OSError:
+                    pass
     return meta["label"]
 
 
@@ -314,6 +335,8 @@ def rgb_hex(rgb):
 
 
 def number(v, what, lo, hi):
+    if isinstance(v, bool):
+        raise Fail("%s must be a number from %s to %s." % (what, lo, hi))
     try:
         n = float(v)
     except (TypeError, ValueError):
@@ -1075,10 +1098,18 @@ def bg_store(data, body=None, fixed=None):
     with open(os.path.join(IMAGES, name), "wb") as f:
         f.write(data)
     os.chmod(os.path.join(IMAGES, name), 0o644)
-    tx = Tx("Background picture changed")
-    text = bg_set(tx.get(SETTINGS), "image", "/images/" + name)
-    tx.put(SETTINGS, bg_numbers(body or {}, text))
-    tx.commit()
+    try:
+        tx = Tx("Background picture changed")
+        text = bg_set(tx.get(SETTINGS), "image", "/images/" + name)
+        tx.put(SETTINGS, bg_numbers(body or {}, text))
+        tx.commit()
+    except Exception:
+        if not fixed:
+            try:
+                os.remove(os.path.join(IMAGES, name))
+            except OSError:
+                pass
+        raise
     for old in ([] if fixed else os.listdir(IMAGES)):
         if re.fullmatch(r"background-\d{14}\.\w+", old) and old != name:
             try:
@@ -1722,6 +1753,15 @@ def mythemes_load():
 
 
 def mythemes_save(lst):
+    body = read(MYTHEMES)
+    if body.strip():
+        try:
+            json.loads(body)
+        except ValueError:
+            # The saved themes file is damaged: keep it before it is replaced.
+            keep = "%s.damaged-%s" % (MYTHEMES, time.strftime("%Y%m%d-%H%M%S"))
+            if not any(read(o) == body for o in glob.glob(MYTHEMES + ".damaged-*")):
+                write_atomic(keep, body, 0o600)
     write_atomic(MYTHEMES, json.dumps({"version": 1, "themes": lst}, indent=1, sort_keys=True), 0o644)
 
 
@@ -3472,7 +3512,7 @@ def upload_drain(handler, n):
 
 def api_upload_stream(handler, kind, q):
     """Receive an uploaded photo or song from the page and pass it on."""
-    n = int(handler.headers.get("Content-Length") or 0)
+    n = handler.content_length()
     try:
         if n <= 0:
             raise Fail("The file is empty.", 400)
@@ -3620,6 +3660,14 @@ class Handler(BaseHTTPRequestHandler):
     server_version = "homelab-panel"
     sys_version = ""
     protocol_version = "HTTP/1.1"
+    timeout = 120
+
+    def handle(self):
+        """A browser that vanishes or stalls mid-request is not an error worth a traceback."""
+        try:
+            super().handle()
+        except (BrokenPipeError, ConnectionResetError, TimeoutError):
+            self.close_connection = True
 
     def log_message(self, fmt, *args):
         if os.environ.get("HLP_LOG"):
@@ -3661,13 +3709,25 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header(k, v)
         self.end_headers()
         if self.command != "HEAD":
-            self.wfile.write(body)
+            try:
+                self.wfile.write(body)
+            except (BrokenPipeError, ConnectionResetError):
+                self.close_connection = True
 
     def fail(self, e):
         self.send(e.code, {"error": str(e)})
 
+    def content_length(self):
+        try:
+            n = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            raise Fail("The request is not valid.", 400) from None
+        if n < 0:
+            raise Fail("The request is not valid.", 400)
+        return n
+
     def read_body(self, limit):
-        n = int(self.headers.get("Content-Length") or 0)
+        n = self.content_length()
         if n > limit:
             raise Fail("That is too big.", 413)
         return self.rfile.read(n) if n else b""
@@ -3694,12 +3754,20 @@ class Handler(BaseHTTPRequestHandler):
     def do_HEAD(self):
         self.do_GET()
 
+    def other_method(self):
+        self.close_connection = True
+        self.send(405, {"error": "That kind of request is not accepted here."}, extra={"Allow": "GET, HEAD, POST"})
+
+    do_PUT = do_DELETE = do_PATCH = do_OPTIONS = other_method
+
     def do_GET(self):
         """Handle GET requests: the page files, the session and the read-only API calls."""
         try:
             if not self.host_ok():
                 return self.send(421, {"error": "Unknown address."})
             path = urllib.parse.urlparse(self.path).path
+            if path.startswith("/api/") and path != "/api/session" and self.headers.get("Origin") and not self.origin_ok(self.headers.get("Origin")):
+                raise Fail("This request came from another website.", 403)
             if path == "/api/session":
                 return self.send(200, {"loggedIn": session_ok(self.cookie_token()), "passwordSet": os.path.exists(PASSFILE), "version": VERSION})
             if path == "/api/state":
@@ -3907,9 +3975,13 @@ class Handler(BaseHTTPRequestHandler):
             fn = routes.get(path)
             if not fn:
                 raise Fail("Unknown address.", 404)
+            LOCAL.changed = None
             with LOCK:
                 res = fn(body)
-            self.send(200, dict(res, ok=True))
+            res = dict(res, ok=True)
+            if LOCAL.changed is not None and path != "/api/undo":
+                res["changed"] = LOCAL.changed
+            self.send(200, res)
         except Fail as e:
             self.fail(e)
         except ValueError:
@@ -4004,6 +4076,7 @@ def job_status_loop():
 
 
 def cmd_serve():
+    ThreadingHTTPServer.request_queue_size = 64
     srv = ThreadingHTTPServer((BIND, PORT), Handler)
     srv.daemon_threads = True
     threading.Thread(target=job_status_loop, daemon=True).start()

@@ -289,7 +289,9 @@ def auto_nextcloud():
     if old and not Opt.dry and v_nextcloud({"key": old}) is True:
         return {"key": old}
     tok = rand_hex(24)
-    rc, txt = occ("config:app:set", "serverinfo", "token", "--value=" + tok)
+    # The token goes in through standard input, so it is not on a command line and not in the setup log.
+    rc, txt = docker("exec", "-i", "-u", "www-data", "nextcloud", "sh", "-c",
+                     'read -r t && php occ config:app:set serverinfo token --value="$t"', input_text=tok + "\n", timeout=300)
     if rc != 0:
         raise Abort("occ could not set the serverinfo token: %s" % txt.strip()[-200:])
     Secrets.set("NC_SERVERINFO_TOKEN", tok)

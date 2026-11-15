@@ -2,13 +2,18 @@ class State:
     """Non-secret facts: the answers given, the one-time actions that ran and what the user acknowledged."""
     data = {}
     readonly = False
+    damaged = False
 
     @classmethod
     def load(cls):
+        cls.damaged = False
         try:
             cls.data = json.loads(read_file(STATE_FILE, "{}") or "{}")
+            if not isinstance(cls.data, dict):
+                raise ValueError("not an object")
         except ValueError:
             cls.data = {}
+            cls.damaged = True
         cls.data.setdefault("answers", {})
         cls.data.setdefault("ran", {})
         cls.data.setdefault("ack", {})
@@ -18,11 +23,31 @@ class State:
     lock = threading.RLock()
 
     @classmethod
+    def keep_damaged(cls):
+        """Keep a copy of an unreadable state file under a new name (once for the same content). Returns the copy's path, or ''."""
+        body = read_file(STATE_FILE)
+        if not body.strip() or Opt.dry:
+            return ""
+        folder = os.path.dirname(STATE_FILE)
+        try:
+            for f in sorted(os.listdir(folder)):
+                if f.startswith(os.path.basename(STATE_FILE) + ".damaged-") and read_file(os.path.join(folder, f)) == body:
+                    return os.path.join(folder, f)
+            path = "%s.damaged-%s" % (STATE_FILE, time.strftime("%Y%m%d-%H%M%S"))
+            write_file(path, body, 0o600)
+            return path
+        except OSError:
+            return ""
+
+    @classmethod
     def save(cls):
         if Opt.dry or cls.readonly:
             return
         with cls.lock:
             os.makedirs(STATE_DIR, exist_ok=True)
+            if cls.damaged:
+                cls.keep_damaged()
+                cls.damaged = False
             write_file(STATE_FILE, json.dumps(cls.data, indent=1, sort_keys=True) + "\n", 0o600)
 
     @classmethod

@@ -235,7 +235,7 @@ def filebrowser_volumes(text):
     if not m or "/srv/Backup-Pool" not in m.group(2):
         return text
     keep = [l for l in m.group(2).splitlines() if ":/srv/" not in l]
-    new = ['      - "%s:%s"' % d for d in filebrowser_mounts()] + keep
+    new = ['      - "%s:%s:ro"' % d for d in filebrowser_mounts()] + keep
     return text[:m.start(2)] + "\n".join(new) + "\n" + text[m.end(2):]
 
 

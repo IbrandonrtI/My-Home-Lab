@@ -185,6 +185,38 @@ start_containers() {
   fi
 }
 
+# start_down_containers: start every container that should be running but is not (after a crash or power cut nothing was "stopped by us", so start_containers has nothing to start). Databases first.
+start_down_containers() {
+  docker_ok 2>/dev/null || return 0
+  local n pol held db="" rest="" down
+  held=" $APPS_HELD $(cat "$PANEL_RESERVE_DIR/held" 2>/dev/null | tr '\n' ' ') "
+  down=$(docker ps -a --filter status=exited --filter status=created --format '{{.Names}}' 2>/dev/null)
+  for n in $down; do
+    case "$held" in *" $n "*) continue ;; esac
+    pol=$(docker inspect --format '{{.HostConfig.RestartPolicy.Name}}' "$n" 2>/dev/null)
+    case "$pol" in unless-stopped|always|on-failure) ;; *) continue ;; esac
+    case "$n" in *db*|*postgres*|*mysql*|*maria*|*redis*) db="$db $n" ;; *) rest="$rest $n" ;; esac
+  done
+  [ -n "${db// /}${rest// /}" ] || return 0
+  note "Starting the containers that were not running:$db$rest"
+  # shellcheck disable=SC2086
+  [ -z "${db// /}" ] || { docker_each start $db >/dev/null; sleep 5; }
+  # shellcheck disable=SC2086
+  [ -z "${rest// /}" ] || docker_each start $rest >/dev/null
+}
+
+# containers_still_down: lab containers (restart policy not "no") that are not running now.
+containers_still_down() {
+  local n pol out=""
+  docker_ok 2>/dev/null || return 0
+  for n in $(docker ps -a --filter status=exited --filter status=created --filter status=paused --filter status=restarting --format '{{.Names}}' 2>/dev/null); do
+    case " $APPS_HELD " in *" $n "*) continue ;; esac
+    pol=$(docker inspect --format '{{.HostConfig.RestartPolicy.Name}}' "$n" 2>/dev/null)
+    case "$pol" in unless-stopped|always|on-failure) out="$out $n" ;; esac
+  done
+  printf '%s' "${out# }"
+}
+
 main_pool_ok() {
   [ -n "$(branches_of main)" ] || pool_in_fstab "$MAIN_POOL" || return 0
   mountpoint -q "$MAIN_POOL"

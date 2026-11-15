@@ -71,9 +71,29 @@ def existing_mode(path):
         return 0o644
 
 
-def private_open(path, flags):
-    """Open a new file that only its owner can read until its final mode is set."""
-    return os.open(path, flags, 0o600)
+def _write_safely(path, data, binary, mode, owner):
+    """Write a file atomically. The temporary file is created new, with a random name, in the same folder, and never follows a link; a link in place of the target is replaced, not written through."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    want = existing_mode(path) if mode is None else mode
+    fd, tmp = tempfile.mkstemp(prefix=os.path.basename(path) + ".tmp-", dir=os.path.dirname(path))
+    try:
+        with os.fdopen(fd, "wb" if binary else "w") as f:
+            f.write(data)
+            f.flush()
+            os.fsync(f.fileno())
+            os.fchmod(f.fileno(), want)
+            if owner and not FAKE:
+                try:
+                    os.fchown(f.fileno(), *owner)
+                except OSError:
+                    pass
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def write_file(path, text, mode=None, owner=None):
@@ -81,28 +101,14 @@ def write_file(path, text, mode=None, owner=None):
     if Opt.dry:
         out("      would write: %s" % path)
         return
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = path + ".tmp-hls"
-    with open(tmp, "w", opener=private_open) as f:
-        f.write(text)
-    os.chmod(tmp, existing_mode(path) if mode is None else mode)
-    os.replace(tmp, path)
-    if owner:
-        chown(path, *owner)
+    _write_safely(path, text, False, mode, owner)
 
 
 def write_bytes(path, data, mode=None, owner=None):
     if Opt.dry:
         out("      would write: %s" % path)
         return
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = path + ".tmp-hls"
-    with open(tmp, "wb", opener=private_open) as f:
-        f.write(data)
-    os.chmod(tmp, existing_mode(path) if mode is None else mode)
-    os.replace(tmp, path)
-    if owner:
-        chown(path, *owner)
+    _write_safely(path, data, True, mode, owner)
 
 
 def chown(path, uid, gid, recursive=False):

@@ -1081,4 +1081,7 @@ html[data-hl-fit="1440"] #information-widgets { zoom: 0.80; }
   #hl-bell, #hl-install { pointer-events: auto; box-shadow: 0 -8px 28px -10px rgba(0, 0, 0, 0.7); }
   #hl-bell .hl-bellpop, #hl-install .hl-bellpop { top: auto; bottom: calc(100% + 10px); }
 }
+@media (max-width: 520px) {
+  #inner_wrapper #myTab li > button, #inner_wrapper #myTab li > a { min-width: 0; max-width: 100%; padding-left: 8px !important; padding-right: 8px !important; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.86rem; }
+}
 /* <<< homelab tabs <<< */

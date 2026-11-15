@@ -5,7 +5,7 @@ services:
     ports:
       - "8081:80"
     volumes:
-      - "/mnt/backup:/srv/Backup-Pool"
+      - "/mnt/backup:/srv/Backup-Pool:ro"
       - filebrowser_data:/database
 
 volumes:

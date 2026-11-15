@@ -608,6 +608,9 @@ def update_homepage_stack():
     """Change the Homepage stack in Portainer to mount the whole /mnt folder. Returns "changed", "unchanged", or "dry" for a dry run."""
     manual = ("In Portainer open the stack 'homepage' > Editor. Replace the lines that mount /mnt/storage and /mnt/backup with this one line "
               "under volumes, then click Update the stack:\n      - %s" % HOMEPAGE_PARENT_LINE)
+    if "portainer" not in containers_running():
+        warn("Portainer is not running, so the Homepage stack was not changed. Start it (sudo docker start portainer), then run this again.")
+        return "unchanged"
     if not Secrets.get("PORTAINER_TOKEN") or not Portainer.alive():
         warn("Portainer cannot be reached with a saved key, so the Homepage stack is not changed here. " + manual)
         return "unchanged"

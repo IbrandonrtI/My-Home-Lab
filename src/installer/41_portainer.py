@@ -433,9 +433,15 @@ def filebrowser_destinations():
     return {d.strip() for d in txt.split("|") if d.strip()} if rc == 0 else set()
 
 
+def filebrowser_writable_backup_folders():
+    """The backup folders FileBrowser can still change (they should be read-only, so a FileBrowser login cannot delete the backups)."""
+    rc, txt = docker("inspect", "-f", "{{range .Mounts}}{{if .RW}}{{.Destination}}|{{end}}{{end}}", "filebrowser-filebrowser-1", timeout=30)
+    return {d.strip() for d in txt.split("|") if d.strip().startswith("/srv/")} if rc == 0 else set()
+
+
 @step
 class FileBrowserDrives(Step):
-    id, group, title = "filebrowser-drives", "Services", "FileBrowser shows the backup drives in a Backup-Pool folder, each in a folder named after the drive"
+    id, group, title = "filebrowser-drives", "Services", "FileBrowser shows the backup drives (read-only) in a Backup-Pool folder, each in a folder named after the drive"
     needs = ("stack-filebrowser",)
 
     def applies(self):
@@ -444,7 +450,7 @@ class FileBrowserDrives(Step):
     def probe(self):
         want = {d for _, d in filebrowser_mounts()}
         have = {d for d in filebrowser_destinations() if d.startswith("/srv/")}
-        return "done" if have == want else "todo"
+        return "done" if have == want and not filebrowser_writable_backup_folders() else "todo"
 
     def detail(self):
         return ", ".join(d.replace("/srv/", "") for _, d in filebrowser_mounts())

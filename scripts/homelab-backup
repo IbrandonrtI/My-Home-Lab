@@ -15,8 +15,15 @@ Settings can be overridden in /etc/homelab-backup.conf (see the guide).
 The result of each run is saved in /var/lib/homelab-backup/last-run as
   date|result|destination|seconds|bytes   (bytes = size of the whole backup folder)
 
+Every run also checks a sample of the copied files against the originals (the files copied
+in this run first, then a different random sample each night, up to VERIFY_MB megabytes,
+2048 by default, 0 turns it off). A copy that differs is copied again, and the run says so.
+
 Usage:
   sudo homelab-backup           run the backup now (about a minute, longer after many new files)
+  sudo homelab-backup verify    compare EVERY file of the backup with the original and list the ones that differ
+                                (reads all the data on both drives, so it can take hours)
+  sudo homelab-backup verify --repair   the same, and copy the files that differ again
   homelab-backup help           this text (nothing is started)
   homelab-backup version
 It takes no other options: anything else is refused, so a typo can never start a backup by accident.
@@ -24,9 +31,15 @@ Watch a backup while it runs:  sudo tail -f /var/log/homelab-backup.log
 HELP
 }
 
-VERSION="1.1"
-case "${1:-}" in
-  "") ;;
+VERSION="1.2"
+MODE=backup
+REPAIR=0
+case "${1-x}" in
+  x) ;;
+  verify) MODE=verify; [ "${2:-}" = "--repair" ] && REPAIR=1
+          if [ -n "${2:-}" ] && [ "$REPAIR" = 0 ]; then echo "homelab-backup: unknown option '$2'. Use: sudo homelab-backup verify [--repair]" >&2; exit 2; fi ;;
+  "") echo "homelab-backup: an empty argument was given. Nothing was started." >&2
+      echo "To run the backup now:  sudo homelab-backup      For help:  homelab-backup help" >&2; exit 2 ;;
   -h | --help | help) usage; exit 0 ;;
   version | --version) echo "homelab-backup $VERSION"; exit 0 ;;
   *) echo "homelab-backup: unknown option '$1'. Nothing was started." >&2
@@ -47,6 +60,7 @@ NEXTCLOUD_DB_CONTAINER="nextcloud_db"
 NEXTCLOUD_DB_USER="nextcloud"
 NEXTCLOUD_DB_NAME="nextcloud"
 MIN_FREE_GB=20
+VERIFY_MB=2048
 LAB_USER="${HOMELAB_USER:-$(getent passwd 1000 | cut -d: -f1)}"
 LAB_HOME="$(getent passwd "$LAB_USER" 2>/dev/null | cut -d: -f6)"
 LAB_HOME="${LAB_HOME:-/home/$LAB_USER}"
@@ -81,6 +95,12 @@ rsync_ok() { [ "$1" -eq 0 ] || [ "$1" -eq 24 ]; }
 finish() {
   local result=OK secs=$(( $(date +%s) - START )) size=""
   [ "$ERRORS" -eq 0 ] || result="FAILED ($ERRORS problem(s): ${NOTES%; })"
+  if [ "$MODE" = verify ]; then
+    log "verify finished: $result in ${secs}s"
+    if [ "$ERRORS" -eq 0 ]; then echo "Verify finished: every file matches (${secs}s)." >&2; else echo "Verify found problems: ${NOTES%; }" >&2; fi
+    [ "$ERRORS" -eq 0 ]
+    exit $?
+  fi
   if [ -n "$DEST" ] && [ -d "$DEST" ]; then size=$(timeout 300 du -sb "$DEST" 2>/dev/null | awk '{print $1}'); fi
   mkdir -p "$(dirname "$STATUS_FILE")"
   printf '%s|%s|%s|%s|%s\n' "$(date '+%F %H:%M')" "$result" "${DEST:-none}" "$secs" "$size" >"$STATUS_FILE"
@@ -99,8 +119,113 @@ finish() {
 [ "$(id -u)" = 0 ] || { echo "Run as root: sudo homelab-backup"; exit 1; }
 mkdir -p "$(dirname "$LOGFILE")"
 exec 8>/var/lock/homelab-backup.lock
-flock -n 8 || { log "another backup is already running; skipping"; exit 0; }
+if ! flock -n 8; then
+  log "another backup is already running; skipping"
+  if [ -t 2 ]; then echo "Another backup is already running, so this one was not started. Watch it with:  sudo tail -f $LOGFILE" >&2; exit 3; fi
+  exit 0
+fi
 log "start"
+
+# Make the next read come from the drives, not from memory, so a damaged copy cannot hide behind the cache.
+drop_caches() { sync; { echo 3 >/proc/sys/vm/drop_caches; } 2>/dev/null || true; }
+
+# verify_list SRC DEST_MAIN CHANGED_FILE BUDGET_MB: print (NUL-separated) the files to compare: the ones copied in this run first, then a random sample, up to the size budget.
+verify_list() {
+  python3 - "$@" <<'PY'
+import os, random, sys
+src, dst, changed, budget = sys.argv[1], sys.argv[2], sys.argv[3], int(sys.argv[4]) * 1048576
+picked, seen, used = [], set(), 0
+def add(rel):
+    global used
+    if rel in seen or "\\#" in rel:
+        return False
+    try:
+        a, b = os.lstat(os.path.join(src, rel)), os.lstat(os.path.join(dst, rel))
+    except OSError:
+        return False
+    if not (os.path.isfile(os.path.join(src, rel)) and not os.path.islink(os.path.join(src, rel))) or a.st_size == 0:
+        return False
+    if picked and used + a.st_size > budget:
+        return False
+    seen.add(rel); picked.append(rel); used += a.st_size
+    return True
+try:
+    names = [l.rstrip("\n") for l in open(changed, errors="replace")]
+except OSError:
+    names = []
+for n in names:
+    add(n)
+rest = []
+for d, _dirs, files in os.walk(dst):
+    for f in files:
+        rest.append(os.path.relpath(os.path.join(d, f), dst))
+random.shuffle(rest)
+for rel in rest:
+    if used >= budget:
+        break
+    add(rel)
+sys.stdout.buffer.write(b"\0".join(p.encode("utf-8", "surrogateescape") for p in picked))
+PY
+}
+
+# differing_files LIST: the files in LIST (NUL-separated) whose content is not the same in the backup as in the original.
+differing_files() {
+  rsync -rn --checksum --itemize-changes --from0 --files-from="$1" "$SRC/" "$DEST/main/" 2>>"$LOGFILE" | sed -n 's/^>f[^ ]* //p'
+}
+
+# verify_sample CHANGED_FILE: compare a sample of the backup with the originals and copy again what differs.
+verify_sample() {
+  [ "$VERIFY_MB" -gt 0 ] 2>/dev/null || return 0
+  local list bad n total
+  list=$(mktemp) || return 0
+  verify_list "$SRC" "$DEST/main" "$1" "$VERIFY_MB" >"$list" 2>>"$LOGFILE"
+  total=$(tr -cd '\0' <"$list" | wc -c)
+  if [ ! -s "$list" ]; then rm -f "$list"; return 0; fi
+  total=$((total + 1))
+  drop_caches
+  bad=$(mktemp) || { rm -f "$list"; return 0; }
+  differing_files "$list" >"$bad"
+  if [ -s "$bad" ]; then
+    n=$(wc -l <"$bad")
+    log "verify: $n of $total checked file(s) differ from the originals, copying them again"
+    tr '\n' '\0' <"$bad" | rsync -aH --numeric-ids --checksum --from0 --files-from=- "$SRC/" "$DEST/main/" >>"$LOGFILE" 2>&1
+    drop_caches
+    differing_files "$list" >"$bad"
+    if [ -s "$bad" ]; then
+      fail "$(wc -l <"$bad") file(s) in the backup still differ from the originals after copying them again (the backup drive may be failing): see $LOGFILE"
+      while IFS= read -r f; do log "verify: still different: $f"; done <"$bad"
+    else
+      log "verify: the $n file(s) were copied again and now match (the backup drive had damaged them)"
+      fail "$n file(s) were damaged on the backup drive and have been copied again (the drive may be failing, check it with: sudo drives check)"
+    fi
+  else
+    log "verify: $total file(s) checked, all match the originals"
+  fi
+  rm -f "$list" "$bad"
+}
+
+# verify_all [repair]: compare EVERY file (the `verify` command).
+verify_all() {
+  local all bad n
+  all=$(mktemp) || return 1
+  bad=$(mktemp) || return 1
+  ( cd "$DEST/main" && find . -type f -print0 ) | sed -z 's|^\./||' >"$all"
+  drop_caches
+  echo "Comparing every file (this reads all the data on both drives)..." >&2
+  differing_files "$all" >"$bad"
+  n=$(wc -l <"$bad")
+  if [ "$n" -eq 0 ]; then log "verify: every file matches"; rm -f "$all" "$bad"; return 0; fi
+  echo "$n file(s) in the backup differ from the originals (a file you changed after the last backup also shows here):" >&2
+  head -n 50 "$bad" >&2
+  if [ "$REPAIR" = 1 ]; then
+    tr '\n' '\0' <"$bad" | rsync -aH --numeric-ids --checksum --from0 --files-from=- "$SRC/" "$DEST/main/" >>"$LOGFILE" 2>&1
+    echo "They were copied again from the originals." >&2
+  else
+    echo "To copy them again:  sudo homelab-backup verify --repair" >&2
+  fi
+  fail "$n file(s) in the backup differ from the originals"
+  rm -f "$all" "$bad"
+}
 
 backup_drive_timers() {
   command -v hdparm >/dev/null 2>&1 || return 0
@@ -153,12 +278,21 @@ if [ ! -d "$DEST/main" ]; then
   fi
 fi
 mkdir -p "$DEST/main" "$DEST/boot-configs" "$DEST/db-dumps" "$DEST/_deleted/$TODAY"
+# files that an earlier, interrupted run left half written
+rm -rf "$DEST/.rsync-tmp"; mkdir -p "$DEST/.rsync-tmp"
+rm -f "$DEST"/db-dumps/*.tmp
+
+if [ "$MODE" = verify ]; then
+  verify_all
+  finish
+fi
 
 if docker info >/dev/null 2>&1 && docker ps --format '{{.Names}}' | grep -qx "$NEXTCLOUD_DB_CONTAINER"; then
   dump="$DEST/db-dumps/nextcloud-$TODAY.sql.gz"
-  if docker exec "$NEXTCLOUD_DB_CONTAINER" pg_dump -U "$NEXTCLOUD_DB_USER" "$NEXTCLOUD_DB_NAME" | gzip -c >"$dump.tmp" \
+  if ( umask 077; docker exec "$NEXTCLOUD_DB_CONTAINER" pg_dump -U "$NEXTCLOUD_DB_USER" "$NEXTCLOUD_DB_NAME" | gzip -c >"$dump.tmp" ) \
      && gzip -t "$dump.tmp" && [ "$(stat -c %s "$dump.tmp")" -gt 1024 ]; then
     mv "$dump.tmp" "$dump"
+    chmod 600 "$dump"
     log "database dump saved: $dump"
   else
     rm -f "$dump.tmp"
@@ -168,11 +302,17 @@ else
   fail "container $NEXTCLOUD_DB_CONTAINER is not running, database not dumped"
 fi
 
-rsync -aH --numeric-ids --delete --exclude=/lost+found \
+changed=$(mktemp)
+rsync -aHS --numeric-ids --delete --exclude=/lost+found \
+  --temp-dir="$DEST/.rsync-tmp" \
   --backup --backup-dir="$DEST/_deleted/$TODAY/main" \
-  "$SRC/" "$DEST/main/" >>"$LOGFILE" 2>&1
-rc=$?
+  --out-format='%i|%n' "$SRC/" "$DEST/main/" 2>>"$LOGFILE" | sed -n 's/^>f[^|]*|//p' >"$changed"
+rc=${PIPESTATUS[0]}
 if rsync_ok "$rc"; then log "main storage copied"; else fail "rsync of main storage exited with code $rc"; fi
+verify_sample "$changed"
+rm -f "$changed"
+rm -rf "$DEST/.rsync-tmp"
+find "$DEST/db-dumps" -maxdepth 1 -type f -name 'nextcloud-*.sql.gz' -perm /077 -exec chmod 600 {} + 2>/dev/null
 
 for p in "${CONFIG_PATHS[@]}"; do
   if [ ! -e "$p" ]; then log "config path not found, skipped: $p"; continue; fi

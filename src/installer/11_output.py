@@ -137,7 +137,9 @@ def log(msg):
             if word and len(word) >= 6:
                 msg = msg.replace(word, "********")
         os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
-        with open(LOG_FILE, "a") as f:
+        fd = os.open(LOG_FILE, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+        with os.fdopen(fd, "a") as f:
+            os.fchmod(f.fileno(), 0o600)
             f.write("%s %s\n" % (time.strftime("%F %T"), msg))
     except OSError:
         pass

@@ -42,6 +42,7 @@ class ScriptsInstalled(Step):
         return "done"
 
     def run(self):
+        panel_changed = False
         for n, d, body in self._wanted():
             if not body:
                 raise Abort("The repository copy of %s is missing (looked in %s)." % (n, Ctx.repo))
@@ -49,6 +50,10 @@ class ScriptsInstalled(Step):
             if os.path.exists(dst) and read_file(dst) == body:
                 continue
             write_file(dst, body, 0o755)
+            if n == "homelab-panel":
+                panel_changed = True
+        if panel_changed and not Opt.dry:
+            act(["systemctl", "try-restart", "homelab-panel"])
         for old in RETIRED_SCRIPTS:
             if os.path.exists(P(old)):
                 os.remove(P(old))

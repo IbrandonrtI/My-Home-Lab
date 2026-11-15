@@ -1,4 +1,4 @@
-log()  { printf '%s %s\n' "$(date '+%F %T')" "$*" >>"$LOGFILE" 2>/dev/null || true; }
+log()  { { printf '%s %s\n' "$(date '+%F %T')" "$*" >>"$LOGFILE"; } 2>/dev/null || true; }
 say()  { printf '%s\n' "$*"; }
 note() { printf '%s\n' "$*" >&2; }
 why() { [ -n "${PANEL_RESERVE_DIR:-}" ] && [ -d "$PANEL_RESERVE_DIR" ] && printf '%s\n' "$2" >"$PANEL_RESERVE_DIR/${PROG_ITEM:-none}.$1" 2>/dev/null; return 0; }

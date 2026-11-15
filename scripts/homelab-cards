@@ -183,13 +183,19 @@ def write_text(path, text, like=None):
         st = os.stat(like)
     except OSError:
         st = None
+    try:
+        owner = st or os.stat(os.path.dirname(path) or ".")
+    except OSError:
+        owner = None
     tmp = path + ".homelab-cards.tmp"
-    with open(tmp, "w", encoding="utf-8", opener=lambda p, fl: os.open(p, fl, 0o600)) as f:
+    if os.path.islink(tmp):
+        os.unlink(tmp)
+    with open(tmp, "w", encoding="utf-8", opener=lambda p, fl: os.open(p, fl | os.O_NOFOLLOW, 0o600)) as f:
         f.write(text)
     os.chmod(tmp, (st.st_mode & 0o777) if st else 0o644)
-    if st:
+    if owner:
         try:
-            os.chown(tmp, st.st_uid, st.st_gid)
+            os.chown(tmp, owner.st_uid, owner.st_gid)
         except OSError:
             pass
     os.replace(tmp, path)
@@ -202,11 +208,41 @@ def backup_once(path, suffix=".before-cards"):
         shutil.copystat(path, path + suffix)
 
 
+def keep_damaged_copy(path):
+    """A state file that exists but cannot be read is copied aside once, so a later save does not destroy it."""
+    try:
+        with open(path, "rb") as f:
+            body = f.read()
+    except OSError:
+        return
+    if not body.strip() or DRY:
+        return
+    import glob
+    for old in glob.glob(path + ".damaged-*"):
+        try:
+            with open(old, "rb") as f:
+                if f.read() == body:
+                    return
+        except OSError:
+            continue
+    try:
+        fd = os.open("%s.damaged-%s" % (path, time.strftime("%Y%m%d-%H%M%S")), os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        with os.fdopen(fd, "wb") as f:
+            f.write(body)
+    except OSError:
+        pass
+
+
 def load_state():
     try:
         with open(STATE_FILE, encoding="utf-8") as f:
             st = json.load(f)
-    except (OSError, ValueError):
+        if not isinstance(st, dict):
+            raise ValueError("not an object")
+    except ValueError:
+        keep_damaged_copy(STATE_FILE)
+        st = {}
+    except OSError:
         st = {}
     st.setdefault("managed", {})
     st.setdefault("ignore", [])
@@ -688,6 +724,10 @@ class Files:
                 backup_once(SERVICES)
                 write_text(SERVICES, new_svc)
         if self.css != self.css_text and not DRY:
+            if not os.path.exists(CSS):
+                # Never build custom.css from nothing: it would replace the whole look with a few color lines.
+                note("custom.css is missing, so the card colors were not written. Restore it (control panel > Customize > Undo, or: sudo homelab-restore-configs) and this is done again.")
+                return
             backup_once(CSS)
             write_text(CSS, self.css)
 

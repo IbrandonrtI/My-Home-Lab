@@ -26,7 +26,7 @@ The full report is saved in your home folder as homelab-selftest-<date>.txt. Kno
 HELP
 }
 
-VERSION="1.8"
+VERSION="1.9"
 case "${1:-}" in
   version|--version) echo "homelab-selftest $VERSION"; exit 0 ;;
   -h|--help|help) usage; exit 0 ;;
@@ -187,6 +187,40 @@ check_scripts_vs_repo() {
 }
 
 # Part 2: check the state of the machine.
+# The dashboard's own files: present, not empty, valid, and usable by their owner. Homepage shows an empty page (or no cards) when one of them is broken, and nothing else complains.
+check_dashboard_files() {
+  local hp="$REAL_HOME/homepage-config" f
+  [ -d "$hp" ] || return 0
+  for f in settings.yaml services.yaml bookmarks.yaml widgets.yaml; do
+    if [ ! -e "$hp/$f" ]; then warn "$hp/$f is missing (control panel > Customize > Undo, or: sudo homelab-restore-configs)"; continue; fi
+    if [ ! -s "$hp/$f" ]; then fail "$hp/$f is empty, so the dashboard loses that part (control panel > Customize > Undo, or: sudo homelab-restore-configs)"; continue; fi
+    if python3 -c 'import yaml' 2>/dev/null; then
+      if python3 - "$hp/$f" <<'PY' 2>/dev/null
+import sys, yaml
+yaml.safe_load(open(sys.argv[1], encoding="utf-8"))
+PY
+      then ok "$f is valid YAML"; else fail "$hp/$f is not valid YAML, so Homepage cannot read it (control panel > Customize > Undo, or: sudo homelab-restore-configs)"; fi
+    fi
+    if [ "$REAL_USER" != root ] && ! sudo -u "$REAL_USER" test -w "$hp/$f" 2>/dev/null; then warn "$REAL_USER cannot change $hp/$f, so the control panel cannot save it (fix: sudo chown $REAL_USER: $hp/$f)"; fi
+  done
+  if [ ! -e "$hp/custom.css" ]; then fail "$hp/custom.css is missing, so the dashboard has lost its look (control panel > Customize > Undo, or: sudo homelab-restore-configs)"
+  elif [ "$(stat -c %U "$hp/custom.css")" != "$REAL_USER" ] && [ "$REAL_USER" != root ]; then warn "custom.css is owned by $(stat -c %U "$hp/custom.css"), so the control panel cannot save the look (fix: sudo chown $REAL_USER: $hp/custom.css)"; fi
+  if [ "$REAL_USER" != root ] && ! sudo -u "$REAL_USER" test -w "$hp" 2>/dev/null; then warn "$REAL_USER cannot write in $hp, so the control panel cannot save anything (fix: sudo chown $REAL_USER: $hp)"; fi
+  local st=/root/.homelab-setup/state.json
+  if [ -s "$st" ]; then
+    if python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$st" 2>/dev/null; then ok "the setup state file is valid"; else fail "the setup state file $st is damaged (the installer keeps a copy as .damaged-<date> before it writes a new one)"; fi
+  fi
+}
+
+# The control panel and the web terminal are not apps in Docker, so nothing else watches them.
+check_panel_running() {
+  local u
+  for u in homelab-panel homelab-terminal; do
+    systemctl list-unit-files "$u.service" 2>/dev/null | grep -q "$u" || continue
+    if [ "$(systemctl is-active "$u" 2>/dev/null)" = active ]; then ok "$u is running"; else fail "$u is not running (sudo systemctl start $u, or: sudo homelab-setup refresh)"; fi
+  done
+}
+
 part_state() {
   section "Part 2: the state of the machine"
   local n b pool names f p
@@ -356,6 +390,8 @@ PY
   if [ -f "$REAL_HOME/homepage-config/services.yaml" ]; then
     if [ $(( 0$(mode_of "$REAL_HOME/homepage-config/services.yaml") & 077 )) -eq 0 ]; then ok "services.yaml (it holds the widget keys) can be read by its owner only"; else warn "services.yaml holds the widget keys but other users can read it (mode $(mode_of "$REAL_HOME/homepage-config/services.yaml")); sudo homelab-setup refresh closes it"; fi
   fi
+  check_dashboard_files
+  check_panel_running
   for f in drives homelab-backup homelab-update homelab-restore-configs homelab-sample homelab-cards homelab-setup homelab; do
     p=$(command -v "$f" 2>/dev/null) || continue
     [ -x "$p" ] || fail "$p is not executable"

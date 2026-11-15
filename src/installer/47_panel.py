@@ -110,6 +110,20 @@ def panel_set_password(pw):
                 chown(p, Ctx.uid, Ctx.gid)
 
 
+def panel_runs_old_code():
+    """True when the panel service started before its script was last replaced, so it still runs the old code."""
+    if FAKE:
+        return False
+    rc, pid = run(["systemctl", "show", "-p", "MainPID", "--value", "homelab-panel"])
+    pid = pid.strip()
+    if rc != 0 or not pid.isdigit() or pid == "0":
+        return False
+    try:
+        return os.stat("/usr/local/sbin/homelab-panel").st_mtime > os.stat("/proc/" + pid).st_mtime + 2
+    except OSError:
+        return False
+
+
 @step
 class PanelFiles(Step):
     """Install the control panel's page files and sudo rule, and start its service."""
@@ -126,10 +140,12 @@ class PanelFiles(Step):
                 return "todo"
         if panel_sudoers_text() and read_file(P(PANEL_SUDOERS)) != panel_sudoers_text():
             return "todo"
-        return "done" if run(["systemctl", "is-active", "homelab-panel"])[1].strip() == "active" else "todo"
+        if run(["systemctl", "is-active", "homelab-panel"])[1].strip() != "active":
+            return "todo"
+        return "todo" if panel_runs_old_code() else "done"
 
     def run(self):
-        changed = False
+        changed = panel_runs_old_code()
         for path, body in panel_files_wanted():
             if not body:
                 raise Abort("A file of the control panel is missing in the repository (looked for it in %s/panel/ui)." % Ctx.repo)

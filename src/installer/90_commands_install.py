@@ -11,6 +11,10 @@ def ensure_root():
 
 def load_all():
     State.load()
+    if State.damaged:
+        kept = State.keep_damaged()
+        warn("The setup state file %s is damaged and cannot be read. %sAnswers you gave earlier may have to be given again." % (
+            STATE_FILE, ("A copy was kept as %s. " % kept) if kept else "It is kept under a new name (.damaged-<date>) before a new one is written. "))
     Secrets.load()
     Ctx.detect()
     apply_adopted_ports()
@@ -323,6 +327,15 @@ def system_check():
     else:
         bad("DNS: /etc/resolv.conf is empty or points at Tailscale (100.100.100.100). Run `sudo homelab-setup refresh`.")
         problems.append("dns")
+    if panel_applies():
+        for unit, label in (("homelab-panel", "The control panel"), ("homelab-terminal", "The web terminal")):
+            if not os.path.exists(P("/etc/systemd/system/%s.service" % unit)):
+                continue
+            if run(["systemctl", "is-active", unit])[1].strip() == "active":
+                good("%s is running" % label)
+            else:
+                bad("%s is not running. Start it with: sudo systemctl start %s" % (label, unit))
+                problems.append(unit)
     out("")
     out("  %sServices on the local network%s" % (B, N))
     for key, label in SERVICE_LABELS:
@@ -347,8 +360,11 @@ def system_check():
                     container == "navidrome" or (container == "audiomuse-flask" and audiomuse_wanted()) or (container == "navilist" and navilist_wanted())):
                 out("  %s%s%s %-18s %s  (no answer)" % (R, S_BAD, N, label, mark(link)))
                 problems.append(container)
+            elif container in up:
+                out("  %s%s%s %-18s %s  (the container runs but the page does not answer: sudo docker logs --tail 30 %s)" % (R, S_BAD, N, label, mark(link), container))
+                problems.append(container)
             else:
-                out("  %s%s%s %-18s %s  (no answer: check that the container is running)" % (Y, S_WAIT, N, label, mark(link)))
+                out("  %s%s%s %-18s %s  (not running: sudo docker start %s)" % (Y, S_WAIT, N, label, mark(link), container))
     if Ctx.fqdn:
         out("")
         out("  %sServices over Tailscale%s %s(use these from other devices; a machine cannot open its own Tailscale addresses)%s" % (B, N, D, N))
@@ -410,7 +426,6 @@ def cmd_checklist():
     if Mode.existing:
         say("This machine already runs the lab (set up by hand). The installer only reads it and changes nothing.")
     show_checklist(res, show_all=Opt.all)
-    write_progress(res)
     next_step_section(res)
 
 

@@ -18,7 +18,7 @@ EXCLUDES=(--exclude=/etc/fstab --exclude=/usr/local/ --exclude=/root-crontab.txt
 STOPPED=""
 PREVIEW_ONLY=0
 
-log()  { printf '%s %s\n' "$(date '+%F %T')" "$*" >>"$LOGFILE" 2>/dev/null || true; }
+log()  { { printf '%s %s\n' "$(date '+%F %T')" "$*" >>"$LOGFILE"; } 2>/dev/null || true; }
 say()  { printf '%s\n' "$*"; }
 note() { printf '%s\n' "$*" >&2; }
 warn() { printf 'WARNING: %s\n' "$*" >&2; log "WARN $*"; }
@@ -43,6 +43,8 @@ Without BACKUP_FOLDER it looks at $BACKUP_POOL, then at the place the last backu
 Never restored: /etc/fstab, /usr/local/, root-crontab.txt, /var/lib/docker/. Nothing is deleted.
 EOF
 }
+
+for a in "$@"; do [ -n "$a" ] || { echo "An empty word was given, so nothing was restored. Run  homelab-restore-configs help  to see the commands." >&2; exit 2; }; done
 
 case "${1:-}" in
   --version|--help|-h) ;;
@@ -109,10 +111,24 @@ start_stopped() {
 preview() {
   local src=$1 dst=$2; shift 2
   OUT=$(mktemp); STATS=$(mktemp)
-  rsync -aHn --numeric-ids --out-format='%i %n' --stats "$@" "$src" "$dst" >"$OUT" 2>"$STATS.err" || {
+  rsync -aHnc --numeric-ids --out-format='%i %n' --stats "$@" "$src" "$dst" >"$OUT" 2>"$STATS.err" || {
     cat "$STATS.err" >&2; rm -f "$OUT" "$STATS" "$STATS.err"; die "rsync could not read the backup."; }
   grep -E '^>f' "$OUT" | grep -E '^>f\+\+\+\+\+\+\+\+\+ ' >"$STATS.new" || true
   grep -E '^>f' "$OUT" | grep -v -E '^>f\+\+\+\+\+\+\+\+\+ ' >"$STATS.chg" || true
+  NEWER_N=0
+  if [ -s "$STATS.chg" ]; then
+    local line f marked="$STATS.chg.marked"
+    : >"$marked"
+    while IFS= read -r line; do
+      f=${line#* }
+      if [ -e "$dst$f" ] && [ "$dst$f" -nt "$src$f" ]; then
+        printf '%s (newer on this server than in the backup)\n' "$line" >>"$marked"; NEWER_N=$((NEWER_N + 1))
+      else
+        printf '%s\n' "$line" >>"$marked"
+      fi
+    done <"$STATS.chg"
+    mv "$marked" "$STATS.chg"
+  fi
   NEW_N=$(wc -l <"$STATS.new"); CHG_N=$(wc -l <"$STATS.chg")
   BYTES=$(awk -F': ' '/^Total transferred file size/ {gsub(/[^0-9]/,"",$2); print $2}' "$OUT")
   BYTES=${BYTES:-0}
@@ -132,6 +148,7 @@ cleanup_preview() { rm -f "${OUT:-}" "${STATS:-}" "${STATS:-}.err" "${STATS:-}.n
 report_preview() {
   say "$1: $NEW_N"
   say "$2: $CHG_N"
+  [ "${NEWER_N:-0}" -eq 0 ] || say "WARNING: $NEWER_N of these files are NEWER on this server than in the backup. Restoring would replace newer settings with older ones."
   say "Total size to copy: $(human "$BYTES")"
   say ""
   show_names "$NEW_LIST" "New files"
@@ -174,7 +191,7 @@ restore_configs() {
   say "  - The files are as old as the last backup."
   confirm_restore || return 1
   say "Copying..."
-  if ! rsync -aH --numeric-ids "${EXCLUDES[@]}" "$src/" "$ROOT/"; then
+  if ! rsync -aHc --numeric-ids "${EXCLUDES[@]}" "$src/" "$ROOT/"; then
     log "restore of config files from $bk FAILED"
     die "The copy reported an error. Run the command again; it only copies what is missing or different."
   fi
