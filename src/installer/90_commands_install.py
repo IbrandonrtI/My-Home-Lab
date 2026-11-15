@@ -3,7 +3,10 @@ def ensure_root():
         return
     if not have("sudo"):
         raise SystemExit("homelab-setup must run as root, and sudo is not installed.")
-    os.execvp("sudo", ["sudo", "-E", sys.executable] + sys.argv)
+    words = ["sudo", "-E"]
+    if os.environ.get("TS_AUTHKEY_FILE"):
+        words += ["env", "TS_AUTHKEY_FILE=" + os.path.abspath(os.environ["TS_AUTHKEY_FILE"])]
+    os.execvp("sudo", words + [sys.executable] + sys.argv)
 
 
 def load_all():

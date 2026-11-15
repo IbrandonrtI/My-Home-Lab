@@ -651,12 +651,28 @@ def cmd_fill():
 
 
 def cmd_mark(kind, sid):
+    """done, skip and unskip: only the steps that wait for a person can be marked, never an automatic one. Marking a step done clears an earlier skip."""
     load_all()
+    names = ", ".join(s.id for s in STEPS if s.kind == "ack" or s.optional)
     if sid not in BY_ID:
-        raise Abort("There is no step called '%s'. Names: %s" % (sid, ", ".join(s.id for s in STEPS if s.kind == "ack" or s.optional)))
+        raise Abort("There is no step called '%s'. Names: %s" % (sid, names))
+    step_ = BY_ID[sid]
+    if kind == "unskip":
+        if not State.data["skip"].pop(sid, None):
+            raise Abort("'%s' was not skipped." % sid)
+        State.save()
+        good("The step is no longer skipped: %s" % step_.title)
+        write_progress(evaluate())
+        return
+    if kind == "skip" and not step_.optional:
+        raise Abort("'%s' cannot be skipped. Steps that can be skipped: %s" % (sid, ", ".join(s.id for s in STEPS if s.optional)))
+    if kind == "ack" and not (step_.kind == "ack" or step_.optional):
+        raise Abort("'%s' is done by the installer itself, so it cannot be marked by hand. Steps you can mark: %s" % (sid, names))
     State.data[kind][sid] = time.strftime("%F %T")
+    if kind == "ack":
+        State.data["skip"].pop(sid, None)
     State.save()
-    good("%s: %s" % ("Marked done" if kind == "ack" else "Skipped", BY_ID[sid].title))
+    good("%s: %s" % ("Marked done" if kind == "ack" else "Skipped", step_.title))
     write_progress(evaluate())
 
 
@@ -697,6 +713,26 @@ AUTO_EVERY = 20 * 60
 AUTO_RETRY = 3 * 3600
 
 
+LOCKED_COMMANDS = ("install", "refresh", "fill", "uninstall", "growdisk", "adguard", "filebrowser", "homepage", "audiomuse", "navilist", "lastfm", "cards", "done", "skip", "unskip")
+COMMAND_LOCK = P("/run/homelab-setup-command.lock")
+command_lock_fd = None
+
+
+def take_command_lock(cmd, args):
+    """Only one command that changes things runs at a time, so two of them cannot deploy the same stack or write the state at once. Listing, a dry run and `upgrade` (which starts a refresh itself) do not take it."""
+    global command_lock_fd
+    if cmd not in LOCKED_COMMANDS or Opt.dry or (cmd == "cards" and args[:1] == ["list"]):
+        return
+    try:
+        os.makedirs(os.path.dirname(COMMAND_LOCK), exist_ok=True)
+        command_lock_fd = os.open(COMMAND_LOCK, os.O_RDWR | os.O_CREAT, 0o600)
+        fcntl.flock(command_lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        raise Abort("Another homelab-setup command is running and changing things right now. Wait for it to finish, then run this again.") from None
+    except OSError:
+        command_lock_fd = None
+
+
 def another_setup_running():
     me = os.getpid()
     for d in glob.glob("/proc/[0-9]*"):
@@ -706,7 +742,7 @@ def another_setup_running():
             words = read_file(d + "/cmdline").split("\0")
         except (OSError, ValueError):
             continue
-        if any(w.endswith("homelab-setup") for w in words[:3]) and any(w in ("install", "refresh", "finish", "upgrade", "uninstall", "fill", "growdisk") for w in words[1:5]):
+        if any(w.endswith("homelab-setup") for w in words[:3]) and any(w in ("install", "refresh", "finish", "upgrade", "uninstall", "fill", "growdisk", "audiomuse", "navilist", "lastfm", "adguard", "filebrowser", "homepage", "cards") for w in words[1:5]):
             return True
     return False
 
@@ -795,6 +831,7 @@ Commands:
   navilist                 set up naviList (Navidrome playlists from your ListenBrainz and Last.fm listening); also: navilist subscribe | status | remove
   uninstall                take HomeLab off this machine; asks whether to keep or wipe the apps' data and the drives (Tailscale, Docker and the drive programs stay); wiping also deletes the downloaded repository folder; add --dry-run to look first
   done STEP | skip STEP    mark a manual step as done, or as not wanted
+  unskip STEP              take a skipped step back (only steps that wait for a person can be marked)
   secrets                  show the generated passwords and keys
   progress | version | help
 

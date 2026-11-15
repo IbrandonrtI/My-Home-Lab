@@ -2,46 +2,46 @@
     - YouTube:
         - abbr: YT
           href: https://youtube.com/
-          icon: https://cdn.brandfetch.io/idVfYwcuQz/theme/dark/symbol.svg?c=1dxbfHSJFAPEGdCLU4o5B
+          icon: si-youtube-#ff0000
 
     - Twitch:
         - abbr: TW
           href: https://twitch.tv/
-          icon: https://cdn.brandfetch.io/idIwZCwD2f/theme/dark/symbol.svg?c=1dxbfHSJFAPEGdCLU4o5B
+          icon: si-twitch-#9146ff
 
     - Spotify:
         - abbr: SPOT
           href: https://spotify.com/
-          icon: https://cdn.brandfetch.io/id20mQyGeY/theme/dark/symbol.svg?c=1dxbfHSJFAPEGdCLU4o5B
+          icon: si-spotify-#1ed760
 
 - Online Shopping:
     - Amazon:
         - abbr: AMZ
           href: https://amazon.com/
-          icon: https://cdn.brandfetch.io/idawOgYOsG/theme/dark/logo.svg?c=1dxbfHSJFAPEGdCLU4o5B
+          icon: mdi-cart-#ff9900
 
     - Newegg:
         - abbr: NEWEGG
           href: https://newegg.com/
-          icon: https://cdn.brandfetch.io/idk4VupXU2/theme/dark/logo.svg?c=1dxbfHSJFAPEGdCLU4o5B
+          icon: si-newegg-#e05e00
 
     - eBay:
         - abbr: EBAY
           href: https://ebay.com/
-          icon: https://cdn.brandfetch.io/idC0T6HUjp/theme/dark/logo.svg?c=1dxbfHSJFAPEGdCLU4o5B
+          icon: si-ebay-#e53238
 
 - Productivity:
     - GitHub:
         - abbr: GH
           href: https://github.com/
-          icon: https://cdn.brandfetch.io/idZAyF9rlg/theme/dark/symbol.svg?c=1dxbfHSJFAPEGdCLU4o5B
+          icon: si-github-#ffffff
 
     - Gmail:
         - abbr: GM
           href: https://mail.google.com/
-          icon: https://cdn.brandfetch.io/id5o3EIREg/theme/dark/symbol.svg?c=1dxbfHSJFAPEGdCLU4o5B
+          icon: si-gmail-#ea4335
 
     - Outlook:
         - abbr: OL
           href: https://outlook.office.com/mail/
-          icon: https://cdn.brandfetch.io/idgdw68PEO/theme/dark/logo.svg?c=1dxbfHSJFAPEGdCLU4o5B
+          icon: mdi-email-outline-#0078d4

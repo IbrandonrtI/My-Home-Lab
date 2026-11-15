@@ -6,7 +6,7 @@ homelab-selftest - run the lab's read-only commands one by one and look for bugs
 
   sudo homelab-selftest             run everything, print a short verdict, save the full report
   sudo homelab-selftest --online    also run the checks that use the internet (homelab-update check)
-  sudo homelab-selftest --builds    also build every ready-made setup on FAKE drives (about 10 minutes, Part 4)
+  sudo homelab-selftest --builds    also build every ready-made setup on FAKE drives (about 10 minutes, Part 4; needs the developer test files, which the public repository does not have)
   homelab-selftest version
 
 It only reads. It never starts, stops or changes anything: drives remount, homelab-backup, drives release,
@@ -414,7 +414,7 @@ part_presets() {
   expect_cmd "drives help cache"   20 "0" '^sudo drives cache'   -- drives help cache
   expect_cmd "drives help snapraid" 20 "0" '^sudo drives snapraid' -- drives help snapraid
   expect_cmd "drives help wizard"  20 "0" '^sudo drives wizard'  -- drives help wizard
-  expect_cmd "drives (command list)" 20 "0 1" 'preset +build a whole setup' -- drives help
+  expect_cmd "drives (command list)" 20 "0 1" 'preset +build a complete setup' -- drives help
   if command -v homelab >/dev/null 2>&1; then
     help_out=$(homelab commands 2>&1 </dev/null | sed 's/\x1b\[[0-9;?]*[a-zA-Z]//g')
     local w; for w in wizard preset snapraid spare cache; do
@@ -432,10 +432,10 @@ part_presets() {
   if printf '%s\n' "$help_out" | grep -q 'With your drives:'; then ok "the list says what your drives can do"; else fail "the list has no 'With your drives:' lines"; fi
 
   for id in $ids; do
-    expect_cmd "drives preset $id --dry-run" 60 "0 1" 'Dry run|needs a program that is not installed|empty drives; [0-9]+ found|some drives are already in a storage|is already a .* array|is already used by something else|already exists on this computer' -- drives preset "$id" --dry-run
+    expect_cmd "drives preset $id --dry-run" 60 "0 1" 'Dry run|needs a program that is not installed|empty drives; [0-9]+ found|some drives are already in a storage|is already a .* array|is already used by something else|already exists on this computer|contains files' -- drives preset "$id" --dry-run
   done
   expect_cmd "drives preset nonsense is refused" 20 "1" "There is no setup called 'nonsense'" -- drives preset nonsense
-  expect_cmd "drives preset raidz1 (short name)" 60 "0 1" 'Dry run|needs a program that is not installed|empty drives; [0-9]+ found|some drives are already in a storage|is already a .* array|already exists on this computer' -- drives preset raidz1 --dry-run
+  expect_cmd "drives preset raidz1 (short name)" 60 "0 1" 'Dry run|needs a program that is not installed|empty drives; [0-9]+ found|some drives are already in a storage|is already a .* array|already exists on this computer|contains files' -- drives preset raidz1 --dry-run
 
   expect_cmd "drives wizard --dry-run (looks at the drives, changes nothing)" 60 "0" 'already set up|Drive scan' -- drives wizard --dry-run
   expect_cmd "--first-run outside wizard is refused" 20 "1" 'works with: wizard' -- drives status --first-run

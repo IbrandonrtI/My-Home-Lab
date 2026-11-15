@@ -36,6 +36,7 @@ import select
 import shlex
 import shutil
 import socket
+import struct
 import subprocess
 import sys
 import threading
@@ -120,6 +121,31 @@ def write_atomic(p, text, mode=None):
 LOCK = threading.RLock()
 
 
+LOCAL = threading.local()
+MERGE_AFTER = ("Background changed", "Background picture changed")
+
+
+def snap_merge(group, olds):
+    """Add the files of this change to the Undo entry made a moment ago for the background, so saving a look and a background together is one Undo step. Returns False when there is no such entry."""
+    last = history_last()
+    if not last or time.time() - last[1].get("time", 0) > 30 or last[1].get("label") not in MERGE_AFTER:
+        return False
+    d, meta = last
+    have = {i["path"] for i in meta["files"].values()}
+    n = len(meta["files"])
+    for path, text in sorted(olds.items()):
+        if path in have:
+            continue
+        with open(os.path.join(d, "f%d" % n), "w", encoding="utf-8") as f:
+            f.write(text)
+        meta["files"]["f%d" % n] = {"path": path, "existed": os.path.exists(path)}
+        n += 1
+    meta["label"] = group
+    with open(os.path.join(d, "meta.json"), "w", encoding="utf-8") as f:
+        json.dump(meta, f)
+    return True
+
+
 class Tx:
     """One change to the dashboard files. The files are collected, checked and written together, and the old texts are saved first so Undo can restore them."""
     def __init__(self, label):
@@ -148,7 +174,10 @@ class Tx:
             check_text(p, self.new[p])
         if not changed:
             return False
-        snap(self.label, {p: self.old[p] for p in changed})
+        olds = {p: self.old[p] for p in changed}
+        group = getattr(LOCAL, "merge", "")
+        if not (group and snap_merge(group, olds)):
+            snap(self.label, olds)
         for p in changed:
             write_atomic(p, self.new[p])
         return True
@@ -963,6 +992,56 @@ def sniff_image(data):
     return None
 
 
+MAX_SIDE = 8000
+MAX_PIXELS = 40000000
+
+
+def image_size(data, ext):
+    """Width and height of a picture, read from its header without decoding it; None when it cannot be read."""
+    try:
+        if ext == ".png" and data[12:16] == b"IHDR":
+            return struct.unpack(">II", data[16:24])
+        if ext == ".gif":
+            return struct.unpack("<HH", data[6:10])
+        if ext == ".webp":
+            kind = data[12:16]
+            if kind == b"VP8X":
+                return 1 + int.from_bytes(data[24:27], "little"), 1 + int.from_bytes(data[27:30], "little")
+            if kind == b"VP8 ":
+                return struct.unpack("<HH", data[26:30])[0] & 0x3FFF, struct.unpack("<HH", data[26:30])[1] & 0x3FFF
+            if kind == b"VP8L":
+                bits = int.from_bytes(data[21:25], "little")
+                return (bits & 0x3FFF) + 1, ((bits >> 14) & 0x3FFF) + 1
+        if ext == ".jpg":
+            i = 2
+            while i + 9 < len(data):
+                if data[i] != 0xFF:
+                    i += 1
+                    continue
+                marker = data[i + 1]
+                if marker in (0xD8, 0x01) or 0xD0 <= marker <= 0xD7 or marker == 0xFF:
+                    i += 1 if marker == 0xFF else 2
+                    continue
+                if 0xC0 <= marker <= 0xCF and marker not in (0xC4, 0xC8, 0xCC):
+                    h, w = struct.unpack(">HH", data[i + 5:i + 9])
+                    return w, h
+                i += 2 + struct.unpack(">H", data[i + 2:i + 4])[0]
+        if ext == ".avif":
+            at = data.find(b"ispe")
+            if at > 0:
+                return struct.unpack(">II", data[at + 8:at + 16])
+    except (struct.error, IndexError):
+        return None
+    return None
+
+
+def check_picture_size(data, ext):
+    """A small file can still hold a huge picture that every device must unpack. Refuse a picture larger than 8000 pixels on a side or 40 megapixels."""
+    size = image_size(data, ext)
+    if size and (max(size) > MAX_SIDE or size[0] * size[1] > MAX_PIXELS):
+        raise Fail("That picture is too large (%d x %d pixels). Use one that is at most %d pixels wide or high and %d megapixels in all." % (size[0], size[1], MAX_SIDE, MAX_PIXELS // 1000000))
+
+
 def restart_homepage():
     if NO_DOCKER:
         return False
@@ -981,8 +1060,12 @@ def bg_store(data, body=None, fixed=None):
     ext = sniff_image(data)
     if not ext:
         raise Fail("That file cannot be used as a picture. Choose a .jpg, .png, .webp, .gif or .avif file.")
+    check_picture_size(data, ext)
     os.makedirs(IMAGES, exist_ok=True)
-    name = (fixed + ext) if fixed else "background-%s%s" % (time.strftime("%Y%m%d%H%M%S"), ext)
+    stamp = time.time()
+    while not fixed and os.path.exists(os.path.join(IMAGES, "background-%s%s" % (time.strftime("%Y%m%d%H%M%S", time.localtime(stamp)), ext))):
+        stamp += 1
+    name = (fixed + ext) if fixed else "background-%s%s" % (time.strftime("%Y%m%d%H%M%S", time.localtime(stamp)), ext)
     with open(os.path.join(IMAGES, name), "wb") as f:
         f.write(data)
     os.chmod(os.path.join(IMAGES, name), 0o644)
@@ -3696,6 +3779,8 @@ class Handler(BaseHTTPRequestHandler):
             if not self.host_ok():
                 return self.send(421, {"error": "Unknown address."})
             path = urllib.parse.urlparse(self.path).path
+            label = self.headers.get("X-Undo-Merge") or ""
+            LOCAL.merge = label if re.fullmatch(r"[A-Za-z ]{1,40}", label) else ""
             if path == "/api/login":
                 if self.headers.get("X-Panel") != "1" or (self.headers.get("Origin") and not self.origin_ok(self.headers.get("Origin"))):
                     raise Fail("This request did not come from the panel page.", 403)

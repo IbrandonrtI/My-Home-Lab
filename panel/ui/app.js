@@ -54,8 +54,9 @@ const clone = o => JSON.parse(JSON.stringify(o));
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 function send(msg) { if (framed) { try { window.parent.postMessage(Object.assign({ hlp: 1 }, msg), "*"); } catch (e) {  } } }
 
-async function api(method, path, body, raw) {
+async function api(method, path, body, raw, undoGroup) {
   const opt = { method, credentials: "same-origin", headers: { "X-Panel": "1" } };
+  if (undoGroup) opt.headers["X-Undo-Merge"] = undoGroup;
   if (raw) { opt.body = raw; opt.headers["Content-Type"] = "application/octet-stream"; }
   else if (body !== undefined) { opt.body = JSON.stringify(body); opt.headers["Content-Type"] = "application/json"; }
   let r;
@@ -1892,7 +1893,7 @@ async function saveLook() {
     }
     if (lookDirty()) {
       clearTimeout(pvTimer); pvSeq++;
-      await api("POST", "/api/look", { look: lookOut() });
+      await api("POST", "/api/look", { look: lookOut() }, undefined, bgSaved ? "Look and background changed" : "");
     }
     if (lookDirty() || bgSaved) { clearTimeout(pvTimer); pvSeq++; send({ type: "saved", bg: !!bgSaved }); }
     const what = both ? "Look and background saved." : (bgDirty() ? "Background saved." : "Look saved.");
@@ -2135,7 +2136,7 @@ function chooseTheme(t) {
   lookW = Object.assign(base, pl, { tabs, theme: t.id, cards: col.cards, links: col.links, paintAll: col.paintAll });
   bgW = (t.id !== S.look.values.theme && themeBg(t)) || null;
   render(); lookChanged(); previewBg();
-  toast(t.name + " is a draft. Press Save to keep it, or Discard Changes to revert.");
+  toast(lookDirty() || bgDirty() ? t.name + " is a draft. Press Save to keep it, or Discard Changes to revert." : t.name + " is already in use.");
 }
 async function chooseMyTheme(t) {
   const server = t.parts.filter(p => p === "layout" || p === "cards");
@@ -2158,7 +2159,7 @@ async function chooseMyTheme(t) {
     bgW = { url: g.image || "", blur: g.blur || "none", saturate: g.saturate, brightness: g.brightness, opacity: g.opacity };
   }
   render(); lookChanged(); previewBg();
-  toast(t.name + (t.parts.includes("look") || t.parts.includes("background") ? " is a draft. Press Save to keep it, or Discard Changes to revert." : " is in place."));
+  toast(t.name + (lookDirty() || bgDirty() ? " is a draft. Press Save to keep it, or Discard Changes to revert." : " is in place."));
 }
 async function refreshMyThemes() { const s = await api("GET", "/api/state"); S.mythemes = s.mythemes; S.undo = s.undo; render(); }
 // The dialog that saves the current look as a new theme.

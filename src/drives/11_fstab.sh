@@ -77,6 +77,7 @@ branch_part() {
 fstab_snapshot() {
   FSTAB_SNAP="$FSTAB.bak-drives-$(date +%Y%m%d-%H%M%S)"
   cp -a "$FSTAB" "$FSTAB_SNAP" && log "fstab backup: $FSTAB_SNAP"
+  ls -1t "$FSTAB".bak-drives-* 2>/dev/null | tail -n +11 | while read -r old; do rm -f "$old"; done
 }
 
 fstab_rollback() {
@@ -91,8 +92,9 @@ fstab_add() { printf '%s\n' "$1" >>"$FSTAB"; log "fstab add: $1"; }
 
 fstab_remove_mp() {
   local tmp; tmp=$(mktemp)
-  awk -v m="$1" -v d="$(date +%F)" '
-    !/^[[:space:]]*#/ && $2 == m { print "# removed by drives " d ": " $0; next }
+  awk -v m="$1" '
+    /^# removed by drives / { next }
+    !/^[[:space:]]*#/ && $2 == m { next }
     { print }' "$FSTAB" >"$tmp" && cat "$tmp" >"$FSTAB"
   rm -f "$tmp"
   settings_prune

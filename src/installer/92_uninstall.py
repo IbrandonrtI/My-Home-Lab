@@ -598,7 +598,7 @@ def cmd_uninstall():
         say("Containers that are not HomeLab's were left alone: %s. To remove them too:  docker rm -f %s  (their images:  docker image prune -a)" % (", ".join(own), " ".join(own)))
     if f["array"]:
         say("The %s array was left as it is. Manage it with `sudo drives`." % {"zfs": "ZFS", "md": "RAID"}[f["array"]])
-    say("To install the lab again later:  git clone https://github.com/IbrandonrtI/My-Home-Lab-.git  and  sudo bash setup.sh install  inside it.")
+    say("To install the lab again later:  git clone https://github.com/IbrandonrtI/My-Home-Lab-.git  and  bash setup.sh install  inside it.")
     return 0
 
 

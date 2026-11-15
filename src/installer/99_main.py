@@ -49,16 +49,17 @@ def main(argv):
             pos.append(a)
         i += 1
     cmd = pos[0] if pos else "checklist"
-    if cmd not in COMMANDS and cmd not in ("done", "skip", "cards", "lastfm", "audiomuse", "navilist"):
+    if cmd not in COMMANDS and cmd not in ("done", "skip", "unskip", "cards", "lastfm", "audiomuse", "navilist"):
         out("Unknown command '%s'. Try: homelab-setup help" % cmd)
         return 1
     ensure_root()
     try:
-        if cmd in ("done", "skip"):
+        take_command_lock(cmd, pos[1:])
+        if cmd in ("done", "skip", "unskip"):
             if len(pos) < 2:
                 out("Which step? Example: homelab-setup %s reboot-test" % cmd)
                 return 1
-            cmd_mark("ack" if cmd == "done" else "skip", pos[1])
+            cmd_mark("ack" if cmd == "done" else cmd, pos[1])
         elif cmd == "cards":
             return cmd_cards(pos[1:])
         elif cmd == "lastfm":
