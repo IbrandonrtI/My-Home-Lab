@@ -2361,10 +2361,29 @@ def key_files_open():
     return found
 
 
+PANEL_FILES = ("settings.yaml", "services.yaml", "bookmarks.yaml", "widgets.yaml", "custom.css", "custom.js")
+
+
+def wrong_owner_files():
+    """The dashboard folder and its main files must belong to the user: the control panel runs as that user and could not save them otherwise."""
+    if FAKE or os.geteuid() != 0 or not Ctx.uid:
+        return []
+    found = []
+    for p in [P(hp_dir())] + [P(hp_dir() + "/" + n) for n in PANEL_FILES] + [P(hp_dir() + "/.panel-history")]:
+        try:
+            if os.stat(p).st_uid != Ctx.uid:
+                found.append(p)
+        except OSError:
+            pass
+    return found
+
+
 def protect_key_files():
     """Make services.yaml, its saved copies and the panel's undo history readable by the owner only. Homepage runs as root in its container, so it still reads them."""
     if Opt.dry:
         return
+    for p in wrong_owner_files():
+        os.chown(p, Ctx.uid, Ctx.gid)
     for p in key_files_open():
         if os.path.isdir(p):
             for dp, _dirs, files in os.walk(p):
@@ -3792,6 +3811,29 @@ def prepull(images):
             time.sleep(5 if not FAKE else 0)
 
 
+def start_stopped_containers(name):
+    """After a crash or a power cut the containers of a stack still exist but are stopped. Start them again instead of deploying the stack once more: a new deploy re-creates the containers, which loses data kept in anonymous volumes and can put back older image versions than the ones `homelab-update` installed. Returns True when the stack runs again (or would, in a dry run)."""
+    need = STACKS[name][1]
+    if not all(c in containers_all() for c in need):
+        return False
+    stopped = [c for c in need if c not in containers_running()]
+    if not stopped:
+        return True
+    if Opt.dry:
+        out("      would start the stopped containers of '%s' again: %s" % (name, ", ".join(stopped)))
+        return True
+    rc, txt = act(["docker", "start"] + stopped, timeout=180)
+    if rc != 0:
+        log("stack %s: docker start failed: %s" % (name, txt.strip()[-200:]))
+        return False
+    for _ in range(30):
+        if stack_up(name):
+            good("The stopped containers of %s were started again (%s); nothing was re-created" % (name, ", ".join(stopped)))
+            return True
+        time.sleep(0 if FAKE else 2)
+    return False
+
+
 class StackStep(Step):
     """One Portainer stack: deploy it from its Compose file and wait until its containers run. Stacks marked parallel are deployed together."""
     group = "Services"
@@ -3812,7 +3854,9 @@ class StackStep(Step):
     def detail(self):
         return "%d container(s) running" % len(STACKS[self.name][1])
 
-    def run(self):
+    def run(self, start_first=True):
+        if start_first and start_stopped_containers(self.name):
+            return
         text = stack_text(self.name)
         env = stack_env(self.name)
         prepull(images_in(text))
@@ -4060,6 +4104,22 @@ class RestoreData(Step):
 def immich_restored():
     return bool(restore_choice().get("data")) and bool(glob.glob(P("/mnt/storage/immich/backups/*")))
 HP_FILES = ["services.yaml", "settings.yaml", "widgets.yaml", "bookmarks.yaml", "custom.css"]
+# The person changes these two the most. When one is missing the checklist shows one item (the key-files step), not the whole Homepage group.
+LOOK_FILES = ["custom.css", "bookmarks.yaml"]
+
+
+def write_default_homepage_file(f):
+    """Write the shipped version of one Homepage file, with this machine's addresses filled in."""
+    body = subst(read_file(repo_file("homepage-config", f)))
+    if not body:
+        raise Abort("The repository file homepage-config/%s is missing." % f)
+    if f == "services.yaml":
+        body = hp_strip_widgets(body)
+        if not adguard_wanted():
+            body = hp_remove_card(body, "adguard-card")
+    if f == "widgets.yaml":
+        body = widgets_for_machine(body)
+    write_file(hp_path(f), body, hp_mode(f), (Ctx.uid, Ctx.gid))
 
 
 def widgets_for_machine(body):
@@ -4102,7 +4162,7 @@ class HomepageFiles(Step):
     needs = ("folders", "tailscale-login", "restore-configs")
 
     def probe(self):
-        if not all(os.path.exists(hp_path(f)) for f in HP_FILES):
+        if not all(os.path.exists(hp_path(f)) for f in HP_FILES if f not in LOOK_FILES):
             return "todo"
         txt = read_file(hp_path())
         if PH_LAN in txt or PH_FQDN in txt:
@@ -4118,17 +4178,10 @@ class HomepageFiles(Step):
     def run(self):
         for f in HP_FILES:
             dst = hp_path(f)
+            if f in LOOK_FILES and not os.path.exists(dst):
+                continue
             if not os.path.exists(dst):
-                body = subst(read_file(repo_file("homepage-config", f)))
-                if not body:
-                    raise Abort("The repository file homepage-config/%s is missing." % f)
-                if f == "services.yaml":
-                    body = hp_strip_widgets(body)
-                    if not adguard_wanted():
-                        body = hp_remove_card(body, "adguard-card")
-                if f == "widgets.yaml":
-                    body = widgets_for_machine(body)
-                write_file(dst, body, hp_mode(f), (Ctx.uid, Ctx.gid))
+                write_default_homepage_file(f)
             elif f in ("services.yaml", "bookmarks.yaml"):
                 old = read_file(dst)
                 new = subst(old)
@@ -4144,22 +4197,35 @@ class HomepageFiles(Step):
         protect_key_files()
 
 
+def missing_look_files():
+    return [f for f in LOOK_FILES if not os.path.exists(hp_path(f))]
+
+
 @step
 class HomepageKeyFiles(Step):
-    """Keep the files that hold the dashboard's widget keys readable by their owner only. Nothing waits for this step, so a permission problem shows as one item."""
-    id, group, title = "homepage-key-files", "Homepage", "The dashboard's key files (services.yaml and its copies) are readable by their owner only"
+    """Keep the files that hold the dashboard's widget keys readable by their owner only, and the dashboard folder and its files owned by the user. Nothing waits for this step, so a permission problem shows as one item."""
+    id, group, title = "homepage-key-files", "Homepage", "The dashboard's key files (services.yaml and its copies) are readable by their owner only, and its look and bookmarks files are present"
     needs = ("homepage-files",)
 
     def applies(self):
         return not Mode.existing
 
     def probe(self):
-        return "todo" if key_files_open() else "done"
+        return "todo" if key_files_open() or wrong_owner_files() or missing_look_files() else "done"
 
     def detail(self):
-        return "%d file(s) are readable by other users; `sudo homelab-setup refresh` fixes it" % len(key_files_open())
+        gone = missing_look_files()
+        if gone and not key_files_open() and not wrong_owner_files():
+            return "%s missing; `sudo homelab-setup refresh` writes the shipped version (your own look can come back with: sudo homelab-restore-configs)" % " and ".join(gone)
+        return "%d file(s) are readable by other users or belong to the wrong user; `sudo homelab-setup refresh` fixes it" % (len(key_files_open()) + len(wrong_owner_files()))
 
     def run(self):
+        for f in missing_look_files():
+            if Opt.dry:
+                out("      would write the shipped %s" % f)
+                continue
+            write_default_homepage_file(f)
+            warn("%s was missing, so the shipped version was written. Your own look and bookmarks are in the backups and the control panel's Undo history; to bring them back run: sudo homelab-restore-configs" % f)
         protect_key_files()
 
 
@@ -4392,7 +4458,8 @@ class NavidromeStack(StackStep):
         if not Opt.dry:
             os.makedirs(P(folder), exist_ok=True)
             chown(P(folder), Ctx.uid, Ctx.gid)
-        StackStep.run(self)
+        # a changed Compose file or key must be deployed; only an unchanged stack is just started again
+        StackStep.run(self, start_first=State.data.get("navidrome_stack") == self.stamp())
         if not Opt.dry:
             State.data["navidrome_stack"] = self.stamp()
             State.save()
@@ -4539,7 +4606,7 @@ class AudioMuseStack(StackStep):
             for folder in (Ctx.home + "/audiomuse", Ctx.home + "/audiomuse/postgres"):
                 os.makedirs(P(folder), exist_ok=True)
                 chown(P(folder), Ctx.uid, Ctx.gid)
-        StackStep.run(self)
+        StackStep.run(self, start_first=State.data.get("audiomuse_stack") == self.stamp())
         if Opt.dry:
             return
         State.data.pop("audiomuse_paused", None)
@@ -4673,7 +4740,7 @@ class NaviListStack(StackStep):
             for folder in (Ctx.home + "/navilist", Ctx.home + "/navilist/data"):
                 os.makedirs(P(folder), exist_ok=True)
                 chown(P(folder), Ctx.uid, Ctx.gid)
-        StackStep.run(self)
+        StackStep.run(self, start_first=State.data.get("navilist_stack") == self.stamp())
         if Opt.dry:
             return
         if not wait_for(lambda: http("GET", url("navilist", "/health"), timeout=10)[0] == 200, "naviList to answer", 180):
@@ -6250,10 +6317,22 @@ def panel_runs_old_code():
     pid = pid.strip()
     if rc != 0 or not pid.isdigit() or pid == "0":
         return False
+    started = process_start_time(int(pid))
     try:
-        return os.stat("/usr/local/sbin/homelab-panel").st_mtime > os.stat("/proc/" + pid).st_mtime + 2
+        return bool(started) and os.stat("/usr/local/sbin/homelab-panel").st_mtime > started + 2
     except OSError:
         return False
+
+
+def process_start_time(pid):
+    """The time a process was started, in seconds since 1970 (from /proc/<pid>/stat and the boot time), or 0 when it is not known. The date of the /proc/<pid> folder is not the start time."""
+    try:
+        stat = read_file("/proc/%d/stat" % pid)
+        ticks = int(stat[stat.rindex(")") + 2:].split()[19])
+        boot = next(int(line.split()[1]) for line in read_file("/proc/stat").splitlines() if line.startswith("btime "))
+        return boot + ticks / os.sysconf("SC_CLK_TCK")
+    except (OSError, ValueError, IndexError, StopIteration):
+        return 0
 
 
 @step
@@ -6734,11 +6813,45 @@ def ensure_root():
     os.execvp("sudo", words + [sys.executable] + sys.argv)
 
 
+def homepage_file_problems():
+    """The dashboard shows no cards or no look when one of its files is missing, empty or not valid YAML, and nothing else complains. One line per problem."""
+    found = []
+    if not os.path.isdir(P(hp_dir())):
+        return found
+    try:
+        import yaml
+    except ImportError:
+        yaml = None
+    for f in ("settings.yaml", "services.yaml", "bookmarks.yaml", "widgets.yaml", "custom.css"):
+        path = hp_path(f)
+        if not os.path.exists(path):
+            found.append("%s is missing" % f)
+        elif not os.path.getsize(path):
+            found.append("%s is empty" % f)
+        elif yaml and f.endswith(".yaml"):
+            try:
+                with open(path, encoding="utf-8") as fh:
+                    yaml.safe_load(fh)
+            except (yaml.YAMLError, UnicodeDecodeError, OSError):
+                found.append("%s is not valid YAML, so Homepage cannot read it" % f)
+        elif not os.access(path, os.R_OK):
+            found.append("%s cannot be read" % f)
+    return found
+
+
+def damaged_state_seen():
+    """True when this run found a state file it could not read (a copy .damaged-<date> sits next to it)."""
+    try:
+        return any(f.startswith(os.path.basename(STATE_FILE) + ".damaged-") for f in os.listdir(os.path.dirname(STATE_FILE)))
+    except OSError:
+        return False
+
+
 def load_all():
     State.load()
     if State.damaged:
         kept = State.keep_damaged()
-        warn("The setup state file %s is damaged and cannot be read. %sAnswers you gave earlier may have to be given again." % (
+        warn("The setup state file %s is damaged and cannot be read. %sAnswers you gave earlier may have to be given again. To build a new one from what is installed: sudo homelab-setup refresh --force-existing." % (
             STATE_FILE, ("A copy was kept as %s. " % kept) if kept else "It is kept under a new name (.damaged-<date>) before a new one is written. "))
     Secrets.load()
     Ctx.detect()
@@ -6954,10 +7067,12 @@ def final_report(res, background=False):
 def show_dashboard_links():
     """Print where to open the dashboard (Homepage): the address on this network and the one over Tailscale."""
     Ctx.refresh_tailscale()
+    if not Ctx.lan and not HOST_OVERRIDE:
+        Ctx.lan = detect_lan()
     rule("Open the dashboard")
     if svc_host() == "127.0.0.1":
-        # Another device cannot use 127.0.0.1, so it is not shown as the address on this network.
-        out("  Homepage, on this network:   this machine's network address is not known yet (open it on this machine at %s)" % mark(url("homepage")))
+        # Another device cannot use 127.0.0.1, and Homepage refuses that name, so the fallback shown is localhost.
+        out("  Homepage, on this network:   this machine's network address is not known yet (open it on this machine at %s)" % mark(url("homepage").replace("127.0.0.1", "localhost")))
     else:
         out("  Homepage, on this network:   %s" % mark(url("homepage")))
     if Ctx.fqdn:
@@ -7061,6 +7176,13 @@ def system_check():
             else:
                 bad("%s is not running. Start it with: sudo systemctl start %s" % (label, unit))
                 problems.append(unit)
+    broken = homepage_file_problems()
+    if broken:
+        for text in broken:
+            bad("Homepage files: %s (control panel > Customize > Undo, or: sudo homelab-restore-configs)" % text)
+        problems.append("homepage-files")
+    elif os.path.isdir(P(hp_dir())):
+        good("Homepage files: all there, not empty and readable")
     out("")
     out("  %sServices on the local network%s" % (B, N))
     for key, label in SERVICE_LABELS:
@@ -7148,8 +7270,10 @@ def cmd_verify():
 def cmd_checklist():
     load_all()
     res = evaluate()
-    if Mode.existing:
+    if Mode.existing and not damaged_state_seen():
         say("This machine already runs the lab (set up by hand). The installer only reads it and changes nothing.")
+    elif Mode.existing:
+        say("The installer's state file was damaged, so it only reads this machine for now and changes nothing. To build a new state file from what is installed, run: sudo homelab-setup refresh --force-existing")
     show_checklist(res, show_all=Opt.all)
     next_step_section(res)
 
@@ -8310,7 +8434,8 @@ Commands:
   done STEP | skip STEP    mark a manual step as done, or as not wanted
   unskip STEP              take a skipped step back (only steps that wait for a person can be marked)
   secrets                  show the generated passwords and keys
-  progress | version | help
+  progress                 update the progress shown on the login screen and on the dashboard (the schedule runs it too; checklist and status only read)
+  version | help
 
 Options for install:  --yes  --backup FOLDER  --no-restore  --no-background  --repo FOLDER  --force-existing
 The installer never formats or erases a drive and never saves the admin password in its own files (Nextcloud keeps it in its own container, as the Nextcloud image requires). The one change it can make to the drive layout
@@ -8935,8 +9060,10 @@ def cmd_uninstall():
 
 COMMANDS["uninstall"] = cmd_uninstall
 def reexec_newer_installer(cmd, args):
-    """After `git pull` the repository holds a newer installer than the one installed in /usr/local/sbin. Run the newer one, so a single refresh uses the fixes that were just downloaded."""
-    if FAKE or cmd in ("upgrade", "uninstall") or os.environ.get("HLS_REEXEC"):
+    """After `git pull` the repository holds a newer installer than the one installed in /usr/local/sbin. When a person types `sudo homelab-setup refresh` (or install) at a terminal, run the newer one, so a single refresh uses the fixes that were just downloaded. Background jobs, the control panel and the drives tool never hand over: the repository belongs to the user, so its code must not run as root without a person asking for it."""
+    if FAKE or cmd not in ("refresh", "install") or os.environ.get("HLS_REEXEC"):
+        return
+    if not os.environ.get("SUDO_USER") or not interactive():
         return
     try:
         State.load()
@@ -8945,11 +9072,13 @@ def reexec_newer_installer(cmd, args):
         me = os.path.abspath(sys.argv[0])
         if not new or not os.path.isfile(new) or os.path.realpath(new) == os.path.realpath(me):
             return
+        if os.stat(new).st_uid not in (0, pwd.getpwnam(os.environ["SUDO_USER"]).pw_uid):
+            return
         text = read_file(new)
         if not text or text == read_file(me):
             return
         compile(text, new, "exec")
-    except (OSError, SyntaxError, ValueError):
+    except (OSError, SyntaxError, ValueError, KeyError):
         return
     say("Using the newer installer from %s." % repo)
     env = dict(os.environ, HLS_REEXEC="1")
@@ -9010,6 +9139,9 @@ def main(argv):
     if cmd not in COMMANDS and cmd not in ("done", "skip", "unskip", "cards", "lastfm", "audiomuse", "navilist"):
         out("Unknown command '%s'. Try: homelab-setup help" % cmd)
         return 1
+    if len(pos) > 1 and cmd not in ("done", "skip", "unskip", "cards", "lastfm", "audiomuse", "navilist"):
+        out("'%s' does not take the word '%s', so nothing was done. Try: homelab-setup help" % (cmd, pos[1][:40]))
+        return 2
     if (Opt.wipe_data or Opt.wipe_drives) and cmd != "uninstall":
         out("%s only belongs to the uninstall command, so '%s' was not run. Try: homelab-setup help" % ("--wipe-data" if Opt.wipe_data else "--wipe-drives", cmd))
         return 1

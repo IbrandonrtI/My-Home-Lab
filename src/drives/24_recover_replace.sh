@@ -186,7 +186,7 @@ restore_files() {
   RESTORE_STOPPED=0
   progress 0 "Copying files 0.00 GB / $(gb2 "$bytes")"
   if [ "$PANEL_MODE" = 1 ]; then
-    if ! rsync_bytes_run "$bytes" "Copying files" -aH8 --numeric-ids --ignore-existing --exclude=/lost+found "$base" "$MAIN_POOL/"; then
+    if ! rsync_bytes_run "$bytes" "Copying files" -aHS8 --numeric-ids --ignore-existing --exclude=/lost+found "$base" "$MAIN_POOL/"; then
       if abort_requested; then restore_undo "$list" "$n"; return 1; fi
       warn "The copy stopped with an error."; return 1
     fi
@@ -194,7 +194,7 @@ restore_files() {
   else
     local prog=--info=stats1
     [ -t 1 ] && prog=--info=progress2
-    rsync -aH --numeric-ids --ignore-existing --exclude=/lost+found "$prog" "$base" "$MAIN_POOL/" || { warn "The copy stopped with an error."; return 1; }
+    rsync -aHS --numeric-ids --ignore-existing --exclude=/lost+found "$prog" "$base" "$MAIN_POOL/" || { warn "The copy stopped with an error."; return 1; }
   fi
   progress 100 "Checking the files"
   local -a mains=()
@@ -202,9 +202,9 @@ restore_files() {
   sync_fs "${mains[@]}" "$MAIN_POOL"
   say ""
   say "Checking that every file in the backup is now in the pool..."
-  miss=$(comm -23 -z \
-    <(cd "$src/main" && find . -path ./lost+found -prune -o \( -type f -o -type l \) -print0 | sort -z) \
-    <(cd "$MAIN_POOL" && find . -path ./lost+found -prune -o \( -type f -o -type l \) -print0 | sort -z) | tr '\0' '\n')
+  miss=$(LC_ALL=C comm -23 -z \
+    <(cd "$src/main" && find . -path ./lost+found -prune -o \( -type f -o -type l \) -print0 | LC_ALL=C sort -z) \
+    <(cd "$MAIN_POOL" && find . -path ./lost+found -prune -o \( -type f -o -type l \) -print0 | LC_ALL=C sort -z) | tr '\0' '\n')
   if [ -n "$miss" ]; then
     warn "These files from the backup are still missing in the pool (first 20):"
     printf '%s\n' "$miss" | head -20 | sed 's/^/  /' >&2

@@ -9,11 +9,45 @@ def ensure_root():
     os.execvp("sudo", words + [sys.executable] + sys.argv)
 
 
+def homepage_file_problems():
+    """The dashboard shows no cards or no look when one of its files is missing, empty or not valid YAML, and nothing else complains. One line per problem."""
+    found = []
+    if not os.path.isdir(P(hp_dir())):
+        return found
+    try:
+        import yaml
+    except ImportError:
+        yaml = None
+    for f in ("settings.yaml", "services.yaml", "bookmarks.yaml", "widgets.yaml", "custom.css"):
+        path = hp_path(f)
+        if not os.path.exists(path):
+            found.append("%s is missing" % f)
+        elif not os.path.getsize(path):
+            found.append("%s is empty" % f)
+        elif yaml and f.endswith(".yaml"):
+            try:
+                with open(path, encoding="utf-8") as fh:
+                    yaml.safe_load(fh)
+            except (yaml.YAMLError, UnicodeDecodeError, OSError):
+                found.append("%s is not valid YAML, so Homepage cannot read it" % f)
+        elif not os.access(path, os.R_OK):
+            found.append("%s cannot be read" % f)
+    return found
+
+
+def damaged_state_seen():
+    """True when this run found a state file it could not read (a copy .damaged-<date> sits next to it)."""
+    try:
+        return any(f.startswith(os.path.basename(STATE_FILE) + ".damaged-") for f in os.listdir(os.path.dirname(STATE_FILE)))
+    except OSError:
+        return False
+
+
 def load_all():
     State.load()
     if State.damaged:
         kept = State.keep_damaged()
-        warn("The setup state file %s is damaged and cannot be read. %sAnswers you gave earlier may have to be given again." % (
+        warn("The setup state file %s is damaged and cannot be read. %sAnswers you gave earlier may have to be given again. To build a new one from what is installed: sudo homelab-setup refresh --force-existing." % (
             STATE_FILE, ("A copy was kept as %s. " % kept) if kept else "It is kept under a new name (.damaged-<date>) before a new one is written. "))
     Secrets.load()
     Ctx.detect()
@@ -229,10 +263,12 @@ def final_report(res, background=False):
 def show_dashboard_links():
     """Print where to open the dashboard (Homepage): the address on this network and the one over Tailscale."""
     Ctx.refresh_tailscale()
+    if not Ctx.lan and not HOST_OVERRIDE:
+        Ctx.lan = detect_lan()
     rule("Open the dashboard")
     if svc_host() == "127.0.0.1":
-        # Another device cannot use 127.0.0.1, so it is not shown as the address on this network.
-        out("  Homepage, on this network:   this machine's network address is not known yet (open it on this machine at %s)" % mark(url("homepage")))
+        # Another device cannot use 127.0.0.1, and Homepage refuses that name, so the fallback shown is localhost.
+        out("  Homepage, on this network:   this machine's network address is not known yet (open it on this machine at %s)" % mark(url("homepage").replace("127.0.0.1", "localhost")))
     else:
         out("  Homepage, on this network:   %s" % mark(url("homepage")))
     if Ctx.fqdn:
@@ -336,6 +372,13 @@ def system_check():
             else:
                 bad("%s is not running. Start it with: sudo systemctl start %s" % (label, unit))
                 problems.append(unit)
+    broken = homepage_file_problems()
+    if broken:
+        for text in broken:
+            bad("Homepage files: %s (control panel > Customize > Undo, or: sudo homelab-restore-configs)" % text)
+        problems.append("homepage-files")
+    elif os.path.isdir(P(hp_dir())):
+        good("Homepage files: all there, not empty and readable")
     out("")
     out("  %sServices on the local network%s" % (B, N))
     for key, label in SERVICE_LABELS:
@@ -423,8 +466,10 @@ def cmd_verify():
 def cmd_checklist():
     load_all()
     res = evaluate()
-    if Mode.existing:
+    if Mode.existing and not damaged_state_seen():
         say("This machine already runs the lab (set up by hand). The installer only reads it and changes nothing.")
+    elif Mode.existing:
+        say("The installer's state file was damaged, so it only reads this machine for now and changes nothing. To build a new state file from what is installed, run: sudo homelab-setup refresh --force-existing")
     show_checklist(res, show_all=Opt.all)
     next_step_section(res)
 

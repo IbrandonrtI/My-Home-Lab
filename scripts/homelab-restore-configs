@@ -13,7 +13,9 @@ CONF="${HRC_CONF:-/etc/homelab-backup.conf}"
 LOGFILE="${HRC_LOGFILE:-/var/log/homelab-restore-configs.log}"
 PREVIEW_NAMES=20
 
-EXCLUDES=(--exclude=/etc/fstab --exclude=/usr/local/ --exclude=/root-crontab.txt --exclude=/var/lib/docker/)
+EXCLUDES=(--exclude=/etc/fstab --exclude=/usr/local/ --exclude=/root-crontab.txt --exclude=/var/lib/docker/
+          # AdGuard keeps these files open while it runs, and the panel's Undo list is only as old as its last change: neither is put back.
+          --exclude=/opt/adguard-docker/work/data/ --exclude=.panel-history/)
 
 STOPPED=""
 PREVIEW_ONLY=0
@@ -108,6 +110,33 @@ start_stopped() {
   STOPPED=""
 }
 
+# damaged_here FILE: a settings file on this server that is empty or is not valid YAML/JSON. Its modification time says nothing about whether it is better than the backup.
+damaged_here() {
+  local f=$1
+  case "$f" in
+    *.yaml|*.yml|*.json) ;;
+    *) return 1 ;;
+  esac
+  [ -f "$f" ] || return 1
+  [ -s "$f" ] && grep -q '[^[:space:]]' "$f" || return 0
+  python3 - "$f" <<'PY' 2>/dev/null
+import sys, json
+f = sys.argv[1]
+try:
+    text = open(f, encoding="utf-8").read()
+    if f.endswith(".json"):
+        json.loads(text)
+    else:
+        import yaml
+        yaml.safe_load(text)
+except ImportError:
+    sys.exit(1)
+except Exception:
+    sys.exit(0)
+sys.exit(1)
+PY
+}
+
 preview() {
   local src=$1 dst=$2; shift 2
   OUT=$(mktemp); STATS=$(mktemp)
@@ -115,13 +144,15 @@ preview() {
     cat "$STATS.err" >&2; rm -f "$OUT" "$STATS" "$STATS.err"; die "rsync could not read the backup."; }
   grep -E '^>f' "$OUT" | grep -E '^>f\+\+\+\+\+\+\+\+\+ ' >"$STATS.new" || true
   grep -E '^>f' "$OUT" | grep -v -E '^>f\+\+\+\+\+\+\+\+\+ ' >"$STATS.chg" || true
-  NEWER_N=0
+  NEWER_N=0; DAMAGED_N=0
   if [ -s "$STATS.chg" ]; then
     local line f marked="$STATS.chg.marked"
     : >"$marked"
     while IFS= read -r line; do
       f=${line#* }
-      if [ -e "$dst$f" ] && [ "$dst$f" -nt "$src$f" ]; then
+      if [ -e "$dst$f" ] && damaged_here "$dst$f"; then
+        printf '%s (damaged here: the backup copy is the good one)\n' "$line" >>"$marked"; DAMAGED_N=$((DAMAGED_N + 1))
+      elif [ -e "$dst$f" ] && [ "$dst$f" -nt "$src$f" ]; then
         printf '%s (newer on this server than in the backup)\n' "$line" >>"$marked"; NEWER_N=$((NEWER_N + 1))
       else
         printf '%s\n' "$line" >>"$marked"
@@ -149,6 +180,7 @@ report_preview() {
   say "$1: $NEW_N"
   say "$2: $CHG_N"
   [ "${NEWER_N:-0}" -eq 0 ] || say "WARNING: $NEWER_N of these files are NEWER on this server than in the backup. Restoring would replace newer settings with older ones."
+  [ "${DAMAGED_N:-0}" -eq 0 ] || say "$DAMAGED_N of these files are empty or broken on this server. Restoring them is what fixes them."
   say "Total size to copy: $(human "$BYTES")"
   say ""
   show_names "$NEW_LIST" "New files"

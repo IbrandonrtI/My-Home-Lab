@@ -19,6 +19,11 @@ Every run also checks a sample of the copied files against the originals (the fi
 in this run first, then a different random sample each night, up to VERIFY_MB megabytes,
 2048 by default, 0 turns it off). A copy that differs is copied again, and the run says so.
 
+A verify run also records its result (/var/lib/homelab-backup/last-verify). `homelab` and the
+bell show it while a copy still differs, until a later verify finds every file matching.
+
+Exit codes: 0 done, 1 the run found problems, 2 a wrong word on the command line, 3 another backup was already running (nothing was started).
+
 Usage:
   sudo homelab-backup           run the backup now (about a minute, longer after many new files)
   sudo homelab-backup verify    compare EVERY file of the backup with the original and list the ones that differ
@@ -31,7 +36,7 @@ Watch a backup while it runs:  sudo tail -f /var/log/homelab-backup.log
 HELP
 }
 
-VERSION="1.2"
+VERSION="1.3"
 MODE=backup
 REPAIR=0
 case "${1-x}" in
@@ -56,6 +61,7 @@ DEST_FALLBACK=""
 RETENTION_DAYS=30
 LOGFILE="/var/log/homelab-backup.log"
 STATUS_FILE="/var/lib/homelab-backup/last-run"
+VERIFY_STATUS_FILE=""
 NEXTCLOUD_DB_CONTAINER="nextcloud_db"
 NEXTCLOUD_DB_USER="nextcloud"
 NEXTCLOUD_DB_NAME="nextcloud"
@@ -81,8 +87,13 @@ CONF="${BACKUP_CONF:-/etc/homelab-backup.conf}"
 # shellcheck disable=SC1090
 [ -f "$CONF" ] && . "$CONF"
 
+VERIFY_STATUS_FILE="${VERIFY_STATUS_FILE:-$(dirname "$STATUS_FILE")/last-verify}"
 START=$(date +%s)
 TODAY=$(date +%F)
+VCOMPARED=0
+VDIFF=0
+VFIXED=0
+VDRIVES=""
 ERRORS=0
 NOTES=""
 DEST=""
@@ -97,7 +108,12 @@ finish() {
   [ "$ERRORS" -eq 0 ] || result="FAILED ($ERRORS problem(s): ${NOTES%; })"
   if [ "$MODE" = verify ]; then
     log "verify finished: $result in ${secs}s"
-    if [ "$ERRORS" -eq 0 ]; then echo "Verify finished: every file matches (${secs}s)." >&2; else echo "Verify found problems: ${NOTES%; }" >&2; fi
+    if [ "$ERRORS" -eq 0 ]; then
+      if [ "$VFIXED" -gt 0 ]; then echo "Verify finished: $VFIXED file(s) differed, were copied again, and now every file matches (${secs}s)." >&2
+      else echo "Verify finished: every file matches (${secs}s)." >&2; fi
+    else echo "Verify found problems: ${NOTES%; }" >&2; fi
+    mkdir -p "$(dirname "$VERIFY_STATUS_FILE")"
+    printf '%s|%s|%s|%s|%s|%s\n' "$(date '+%F %H:%M')" "$result" "$VCOMPARED" "$VDIFF" "$VFIXED" "$VDRIVES" >"$VERIFY_STATUS_FILE"
     [ "$ERRORS" -eq 0 ]
     exit $?
   fi
@@ -121,8 +137,8 @@ mkdir -p "$(dirname "$LOGFILE")"
 exec 8>/var/lock/homelab-backup.lock
 if ! flock -n 8; then
   log "another backup is already running; skipping"
-  if [ -t 2 ]; then echo "Another backup is already running, so this one was not started. Watch it with:  sudo tail -f $LOGFILE" >&2; exit 3; fi
-  exit 0
+  if [ -t 2 ]; then echo "Another backup is already running, so this one was not started. Watch it with:  sudo tail -f $LOGFILE" >&2; fi
+  exit 3
 fi
 log "start"
 
@@ -130,10 +146,12 @@ log "start"
 drop_caches() { sync; { echo 3 >/proc/sys/vm/drop_caches; } 2>/dev/null || true; }
 
 # verify_list SRC DEST_MAIN CHANGED_FILE BUDGET_MB: print (NUL-separated) the files to compare: the ones copied in this run first, then a random sample, up to the size budget.
+# A file that changed on Main after this run started is skipped: it differs because the app wrote to it, not because the drive damaged the copy.
 verify_list() {
   python3 - "$@" <<'PY'
 import os, random, sys
 src, dst, changed, budget = sys.argv[1], sys.argv[2], sys.argv[3], int(sys.argv[4]) * 1048576
+since = float(os.environ.get("VERIFY_SINCE") or 0)
 picked, seen, used = [], set(), 0
 def add(rel):
     global used
@@ -144,6 +162,8 @@ def add(rel):
     except OSError:
         return False
     if not (os.path.isfile(os.path.join(src, rel)) and not os.path.islink(os.path.join(src, rel))) or a.st_size == 0:
+        return False
+    if since and a.st_mtime >= since:
         return False
     if picked and used + a.st_size > budget:
         return False
@@ -173,12 +193,24 @@ differing_files() {
   rsync -rn --checksum --itemize-changes --from0 --files-from="$1" "$SRC/" "$DEST/main/" 2>>"$LOGFILE" | sed -n 's/^>f[^ ]* //p'
 }
 
+# drives_holding LIST: the backup drives (their folder names under /mnt/disks) that hold the files in LIST (one name per line).
+drives_holding() {
+  local f d seen=""
+  while IFS= read -r f; do
+    for d in "${HOMELAB_DISKS_DIR:-/mnt/disks}"/BACKUP*; do
+      [ -e "$d/main/$f" ] || continue
+      case " $seen " in *" $(basename "$d") "*) ;; *) seen="$seen $(basename "$d")" ;; esac
+    done
+  done <"$1"
+  echo "${seen# }"
+}
+
 # verify_sample CHANGED_FILE: compare a sample of the backup with the originals and copy again what differs.
 verify_sample() {
   [ "$VERIFY_MB" -gt 0 ] 2>/dev/null || return 0
   local list bad n total
   list=$(mktemp) || return 0
-  verify_list "$SRC" "$DEST/main" "$1" "$VERIFY_MB" >"$list" 2>>"$LOGFILE"
+  VERIFY_SINCE="$START" verify_list "$SRC" "$DEST/main" "$1" "$VERIFY_MB" >"$list" 2>>"$LOGFILE"
   total=$(tr -cd '\0' <"$list" | wc -c)
   if [ ! -s "$list" ]; then rm -f "$list"; return 0; fi
   total=$((total + 1))
@@ -187,16 +219,18 @@ verify_sample() {
   differing_files "$list" >"$bad"
   if [ -s "$bad" ]; then
     n=$(wc -l <"$bad")
-    log "verify: $n of $total checked file(s) differ from the originals, copying them again"
+    VDRIVES=$(drives_holding "$bad")
+    log "verify: $n of $total checked file(s) differ from the originals, copying them again${VDRIVES:+ (held by $VDRIVES)}"
     tr '\n' '\0' <"$bad" | rsync -aH --numeric-ids --checksum --from0 --files-from=- "$SRC/" "$DEST/main/" >>"$LOGFILE" 2>&1
     drop_caches
     differing_files "$list" >"$bad"
     if [ -s "$bad" ]; then
-      fail "$(wc -l <"$bad") file(s) in the backup still differ from the originals after copying them again (the backup drive may be failing): see $LOGFILE"
+      fail "$(wc -l <"$bad") file(s) in the backup still differ from the originals after copying them again${VDRIVES:+ (held by $VDRIVES)}; the backup drive may be failing: see $LOGFILE"
       while IFS= read -r f; do log "verify: still different: $f"; done <"$bad"
     else
       log "verify: the $n file(s) were copied again and now match (the backup drive had damaged them)"
-      fail "$n file(s) were damaged on the backup drive and have been copied again (the drive may be failing, check it with: sudo drives check)"
+      VDRIVES=$(drives_holding "$bad")
+      fail "$n file(s) differed from the originals and were copied again${VDRIVES:+, held by $VDRIVES}. Either the backup drive damaged them or they changed during the backup; if it happens again check the drive with: sudo drives check"
     fi
   else
     log "verify: $total file(s) checked, all match the originals"
@@ -204,26 +238,45 @@ verify_sample() {
   rm -f "$list" "$bad"
 }
 
-# verify_all [repair]: compare EVERY file (the `verify` command).
+# verify_all: compare EVERY file (the `verify` command). With --repair the files that differ are copied again from the originals;
+# the version the backup held before is kept in _deleted/<date> like in a nightly run, and a second compare says what is still different.
 verify_all() {
-  local all bad n
+  local all bad n left
   all=$(mktemp) || return 1
   bad=$(mktemp) || return 1
   ( cd "$DEST/main" && find . -type f -print0 ) | sed -z 's|^\./||' >"$all"
+  VCOMPARED=$(tr -cd '\0' <"$all" | wc -c)
+  [ -s "$all" ] && VCOMPARED=$((VCOMPARED + 1))
   drop_caches
   echo "Comparing every file (this reads all the data on both drives)..." >&2
   differing_files "$all" >"$bad"
   n=$(wc -l <"$bad")
+  VDIFF=$n
   if [ "$n" -eq 0 ]; then log "verify: every file matches"; rm -f "$all" "$bad"; return 0; fi
-  echo "$n file(s) in the backup differ from the originals (a file you changed after the last backup also shows here):" >&2
+  VDRIVES=$(drives_holding "$bad")
+  echo "$n file(s) in the backup differ from the originals${VDRIVES:+ (held by $VDRIVES)}. A file you changed after the last backup also shows here:" >&2
   head -n 50 "$bad" >&2
   if [ "$REPAIR" = 1 ]; then
-    tr '\n' '\0' <"$bad" | rsync -aH --numeric-ids --checksum --from0 --files-from=- "$SRC/" "$DEST/main/" >>"$LOGFILE" 2>&1
-    echo "They were copied again from the originals." >&2
+    mkdir -p "$DEST/_deleted/$TODAY/main"
+    tr '\n' '\0' <"$bad" | rsync -aH --numeric-ids --checksum --from0 --files-from=- \
+      --backup --backup-dir="$DEST/_deleted/$TODAY/main" "$SRC/" "$DEST/main/" >>"$LOGFILE" 2>&1
+    drop_caches
+    left=$(mktemp) || left=/dev/null
+    differing_files "$all" >"$left"
+    # only the files that were listed can still differ in a way that matters; count the ones that still do
+    VFIXED=$(( n - $(grep -cxFf "$bad" "$left" 2>/dev/null || true) ))
+    if [ -s "$left" ]; then
+      echo "$VFIXED file(s) were copied again from the originals; $(wc -l <"$left") still differ. The old versions are kept in _deleted/$TODAY for 30 days." >&2
+      fail "$(wc -l <"$left") file(s) in the backup still differ from the originals after copying them again"
+    else
+      echo "$n file(s) were copied again from the originals and now match. The old versions are kept in _deleted/$TODAY for 30 days." >&2
+      log "verify: $n file(s) repaired"
+    fi
+    [ "$left" = /dev/null ] || rm -f "$left"
   else
     echo "To copy them again:  sudo homelab-backup verify --repair" >&2
+    fail "$n file(s) in the backup differ from the originals${VDRIVES:+ (held by $VDRIVES)}"
   fi
-  fail "$n file(s) in the backup differ from the originals"
   rm -f "$all" "$bad"
 }
 
@@ -266,15 +319,22 @@ renice -n 19 -p $$ >/dev/null 2>&1 || true
 ionice -c3 -p $$ >/dev/null 2>&1 || true
 
 free_gb=$(( $(df -B1 --output=avail "$DEST" | tail -1 | tr -d ' ') / 1073741824 ))
-if [ "$free_gb" -lt "$MIN_FREE_GB" ]; then
-  fail "only ${free_gb} GB free at $DEST (need at least $MIN_FREE_GB)"
-  finish
-fi
-if [ ! -d "$DEST/main" ]; then
-  used_gb=$(( $(df -B1 --output=used "$SRC" | tail -1 | tr -d ' ') / 1073741824 ))
-  if [ "$free_gb" -lt $(( used_gb + MIN_FREE_GB )) ]; then
-    fail "first backup needs about ${used_gb} GB plus $MIN_FREE_GB GB spare, but only ${free_gb} GB are free at $DEST"
+# The spare space is 20 GB, but on a small backup drive it is a tenth of the drive (at least 1 GB), so a small drive can still hold backups.
+total_gb=$(( $(df -B1 --output=size "$DEST" | tail -1 | tr -d ' ') / 1073741824 ))
+floor_gb=$MIN_FREE_GB
+[ $(( total_gb / 10 )) -lt "$floor_gb" ] && floor_gb=$(( total_gb / 10 ))
+[ "$floor_gb" -ge 1 ] || floor_gb=1
+if [ "$MODE" = backup ] || [ "$REPAIR" = 1 ]; then
+  if [ "$free_gb" -lt "$floor_gb" ]; then
+    fail "only ${free_gb} GB free at $DEST (need at least $floor_gb)"
     finish
+  fi
+  if [ ! -d "$DEST/main" ]; then
+    used_gb=$(( $(df -B1 --output=used "$SRC" | tail -1 | tr -d ' ') / 1073741824 ))
+    if [ "$free_gb" -lt $(( used_gb + floor_gb )) ]; then
+      fail "first backup needs about ${used_gb} GB plus $floor_gb GB spare, but only ${free_gb} GB are free at $DEST"
+      finish
+    fi
   fi
 fi
 mkdir -p "$DEST/main" "$DEST/boot-configs" "$DEST/db-dumps" "$DEST/_deleted/$TODAY"

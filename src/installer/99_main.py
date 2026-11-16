@@ -1,6 +1,8 @@
 def reexec_newer_installer(cmd, args):
-    """After `git pull` the repository holds a newer installer than the one installed in /usr/local/sbin. Run the newer one, so a single refresh uses the fixes that were just downloaded."""
-    if FAKE or cmd in ("upgrade", "uninstall") or os.environ.get("HLS_REEXEC"):
+    """After `git pull` the repository holds a newer installer than the one installed in /usr/local/sbin. When a person types `sudo homelab-setup refresh` (or install) at a terminal, run the newer one, so a single refresh uses the fixes that were just downloaded. Background jobs, the control panel and the drives tool never hand over: the repository belongs to the user, so its code must not run as root without a person asking for it."""
+    if FAKE or cmd not in ("refresh", "install") or os.environ.get("HLS_REEXEC"):
+        return
+    if not os.environ.get("SUDO_USER") or not interactive():
         return
     try:
         State.load()
@@ -9,11 +11,13 @@ def reexec_newer_installer(cmd, args):
         me = os.path.abspath(sys.argv[0])
         if not new or not os.path.isfile(new) or os.path.realpath(new) == os.path.realpath(me):
             return
+        if os.stat(new).st_uid not in (0, pwd.getpwnam(os.environ["SUDO_USER"]).pw_uid):
+            return
         text = read_file(new)
         if not text or text == read_file(me):
             return
         compile(text, new, "exec")
-    except (OSError, SyntaxError, ValueError):
+    except (OSError, SyntaxError, ValueError, KeyError):
         return
     say("Using the newer installer from %s." % repo)
     env = dict(os.environ, HLS_REEXEC="1")
@@ -74,6 +78,9 @@ def main(argv):
     if cmd not in COMMANDS and cmd not in ("done", "skip", "unskip", "cards", "lastfm", "audiomuse", "navilist"):
         out("Unknown command '%s'. Try: homelab-setup help" % cmd)
         return 1
+    if len(pos) > 1 and cmd not in ("done", "skip", "unskip", "cards", "lastfm", "audiomuse", "navilist"):
+        out("'%s' does not take the word '%s', so nothing was done. Try: homelab-setup help" % (cmd, pos[1][:40]))
+        return 2
     if (Opt.wipe_data or Opt.wipe_drives) and cmd != "uninstall":
         out("%s only belongs to the uninstall command, so '%s' was not run. Try: homelab-setup help" % ("--wipe-data" if Opt.wipe_data else "--wipe-drives", cmd))
         return 1

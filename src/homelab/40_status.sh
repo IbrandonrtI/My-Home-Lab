@@ -1,4 +1,14 @@
-human_bytes() { numfmt --to=iec --suffix=B "$1" 2>/dev/null || echo "$1 B"; }
+# Sizes use powers of 1000 (848 MB), like the dashboard and file managers, not powers of 1024 under the same name.
+human_bytes() { numfmt --to=si --round=nearest --suffix=B "$1" 2>/dev/null || echo "$1 B"; }
+
+# stamp_in_lab_zone "YYYY-MM-DD HH:MM": a time written by the backup program (server time) shown in the zone the dashboard uses, with the zone's name.
+stamp_in_lab_zone() {
+  local ts zone=""
+  ts=$(date -d "$1" +%s 2>/dev/null) || { printf '%s' "$1"; return 0; }
+  [ -r "$STATE_DIR/display-timezone" ] && zone=$(awk '{ if ($2 != "none") print $2 }' "$STATE_DIR/display-timezone" | head -n 1)
+  if [ -n "$zone" ] && TZ="$zone" date -d "@$ts" '+%F %H:%M %Z' 2>/dev/null; then return 0; fi
+  date -d "@$ts" '+%F %H:%M %Z'
+}
 
 in_words() {
   local s=$1
@@ -163,7 +173,7 @@ last_backup_line() {
     ts=$(date -d "$stamp" +%s 2>/dev/null || echo "")
     age_h=""
     [ -n "$ts" ] && age_h=$(( ($(date +%s) - ts) / 3600 ))
-    line="$stamp  $result"
+    line="$(stamp_in_lab_zone "$stamp")  $result"
     [ -n "$age_h" ] && line="$line  (${age_h} h ago)"
     if [ "$result" != "OK" ]; then
       bad "Last backup" "$line -> read: sudo tail -20 /var/log/homelab-backup.log"
@@ -185,7 +195,7 @@ last_backup_line() {
 
 # Summary line of the containers. A stopped container whose restart policy is "no" was stopped on purpose and is ignored.
 containers_line() {
-  local n_run=0 n_all=0 down="" unhealthy cname cstate cpol crc cstart restarted="" st_ts now
+  local n_run=0 n_all=0 down="" silent unhealthy cname cstate cpol crc cstart restarted="" st_ts now
   if [ "$JUST_BOOTED" -eq 1 ]; then
     warn "Containers" "the server just started and the apps are still starting (live check in a few minutes: homelab status)"
   elif command -v docker >/dev/null 2>&1 && timeout 5 docker info >/dev/null 2>&1; then
@@ -211,7 +221,13 @@ containers_line() {
       warn "Containers" "${n_run} of ${n_all} running; unhealthy: ${unhealthy% } (read: docker logs --tail 50 NAME)"
       suggest 2 "docker logs --tail 50 NAME" "a container is unhealthy: read what it printed"
     else
-      ok "Containers" "${n_run} of ${n_all} running"
+      silent=$(timeout 15 "${HOMELAB_ALERTS_BIN:-/usr/local/sbin/homelab-alerts}" silent 2>/dev/null | tr '\n' ' ')
+      if [ -n "${silent// /}" ]; then
+        bad "Containers" "${n_run} of ${n_all} running; but the page does not answer: ${silent% } (read: sudo docker logs --tail 30 NAME)"
+        suggest 1 "sudo docker logs --tail 30 NAME" "a container runs but its page does not answer: read what it printed"
+      else
+        ok "Containers" "${n_run} of ${n_all} running"
+      fi
     fi
     [ -n "$restarted" ] && warn "Restarts" "Docker restarted in the last 24 h: ${restarted%, } (why: docker logs --tail 50 NAME)"
   else
@@ -261,9 +277,25 @@ cards_line() {
   fi
 }
 
+# The result of the last `homelab-backup verify`: copies that differ from the originals are shown here, with the drive that holds them.
+last_verify_line() {
+  local f stamp result compared differ _fixed drives
+  f="${LAST_VERIFY_FILE:-$(dirname "$LAST_RUN_FILE")/last-verify}"
+  [ -r "$f" ] || return 0
+  IFS='|' read -r stamp result compared differ _fixed drives <"$f"
+  [ -n "$stamp" ] || return 0
+  if [ "$result" = "OK" ]; then
+    ok "Backup check" "$(stamp_in_lab_zone "$stamp")  every file compared matched (${compared:-0} files)"
+  else
+    warn "Backup check" "$(stamp_in_lab_zone "$stamp")  ${differ:-some} file(s) did not match${drives:+ (held by $drives)} -> copy them again: sudo homelab-backup verify --repair"
+    suggest 2 "sudo homelab-backup verify --repair" "some backup copies differ from the originals: copy them again"
+  fi
+}
+
 status() {
   pool_lines
   last_backup_line
+  last_verify_line
   backup_size_line
   temps_line
   updates_line

@@ -118,10 +118,22 @@ def panel_runs_old_code():
     pid = pid.strip()
     if rc != 0 or not pid.isdigit() or pid == "0":
         return False
+    started = process_start_time(int(pid))
     try:
-        return os.stat("/usr/local/sbin/homelab-panel").st_mtime > os.stat("/proc/" + pid).st_mtime + 2
+        return bool(started) and os.stat("/usr/local/sbin/homelab-panel").st_mtime > started + 2
     except OSError:
         return False
+
+
+def process_start_time(pid):
+    """The time a process was started, in seconds since 1970 (from /proc/<pid>/stat and the boot time), or 0 when it is not known. The date of the /proc/<pid> folder is not the start time."""
+    try:
+        stat = read_file("/proc/%d/stat" % pid)
+        ticks = int(stat[stat.rindex(")") + 2:].split()[19])
+        boot = next(int(line.split()[1]) for line in read_file("/proc/stat").splitlines() if line.startswith("btime "))
+        return boot + ticks / os.sysconf("SC_CLK_TCK")
+    except (OSError, ValueError, IndexError, StopIteration):
+        return 0
 
 
 @step

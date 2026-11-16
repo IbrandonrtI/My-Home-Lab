@@ -3,8 +3,10 @@ import os
 import re
 import shutil
 import signal
+import stat
 import subprocess
 import sys
+import tempfile
 import urllib.error
 import urllib.request
 from urllib.parse import urlparse
@@ -54,10 +56,29 @@ def read(p):
 def write(p, text):
     if os.path.exists(p) and not os.path.exists(p + ".before-theme") and p != IDFILE:
         shutil.copy2(p, p + ".before-theme")
-    tmp = p + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        f.write(text)
-    os.replace(tmp, p)
+    write_safely(p, text)
+
+
+def write_safely(p, text):
+    """Write p through a fresh temporary file in the same folder (a planted link cannot be followed), keep the old file's mode, then replace it."""
+    try:
+        mode = stat.S_IMODE(os.stat(p).st_mode)
+    except OSError:
+        mode = 0o600 if p == IDFILE else 0o644
+    fd, tmp = tempfile.mkstemp(prefix="." + os.path.basename(p) + ".", suffix=".tmp", dir=os.path.dirname(p) or ".")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+            f.flush()
+            os.fchmod(f.fileno(), mode)
+            os.fsync(f.fileno())
+        os.replace(tmp, p)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def need_dir():
@@ -710,11 +731,7 @@ def layout_add_group(group, others):
     key = "'%s'" % group.replace("'", "''") if re.search(r"[:#\[\]{},*!|>'\"%@`]|^[&?-]|^\s|\s$", group) else group
     icon = "mdi-dots-horizontal-circle" if group.lower() == "others" else "mdi-bookmark-multiple"
     lines[end:end] = ["  %s:" % key, "    tab: %s" % tab, "    icon: %s" % icon]
-    tmp = SETTINGS + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        f.write("\n".join(lines))
-    shutil.copymode(SETTINGS, tmp)
-    os.replace(tmp, SETTINGS)
+    write_safely(SETTINGS, "\n".join(lines))
 
 
 def marks_add(name, url, extra):
@@ -864,7 +881,7 @@ def marks_icons(apply):
     for g in groups:
         for n, s, e in g[1]:
             for i in range(s, e):
-                m = re.match(r"^(\s+icon:\s*)(https?://cdn\.brandfetch\.io/\S+?)\s*$", lines[i])
+                m = re.match(r"^(\s+icon\s*:\s*)(https?://cdn\.brandfetch\.io/\S+?)\s*$", lines[i])
                 if not m:
                     continue
                 cm = re.search(r"[?&]c=([\w-]+)", m.group(2))

@@ -164,10 +164,29 @@ def key_files_open():
     return found
 
 
+PANEL_FILES = ("settings.yaml", "services.yaml", "bookmarks.yaml", "widgets.yaml", "custom.css", "custom.js")
+
+
+def wrong_owner_files():
+    """The dashboard folder and its main files must belong to the user: the control panel runs as that user and could not save them otherwise."""
+    if FAKE or os.geteuid() != 0 or not Ctx.uid:
+        return []
+    found = []
+    for p in [P(hp_dir())] + [P(hp_dir() + "/" + n) for n in PANEL_FILES] + [P(hp_dir() + "/.panel-history")]:
+        try:
+            if os.stat(p).st_uid != Ctx.uid:
+                found.append(p)
+        except OSError:
+            pass
+    return found
+
+
 def protect_key_files():
     """Make services.yaml, its saved copies and the panel's undo history readable by the owner only. Homepage runs as root in its container, so it still reads them."""
     if Opt.dry:
         return
+    for p in wrong_owner_files():
+        os.chown(p, Ctx.uid, Ctx.gid)
     for p in key_files_open():
         if os.path.isdir(p):
             for dp, _dirs, files in os.walk(p):

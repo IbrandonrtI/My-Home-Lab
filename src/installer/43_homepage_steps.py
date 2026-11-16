@@ -1,4 +1,20 @@
 HP_FILES = ["services.yaml", "settings.yaml", "widgets.yaml", "bookmarks.yaml", "custom.css"]
+# The person changes these two the most. When one is missing the checklist shows one item (the key-files step), not the whole Homepage group.
+LOOK_FILES = ["custom.css", "bookmarks.yaml"]
+
+
+def write_default_homepage_file(f):
+    """Write the shipped version of one Homepage file, with this machine's addresses filled in."""
+    body = subst(read_file(repo_file("homepage-config", f)))
+    if not body:
+        raise Abort("The repository file homepage-config/%s is missing." % f)
+    if f == "services.yaml":
+        body = hp_strip_widgets(body)
+        if not adguard_wanted():
+            body = hp_remove_card(body, "adguard-card")
+    if f == "widgets.yaml":
+        body = widgets_for_machine(body)
+    write_file(hp_path(f), body, hp_mode(f), (Ctx.uid, Ctx.gid))
 
 
 def widgets_for_machine(body):
@@ -41,7 +57,7 @@ class HomepageFiles(Step):
     needs = ("folders", "tailscale-login", "restore-configs")
 
     def probe(self):
-        if not all(os.path.exists(hp_path(f)) for f in HP_FILES):
+        if not all(os.path.exists(hp_path(f)) for f in HP_FILES if f not in LOOK_FILES):
             return "todo"
         txt = read_file(hp_path())
         if PH_LAN in txt or PH_FQDN in txt:
@@ -57,17 +73,10 @@ class HomepageFiles(Step):
     def run(self):
         for f in HP_FILES:
             dst = hp_path(f)
+            if f in LOOK_FILES and not os.path.exists(dst):
+                continue
             if not os.path.exists(dst):
-                body = subst(read_file(repo_file("homepage-config", f)))
-                if not body:
-                    raise Abort("The repository file homepage-config/%s is missing." % f)
-                if f == "services.yaml":
-                    body = hp_strip_widgets(body)
-                    if not adguard_wanted():
-                        body = hp_remove_card(body, "adguard-card")
-                if f == "widgets.yaml":
-                    body = widgets_for_machine(body)
-                write_file(dst, body, hp_mode(f), (Ctx.uid, Ctx.gid))
+                write_default_homepage_file(f)
             elif f in ("services.yaml", "bookmarks.yaml"):
                 old = read_file(dst)
                 new = subst(old)
@@ -83,22 +92,35 @@ class HomepageFiles(Step):
         protect_key_files()
 
 
+def missing_look_files():
+    return [f for f in LOOK_FILES if not os.path.exists(hp_path(f))]
+
+
 @step
 class HomepageKeyFiles(Step):
-    """Keep the files that hold the dashboard's widget keys readable by their owner only. Nothing waits for this step, so a permission problem shows as one item."""
-    id, group, title = "homepage-key-files", "Homepage", "The dashboard's key files (services.yaml and its copies) are readable by their owner only"
+    """Keep the files that hold the dashboard's widget keys readable by their owner only, and the dashboard folder and its files owned by the user. Nothing waits for this step, so a permission problem shows as one item."""
+    id, group, title = "homepage-key-files", "Homepage", "The dashboard's key files (services.yaml and its copies) are readable by their owner only, and its look and bookmarks files are present"
     needs = ("homepage-files",)
 
     def applies(self):
         return not Mode.existing
 
     def probe(self):
-        return "todo" if key_files_open() else "done"
+        return "todo" if key_files_open() or wrong_owner_files() or missing_look_files() else "done"
 
     def detail(self):
-        return "%d file(s) are readable by other users; `sudo homelab-setup refresh` fixes it" % len(key_files_open())
+        gone = missing_look_files()
+        if gone and not key_files_open() and not wrong_owner_files():
+            return "%s missing; `sudo homelab-setup refresh` writes the shipped version (your own look can come back with: sudo homelab-restore-configs)" % " and ".join(gone)
+        return "%d file(s) are readable by other users or belong to the wrong user; `sudo homelab-setup refresh` fixes it" % (len(key_files_open()) + len(wrong_owner_files()))
 
     def run(self):
+        for f in missing_look_files():
+            if Opt.dry:
+                out("      would write the shipped %s" % f)
+                continue
+            write_default_homepage_file(f)
+            warn("%s was missing, so the shipped version was written. Your own look and bookmarks are in the backups and the control panel's Undo history; to bring them back run: sudo homelab-restore-configs" % f)
         protect_key_files()
 
 

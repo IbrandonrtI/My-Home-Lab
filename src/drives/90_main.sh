@@ -64,6 +64,7 @@ main() {
   if { [ "$WANT_SPARE" = 1 ] || [ "$WANT_CACHE" = 1 ] || [ "$WANT_ENCRYPT" = 1 ]; } && [ "$cmd" != preset ]; then note "--spare, --cache and --encrypt work with: preset (not with '$cmd')."; exit 1; fi
   if [ "$WANT_FIRST" = 1 ] && [ "$cmd" != wizard ]; then note "--first-run works with: wizard (not with '$cmd')."; exit 1; fi
   if [ "$FOLDERS" = 1 ] && [ "$cmd" != usage ]; then note "--folders works with: usage (not with '$cmd')."; exit 1; fi
+  if [ "$#" -ge 1 ] && [ -z "$1" ]; then note "An empty word was given. Nothing was done."; exit 2; fi
   case "${1:-}" in
     test-setup|test-cleanup) ;;
     preset|snapraid) if [ $# -gt 2 ]; then note "Unexpected word: ${*:3}"; note "Nothing was done."; note ""; usage_text >&2; exit 1; fi ;;

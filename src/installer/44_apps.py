@@ -18,7 +18,8 @@ class NavidromeStack(StackStep):
         if not Opt.dry:
             os.makedirs(P(folder), exist_ok=True)
             chown(P(folder), Ctx.uid, Ctx.gid)
-        StackStep.run(self)
+        # a changed Compose file or key must be deployed; only an unchanged stack is just started again
+        StackStep.run(self, start_first=State.data.get("navidrome_stack") == self.stamp())
         if not Opt.dry:
             State.data["navidrome_stack"] = self.stamp()
             State.save()
@@ -165,7 +166,7 @@ class AudioMuseStack(StackStep):
             for folder in (Ctx.home + "/audiomuse", Ctx.home + "/audiomuse/postgres"):
                 os.makedirs(P(folder), exist_ok=True)
                 chown(P(folder), Ctx.uid, Ctx.gid)
-        StackStep.run(self)
+        StackStep.run(self, start_first=State.data.get("audiomuse_stack") == self.stamp())
         if Opt.dry:
             return
         State.data.pop("audiomuse_paused", None)
@@ -299,7 +300,7 @@ class NaviListStack(StackStep):
             for folder in (Ctx.home + "/navilist", Ctx.home + "/navilist/data"):
                 os.makedirs(P(folder), exist_ok=True)
                 chown(P(folder), Ctx.uid, Ctx.gid)
-        StackStep.run(self)
+        StackStep.run(self, start_first=State.data.get("navilist_stack") == self.stamp())
         if Opt.dry:
             return
         if not wait_for(lambda: http("GET", url("navilist", "/health"), timeout=10)[0] == 200, "naviList to answer", 180):

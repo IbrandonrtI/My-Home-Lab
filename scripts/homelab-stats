@@ -315,7 +315,22 @@ def temps():
     return out
 
 
+def chosen_name(label):
+    """The name set with `sudo drives rename` (a line LABEL=name in /etc/homelab-drive-names), or ''."""
+    path = os.environ.get("HOMELAB_NAMES_FILE", "/etc/homelab-drive-names")
+    for line in read(path).splitlines():
+        if line.lstrip().startswith("#") or "=" not in line:
+            continue
+        k, _, v = line.partition("=")
+        if k.strip().upper() == label.upper() and v.strip():
+            return re.sub(r"[^\w .,'()+-]", "", v.strip())[:40]
+    return ""
+
+
 def drive_name(label):
+    chosen = chosen_name(label)
+    if chosen:
+        return chosen
     if label.lower() == "boot":
         return "Boot Drive"
     m = re.match(r"^(MAIN|BACKUP)(\d*)$", label, re.I)
@@ -591,6 +606,8 @@ def folder_sizes(now, spaces, quick):
         sp = spaces.get(pool)
         if sp is None or not os.path.isdir(path):
             texts[key] = "Not connected" if sp is None else "No folder"
+            if cache.pop(key, None) is not None:  # a pool that is gone is counted again when it comes back (it may be another drive)
+                counted = True
             continue
         fp = int(sp[1]) >> 26
         c = cache.get(key) or {}

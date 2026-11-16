@@ -5,19 +5,22 @@
   homelab-alerts show     look and print what it found, write nothing
   homelab-alerts help
 
-What it looks at: containers that are not running, container updates waiting (the list homelab-update saved), system updates and a needed
+What it looks at: containers that are not running, services that run but whose page does not answer, a backup drive that is set up but not connected, copies that the last backup verify found different, container updates waiting (the list homelab-update saved), system updates and a needed
 restart, the drives and the backup (from stats.json), free space, Tailscale, drive temperatures, and files being written to a storage pool (an upload or a setup). Every kind can be missing (a tool that is not
 installed, a file that is not there yet) and then it is skipped. It changes nothing on the machine and needs no internet.
 
 The file is images/alerts.json in the Homepage folder (the same place as stats.json). Each item has an id, a level (bad, warn or info), a title,
 a detail and an action the bell can offer ("update", "restart" or ""). Settings by environment (for tests): HOMELAB_STATE_DIR, HOMELAB_ALERTS_OUT,
-HOMELAB_STATS_IN, HOMELAB_DOCKER, HOMELAB_TAILSCALE, HOMELAB_APT_GET, HOMELAB_REBOOT_FILE, HOMELAB_ROOT_PATH, HOMELAB_TEMP_WARN, HOMELAB_TEMP_BAD, HOMELAB_BUSY (none or any text), HOMELAB_POOL_DEVS, HOMELAB_SYS_BLOCK, HOMELAB_BUSY_SECS."""
+HOMELAB_STATS_IN, HOMELAB_DOCKER, HOMELAB_TAILSCALE, HOMELAB_APT_GET, HOMELAB_REBOOT_FILE, HOMELAB_ROOT_PATH, HOMELAB_TEMP_WARN, HOMELAB_TEMP_BAD, HOMELAB_BUSY (none or any text), HOMELAB_POOL_DEVS, HOMELAB_SYS_BLOCK, HOMELAB_BUSY_SECS, HOMELAB_FSTAB, HOMELAB_BACKUP_POOL, HOMELAB_VERIFY_STATUS, HOMELAB_PAGE_HOST, HOMELAB_SERVICE_PORTS (JSON)."""
 import json
 import os
 import re
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 
 VERSION = "1.0"
 STATE_DIR = os.environ.get("HOMELAB_STATE_DIR", "/var/lib/homelab")
@@ -27,6 +30,16 @@ REBOOT_FILE = os.environ.get("HOMELAB_REBOOT_FILE", "/var/run/reboot-required")
 ROOT_PATH = os.environ.get("HOMELAB_ROOT_PATH", "/")
 BACKUP_STATUS = os.environ.get("HOMELAB_BACKUP_STATUS", "/var/lib/homelab-backup/last-run")
 APT_GET = os.environ.get("HOMELAB_APT_GET", "apt-get")
+FSTAB = os.environ.get("HOMELAB_FSTAB", "/etc/fstab")
+BACKUP_POOL = os.environ.get("HOMELAB_BACKUP_POOL", "/mnt/backup")
+VERIFY_STATUS = os.environ.get("HOMELAB_VERIFY_STATUS", os.path.join(os.path.dirname(BACKUP_STATUS), "last-verify"))
+PAGE_HOST = os.environ.get("HOMELAB_PAGE_HOST", "127.0.0.1")
+# The web address of every service the lab installs: container name and the port on this machine. A container that runs but whose page does not answer
+# is a service the person cannot use, and Docker alone does not say so.
+SERVICE_PORTS = {"homepage": 3001, "portainer": 9000, "adguardhome": 3000, "beszel": 8090, "netdata-netdata-1": 19999, "speedtest-tracker": 8088,
+                 "filebrowser-filebrowser-1": 8081, "immich_server": 2283, "nextcloud": 8082, "downtify": 8000, "metube": 8185, "navidrome": 4533}
+if os.environ.get("HOMELAB_SERVICE_PORTS"):  # tests: replaces the table
+    SERVICE_PORTS = json.loads(os.environ["HOMELAB_SERVICE_PORTS"])
 ORDER = {"bad": 0, "warn": 1, "info": 2}
 
 
@@ -161,6 +174,8 @@ def stats_items():
         blk = main if key == "main" else backup
         pct, health = str(blk.get("percent", "")), str(blk.get("health", ""))
         if pct == "Not connected":
+            if not req and backup_drive_configured():
+                continue
             res.append(item(key + ":missing", "bad" if req else "info", "%s is not connected" % label,
                             "No drive is connected there." if req else "Connect a drive in the Drives tab to get backups on a second drive.", "drives"))
             continue
@@ -183,6 +198,56 @@ def stats_items():
         except (IndexError, ValueError, OverflowError):
             pass
     return res
+
+
+def backup_drive_configured():
+    """True when /etc/fstab holds a backup drive (a mount point under .../BACKUPn). A drive removed with `drives disconnect` is no longer listed there."""
+    for line in read(FSTAB).splitlines():
+        f = line.split()
+        if len(f) > 1 and not f[0].startswith("#") and re.search(r"/BACKUP\d+/?$", f[1]):
+            return True
+    return False
+
+
+def check_backup_drive():
+    """A backup drive that is set up but not mounted is seen at once, not only at the next stats reading (every 15 minutes)."""
+    if backup_drive_configured() and not os.path.ismount(BACKUP_POOL):
+        return [item("backup:drive-missing", "warn", "The backup drive is not connected", "Backups go to the boot drive until it is back. Check the cable and the Drives tab, or run: sudo drives status", "drives")]
+    return []
+
+
+def check_backup_verify():
+    """The result of the last `homelab-backup verify`: copies that still differ from the originals stay on the bell until a later verify finds every file matching."""
+    f = (read(VERIFY_STATUS).strip().splitlines() or [""])[0].split("|") + [""] * 6
+    stamp, result, _compared, differ, _fixed, drives = f[:6]
+    if not stamp or result.strip().upper() == "OK":
+        return []
+    where = " Held by %s." % drives.strip() if drives.strip() else ""
+    return [item("backup:verify", "warn", "Backup copies differ from the originals", "%s file(s) in the backup did not match when checked on %s.%s To copy them again: sudo homelab-backup verify --repair" % (differ or "Some", stamp, where), "drives")]
+
+
+def page_status(port):
+    try:
+        with urllib.request.urlopen("http://%s:%d/" % (PAGE_HOST, port), timeout=4) as r:
+            return r.status
+    except urllib.error.HTTPError as e:
+        return e.code
+    except (OSError, ValueError):
+        return 0
+
+
+def check_pages():
+    """A container that runs but whose page does not answer (a status of 0 or 500 and above). Only containers that are running are tried."""
+    rc, out = run([DOCKER, "ps", "--format", "{{.Names}}"])
+    if rc != 0:
+        return []
+    up = [n for n in out.split() if n in SERVICE_PORTS]
+    if not up:
+        return []
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        codes = list(pool.map(lambda n: page_status(SERVICE_PORTS[n]), up))
+    return [item("silent:" + n, "bad", "%s runs but its page does not answer" % nice(n), "Look at what it says: sudo docker logs --tail 30 %s" % n, "")
+            for n, code in zip(up, codes) if not 0 < code < 500]
 
 
 def check_space():
@@ -272,7 +337,7 @@ def check_busy():
     return [item("storage:busy", "info", "Files are being written to a storage pool", "Probably an upload or a setup. Its size is not known, so there is no finish time. Updates and drive changes wait until it stops.", "")]
 
 
-CHECKS = (check_containers, check_panel, check_updates, stats_items, check_space, check_tailscale, check_temps, check_busy)
+CHECKS = (check_containers, check_panel, check_pages, check_updates, stats_items, check_backup_drive, check_backup_verify, check_space, check_tailscale, check_temps, check_busy)
 
 
 def collect():
@@ -305,9 +370,13 @@ def main(argv):
     if cmd in ("version", "--version"):
         print("homelab-alerts %s" % VERSION)
         return 0
-    if cmd not in ("run", "show"):
-        sys.stderr.write("Unknown option: %s\n%s\n" % (cmd, "Use: homelab-alerts [show|help|version]"))
+    if cmd not in ("run", "show", "silent"):
+        sys.stderr.write("Unknown option: %s\n%s\n" % (cmd, "Use: homelab-alerts [show|silent|help|version]"))
         return 1
+    if cmd == "silent":  # used by `homelab`: names of containers that run but whose page does not answer, one per line
+        for i in check_pages():
+            print(i["id"].split(":", 1)[1])
+        return 0
     res = collect()
     if cmd == "show":
         for i in res["items"]:

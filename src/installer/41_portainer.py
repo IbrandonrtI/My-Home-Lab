@@ -347,6 +347,29 @@ def prepull(images):
             time.sleep(5 if not FAKE else 0)
 
 
+def start_stopped_containers(name):
+    """After a crash or a power cut the containers of a stack still exist but are stopped. Start them again instead of deploying the stack once more: a new deploy re-creates the containers, which loses data kept in anonymous volumes and can put back older image versions than the ones `homelab-update` installed. Returns True when the stack runs again (or would, in a dry run)."""
+    need = STACKS[name][1]
+    if not all(c in containers_all() for c in need):
+        return False
+    stopped = [c for c in need if c not in containers_running()]
+    if not stopped:
+        return True
+    if Opt.dry:
+        out("      would start the stopped containers of '%s' again: %s" % (name, ", ".join(stopped)))
+        return True
+    rc, txt = act(["docker", "start"] + stopped, timeout=180)
+    if rc != 0:
+        log("stack %s: docker start failed: %s" % (name, txt.strip()[-200:]))
+        return False
+    for _ in range(30):
+        if stack_up(name):
+            good("The stopped containers of %s were started again (%s); nothing was re-created" % (name, ", ".join(stopped)))
+            return True
+        time.sleep(0 if FAKE else 2)
+    return False
+
+
 class StackStep(Step):
     """One Portainer stack: deploy it from its Compose file and wait until its containers run. Stacks marked parallel are deployed together."""
     group = "Services"
@@ -367,7 +390,9 @@ class StackStep(Step):
     def detail(self):
         return "%d container(s) running" % len(STACKS[self.name][1])
 
-    def run(self):
+    def run(self, start_first=True):
+        if start_first and start_stopped_containers(self.name):
+            return
         text = stack_text(self.name)
         env = stack_env(self.name)
         prepull(images_in(text))

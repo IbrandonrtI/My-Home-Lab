@@ -887,7 +887,8 @@ Commands:
   done STEP | skip STEP    mark a manual step as done, or as not wanted
   unskip STEP              take a skipped step back (only steps that wait for a person can be marked)
   secrets                  show the generated passwords and keys
-  progress | version | help
+  progress                 update the progress shown on the login screen and on the dashboard (the schedule runs it too; checklist and status only read)
+  version | help
 
 Options for install:  --yes  --backup FOLDER  --no-restore  --no-background  --repo FOLDER  --force-existing
 The installer never formats or erases a drive and never saves the admin password in its own files (Nextcloud keeps it in its own container, as the Nextcloud image requires). The one change it can make to the drive layout

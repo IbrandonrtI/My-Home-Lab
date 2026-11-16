@@ -21,6 +21,7 @@ STATE = os.environ.get("HLB_STATE", "/var/lib/homelab-backup/tasks")
 LOCK = os.environ.get("HLB_LOCK", "/var/lock/homelab-backup.lock")
 LOGFILE = os.environ.get("HLB_LOGFILE", "/var/log/homelab-backup-tasks.log")
 LEGACY = os.environ.get("HLB_LEGACY", "/usr/local/sbin/homelab-backup")
+LAST_RUN = os.environ.get("HLB_LAST_RUN", "/var/lib/homelab-backup/last-run")
 LEGACY_CONF = os.environ.get("HLB_LEGACY_CONF", "/etc/homelab-backup.conf")
 CRONTAB = os.environ.get("HLB_CRONTAB", "crontab -l")
 SSH_KEY = os.environ.get("HLB_KEY", "/root/.ssh/homelab-backup")
@@ -260,7 +261,29 @@ def state_dir(tid):
 
 
 def read_status(tid):
-    return read_json(os.path.join(state_dir(tid), "status.json"), {})
+    st = read_json(os.path.join(state_dir(tid), "status.json"), {})
+    if tid == NIGHTLY_ID and not st.get("running"):
+        st = with_hand_started_run(st)
+    return st
+
+
+def with_hand_started_run(st):
+    """A backup started by hand (sudo homelab-backup) writes only the program's own result file. When that result is newer than the task's last run, show it, so the task and the terminal tell the same story."""
+    try:
+        stamp, result, _dest, secs, size = (open(LAST_RUN, encoding="utf-8").readline().rstrip("\n").split("|") + ["", "", "", "", ""])[:5]
+        ended = datetime.datetime.strptime(stamp, "%Y-%m-%d %H:%M")
+    except (OSError, ValueError):
+        return st
+    last = parse_stamp(st.get("last_end", ""))
+    if last and last >= ended - datetime.timedelta(minutes=1):
+        return st
+    ok = result.strip().upper() == "OK"
+    merged = dict(st, last_end=stamp_of(ended), result="OK" if ok else "FAILED",
+                  message="The nightly backup program finished (started by hand or by the schedule)." if ok else "The nightly backup reported a problem: %s" % result.strip()[:160])
+    if secs.isdigit():
+        merged["secs"] = int(secs)
+        merged["last_start"] = stamp_of(ended - datetime.timedelta(seconds=int(secs)))
+    return merged
 
 
 def write_status(tid, st):
@@ -857,6 +880,10 @@ def cloud_prune(task):
     return n
 
 
+class Skipped(Exception):
+    """The run did not start because another backup holds the lock. It is not a result: the task keeps its last real one."""
+
+
 def run_nightly(task, dry):
     if dry:
         return True, "The nightly backup copies %s to %s every day and keeps deleted or replaced files for %d days. A dry run is not available for it." % (
@@ -865,6 +892,8 @@ def run_nightly(task, dry):
         return False, "The nightly backup program (%s) is not installed." % LEGACY, {}
     say("Running the nightly backup ...")
     rc, text = stream([LEGACY], show=False)
+    if rc == 3:
+        raise Skipped("Another backup is running, so the nightly backup was not started. Nothing was copied.")
     if rc:
         tail = [x for x in text.split("\n") if x.strip()][-2:]
         return False, "The nightly backup reported a problem. %s (More: tail -20 /var/log/homelab-backup.log)" % " ".join(tail)[:200], {}
@@ -917,6 +946,7 @@ def run_task(tid, dry=False):
     start = now()
     t0 = time.time()
     kind = task["dest"]["type"]
+    before = read_status(tid)
     try:
         if not dry:
             write_status(tid, dict(read_status(tid), running=True, last_start=stamp_of(start)))
@@ -929,6 +959,11 @@ def run_task(tid, dry=False):
                 ok, msg, det = run_cloud(task, dry)
             else:
                 ok, msg, det = run_versions(task, dry)
+        except Skipped as e:
+            if not dry:
+                write_status(tid, dict(before, running=False))
+            log("skipped %s: %s" % (tid, e))
+            raise Bad(str(e)) from None
         except Bad as e:
             ok, msg, det = False, str(e), {}
         except Exception as e:
@@ -1078,7 +1113,15 @@ def cmd_stream(task_id, version, rel, mode):
     if mode == "file":
         if not os.path.isfile(path):
             raise Bad("That file is not in this version.")
-        with open(path, "rb") as f:
+        # open first, then check what was really opened (a link swapped in after the check above is not followed)
+        try:
+            fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        except OSError:
+            raise Bad("That file is not in this version.") from None
+        with os.fdopen(fd, "rb") as f:
+            real = os.path.realpath("/proc/self/fd/%d" % f.fileno())
+            if not real.startswith(root + os.sep) or not stat.S_ISREG(os.fstat(f.fileno()).st_mode):
+                raise Bad("That path is not in this version.")
             shutil.copyfileobj(f, out, 1 << 20)
         out.flush()
         return

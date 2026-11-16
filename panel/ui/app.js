@@ -1898,7 +1898,7 @@ async function saveLook() {
     }
     if (lookDirty()) {
       clearTimeout(pvTimer); pvSeq++;
-      await api("POST", "/api/look", { look: lookOut() }, undefined, bgSaved ? "Look and background changed" : "");
+      await api("POST", "/api/look", { look: lookOut(), version: S.look.version }, undefined, bgSaved ? "Look and background changed" : "");
     }
     if (lookDirty() || bgSaved) { clearTimeout(pvTimer); pvSeq++; send({ type: "saved", bg: !!bgSaved }); }
     const what = both ? "Look and background saved." : (bgDirty() ? "Background saved." : "Look saved.");
