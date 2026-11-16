@@ -6,6 +6,7 @@ import contextlib
 import getpass
 import fcntl
 import glob
+import grp
 import gzip
 import hashlib
 import ipaddress
@@ -17,6 +18,7 @@ import secrets as pysecrets
 import shutil
 import signal
 import socket
+import stat
 import string
 import subprocess
 import sys
@@ -2552,6 +2554,10 @@ class Step:
     def applies(self):
         return True
 
+    def open_note(self):
+        """A line under the step in the checklist while it is open: what exactly is missing."""
+        return ""
+
     def probe(self):
         return "todo"
 
@@ -2742,6 +2748,10 @@ def show_checklist(res, title="Home lab setup", show_help=None, show_all=False):
             elif s.kind == "ack":
                 tag = "  %sdetected automatically%s" % (D, N)
             out("   %s%s%s %s%s" % (col, sym, N, s.title, tag))
+            note = s.open_note() if r.state == "todo" else ""
+            if note:
+                for l in wrap(note, 9):
+                    out("%s%s%s" % (D, l, N))
             if r.state == "failed" and r.detail:
                 for l in wrap("Last attempt failed: " + r.detail, 9):
                     out("%s%s%s" % (R, l, N))
@@ -4219,13 +4229,31 @@ class HomepageKeyFiles(Step):
             return "%s missing; `sudo homelab-setup refresh` writes the shipped version (your own look can come back with: sudo homelab-restore-configs)" % " and ".join(gone)
         return "%d file(s) are readable by other users or belong to the wrong user; `sudo homelab-setup refresh` fixes it" % (len(key_files_open()) + len(wrong_owner_files()))
 
+    def open_note(self):
+        gone = missing_look_files()
+        parts = []
+        if gone:
+            parts.append("%s missing. `sudo homelab-setup refresh` writes the shipped version of only that file. Your own copy can come back with: sudo homelab-restore-configs" % " and ".join(gone))
+        if key_files_open() or wrong_owner_files():
+            parts.append("%d file(s) are readable by other users or belong to the wrong user. `sudo homelab-setup refresh` fixes it" % (len(key_files_open()) + len(wrong_owner_files())))
+        return ". ".join(parts)
+
     def run(self):
         for f in missing_look_files():
             if Opt.dry:
                 out("      would write the shipped %s" % f)
                 continue
             write_default_homepage_file(f)
-            warn("%s was missing, so the shipped version was written. Your own look and bookmarks are in the backups and the control panel's Undo history; to bring them back run: sudo homelab-restore-configs" % f)
+            if f == "bookmarks.yaml":
+                # The shipped bookmark groups are not new layout entries: settings.yaml stays as it is.
+                seen = list(State.data.get("layout_seen", []))
+                for g in group_names(read_file(hp_path(f))):
+                    if g not in seen:
+                        seen.append(g)
+                State.data["layout_seen"] = seen
+                State.save()
+            log("homepage-key-files: %s was missing, the shipped version was written" % f)
+            warn("%s was missing, so the shipped version was written. Only that file was changed. Your own copy is in the backups and the control panel's Undo history; to bring it back run: sudo homelab-restore-configs" % f)
         protect_key_files()
 
 
@@ -4341,11 +4369,13 @@ class HomepageTabs(Step):
         if Opt.dry:
             out("      would add the tabs (Home, Stats, Links), the group icons, the bookmark cards, the STATS cards and their styles to the Homepage files")
             return
+        saved = []
         for name, old, new in (("settings.yaml", old_sett, sett), ("custom.css", old_css, css), ("custom.js", old_js, js), ("services.yaml", old_svc, svc), ("widgets.yaml", old_wid, wid)):
             if new == old:
                 continue
             if old and not os.path.exists(hp_path(name) + ".before-tabs"):
                 write_file(hp_path(name) + ".before-tabs", old, hp_mode(name), own)
+                saved.append(name + ".before-tabs")
             write_file(hp_path(name), new, hp_mode(name), own)
         self.remember(seen)
         State.mark("homepage-tabs")
@@ -4362,7 +4392,7 @@ class HomepageTabs(Step):
             run_calendar_build()
         if not FAKE and "homepage" in containers_all():
             act(["docker", "restart", "homepage"], timeout=120)
-        out("      Reload the dashboard (Ctrl+Shift+R). The old files are saved as settings.yaml.before-tabs, custom.css.before-tabs, custom.js.before-tabs and services.yaml.before-tabs")
+        out("      Reload the dashboard (Ctrl+Shift+R)." + ((" The old versions of the changed files are saved as %s." % ", ".join(saved)) if saved else ""))
         if STATS_BEGIN in svc:
             out("      The Stats tab is filled in within 15 minutes; folder sizes take a little longer. To fill it in now, run:  sudo homelab-stats")
         if CUSTOM_BEGIN in svc:
@@ -5124,6 +5154,26 @@ def md_old_containers():
     return found
 
 
+def md_volume_mounts(container, binds):
+    """The Docker volumes (named or unnamed) a container uses that are not already listed as binds: (volume name, folder inside the container)."""
+    taken = {b.split(":")[1] for b in binds if b.count(":") >= 1}
+    found = []
+    for m in container.get("Mounts") or []:
+        if m.get("Type") == "volume" and m.get("Name") and m.get("Destination") and m["Destination"] not in taken:
+            found.append((m["Name"], m["Destination"]))
+    return found
+
+
+def md_lost_mounts(old, text):
+    """Folders with data in a Docker volume that the new Compose text would not mount again. Removing the old container would leave that data behind."""
+    lost = []
+    for n, c in old.items():
+        for name, dest in md_volume_mounts(c, [b for b in ((c.get("HostConfig") or {}).get("Binds") or []) if b]):
+            if (name + ":" + dest) not in text:
+                lost.append("%s (%s)" % (n, dest))
+    return lost
+
+
 def md_compose_from_files(old):
     for c in old.values():
         lab = (c.get("Config") or {}).get("Labels") or {}
@@ -5146,6 +5196,7 @@ def md_compose_from_files(old):
 def md_compose_from_inspect(old):
     """Build a Compose file from the settings a running container was started with (image, ports, folders, environment, user)."""
     lines = ["services:"]
+    volume_names = []
     for n, c in old.items():
         cfg, host = c.get("Config") or {}, c.get("HostConfig") or {}
         image = cfg.get("Image") or ""
@@ -5164,9 +5215,14 @@ def md_compose_from_inspect(old):
             lines.append("    ports:")
             lines += ['      - "%s"' % p for p in ports]
         binds = [b for b in (host.get("Binds") or []) if b]
-        if binds:
+        vols = md_volume_mounts(c, binds)
+        if binds or vols:
             lines.append("    volumes:")
             lines += ["      - %s" % b for b in binds]
+            lines += ["      - %s:%s" % (name, dest) for name, dest in vols]
+            for name, _ in vols:
+                if name not in volume_names:
+                    volume_names.append(name)
         rc, imgenv = docker("image", "inspect", "-f", "{{range .Config.Env}}{{println .}}{{end}}", image, timeout=30)
         default = set(imgenv.splitlines()) if rc == 0 else set()
         env = [e for e in (cfg.get("Env") or []) if "=" in e and e not in default]
@@ -5175,6 +5231,10 @@ def md_compose_from_inspect(old):
             for e in env:
                 k, v = e.split("=", 1)
                 lines.append("      %s: %s" % (k, json.dumps(v)))
+    if volume_names:
+        lines.append("volumes:")
+        for name in volume_names:
+            lines += ["  %s:" % name, "    external: true"]
     return "\n".join(lines) + "\n"
 
 
@@ -5207,7 +5267,8 @@ class MusicDownloaderStack(StackStep):
             return StackStep.run(self)
         if Runtime.unattended:
             raise NeedsPerson("Moving the running Downtify and MeTube into Portainer restarts them, so it waits for `sudo homelab-setup refresh`.")
-        text = md_compose_from_files(old) or md_compose_from_inspect(old)
+        has_volumes = any(md_volume_mounts(c, [b for b in ((c.get("HostConfig") or {}).get("Binds") or []) if b]) for c in old.values())
+        text = (md_compose_from_inspect(old) if has_volumes else md_compose_from_files(old)) or md_compose_from_inspect(old)
         if not text:
             raise Abort("Downtify and MeTube were started by hand and their settings could not be read, so nothing was changed. "
                         "In Portainer, Stacks > Add stack, name it music-downloader and paste the compose file you used.")
@@ -5217,6 +5278,15 @@ class MusicDownloaderStack(StackStep):
             part = re.search(r"(?ms)^  %s:\n.*?(?=^  \w|\Z)" % missing[0], ours)
             if part:
                 text = text.rstrip("\n") + "\n" + part.group(0).rstrip("\n") + "\n"
+                if "downtify_data:/data" in text and not re.search(r"(?m)^  downtify_data:", text):
+                    if re.search(r"(?m)^volumes:", text):
+                        text = re.sub(r"(?m)^volumes:\n", "volumes:\n  downtify_data:\n", text, count=1)
+                    else:
+                        text += "\nvolumes:\n  downtify_data:\n"
+        lost = md_lost_mounts(old, text)
+        if lost:
+            raise Abort("Moving Downtify and MeTube would leave the data in %s behind, so nothing was changed. "
+                        "Move them into Portainer by hand: Stacks > Add stack, name it music-downloader." % ", ".join(lost))
         prepull(images_in(text))
         os.makedirs(SECRET_DIR, exist_ok=True)
         write_file(MD_BACKUP, text, 0o600)
@@ -5230,7 +5300,7 @@ class MusicDownloaderStack(StackStep):
         except Abort as e:
             docker("compose", "-p", self.name, "-f", MD_BACKUP, "up", "-d", timeout=300)
             raise Abort("Moving Downtify and MeTube into Portainer did not work (%s). They were started again the way they were." % str(e)[:200]) from None
-        good("Downtify and MeTube are now a Portainer stack (their folders and settings are unchanged)")
+        good("Downtify and MeTube are now a Portainer stack (their folders, settings and saved data are unchanged)")
 
 
 register(MusicDownloaderStack("music-downloader", ("portainer-env", "folders"), "Downtify and MeTube stack (music and video downloads)"))
@@ -7273,7 +7343,7 @@ def cmd_checklist():
     if Mode.existing and not damaged_state_seen():
         say("This machine already runs the lab (set up by hand). The installer only reads it and changes nothing.")
     elif Mode.existing:
-        say("The installer's state file was damaged, so it only reads this machine for now and changes nothing. To build a new state file from what is installed, run: sudo homelab-setup refresh --force-existing")
+        say("The installer's state file was damaged, so it only reads this machine for now and changes nothing. The step counts below can be wrong until a new state file is built from what is installed: sudo homelab-setup refresh --force-existing")
     show_checklist(res, show_all=Opt.all)
     next_step_section(res)
 
@@ -9059,6 +9129,27 @@ def cmd_uninstall():
 
 
 COMMANDS["uninstall"] = cmd_uninstall
+def installer_path_trusted(path, user):
+    """True when only root or the sudo user can change the file and every folder above it. A file or folder that other users can write is not used."""
+    try:
+        pw = pwd.getpwnam(user)
+        others = {u.pw_name for u in pwd.getpwall() if u.pw_gid == pw.pw_gid and u.pw_name != user}
+        others |= {m for m in grp.getgrgid(pw.pw_gid).gr_mem if m != user}
+        p = os.path.realpath(path)
+        while True:
+            st = os.stat(p)
+            sticky_dir = stat.S_ISDIR(st.st_mode) and st.st_mode & stat.S_ISVTX
+            if st.st_uid not in (0, pw.pw_uid) or (st.st_mode & 0o002 and not sticky_dir):
+                return False
+            if st.st_mode & 0o020 and not (st.st_gid in (0, pw.pw_gid) and not others):
+                return False
+            if p == "/":
+                return True
+            p = os.path.dirname(p)
+    except (OSError, KeyError):
+        return False
+
+
 def reexec_newer_installer(cmd, args):
     """After `git pull` the repository holds a newer installer than the one installed in /usr/local/sbin. When a person types `sudo homelab-setup refresh` (or install) at a terminal, run the newer one, so a single refresh uses the fixes that were just downloaded. Background jobs, the control panel and the drives tool never hand over: the repository belongs to the user, so its code must not run as root without a person asking for it."""
     if FAKE or cmd not in ("refresh", "install") or os.environ.get("HLS_REEXEC"):
@@ -9072,7 +9163,8 @@ def reexec_newer_installer(cmd, args):
         me = os.path.abspath(sys.argv[0])
         if not new or not os.path.isfile(new) or os.path.realpath(new) == os.path.realpath(me):
             return
-        if os.stat(new).st_uid not in (0, pwd.getpwnam(os.environ["SUDO_USER"]).pw_uid):
+        if not installer_path_trusted(new, os.environ["SUDO_USER"]):
+            say("The installer in %s can be changed by other users, so it was not used. Check who may write there, then run the command again." % repo)
             return
         text = read_file(new)
         if not text or text == read_file(me):
@@ -9130,15 +9222,15 @@ def main(argv):
         elif a in ("--details", "-d"):
             Opt.details = True
         elif a.startswith("-"):
-            out("Unknown option %s. Try: homelab-setup help" % a)
-            return 1
+            out("Unknown option %s, so nothing was done. Try: homelab-setup help" % a)
+            return 2
         else:
             pos.append(a)
         i += 1
     cmd = pos[0] if pos else "checklist"
     if cmd not in COMMANDS and cmd not in ("done", "skip", "unskip", "cards", "lastfm", "audiomuse", "navilist"):
-        out("Unknown command '%s'. Try: homelab-setup help" % cmd)
-        return 1
+        out("Unknown command '%s', so nothing was done. Try: homelab-setup help" % cmd)
+        return 2
     if len(pos) > 1 and cmd not in ("done", "skip", "unskip", "cards", "lastfm", "audiomuse", "navilist"):
         out("'%s' does not take the word '%s', so nothing was done. Try: homelab-setup help" % (cmd, pos[1][:40]))
         return 2

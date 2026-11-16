@@ -6,6 +6,12 @@ pool_policy_now() {
   fstab_active | awk -v m="$1" '$2 == m { if (match($0, /category\.create=[a-z]+/)) print substr($0, RSTART + 16, RLENGTH - 16); exit }'
 }
 
+# pool_policy_live POOL: the setting the running pool really uses (empty when it cannot be read).
+pool_policy_live() {
+  mountpoint -q "$1" 2>/dev/null && command -v getfattr >/dev/null 2>&1 || return 0
+  getfattr -n user.mergerfs.category.create --only-values "$1/.mergerfs" 2>/dev/null
+}
+
 policy_text() {
   case "$1" in
     ff)  printf '%s' "one drive at a time (a new file goes to the first drive that has room)" ;;
@@ -78,14 +84,16 @@ order_text() {
 # `fillorder`: choose how a pool picks a drive for a new file and which drive is used first.
 fillorder_flow() {
   array_guard || return 1
-  local role pool now act idx mp first cur
+  local role pool now live act idx mp first cur
   local -a real=() items=() mps=()
   role=$(pick_pool_role 1) || return 1
   pool=$(role_pool "$role")
   now=$(pool_policy_now "$pool")
+  live=$(pool_policy_live "$pool")
   for mp in $(branches_of "$role"); do is_boot_section "$mp" || real+=("$mp"); done
   say ""
   say "$([ "$role" = main ] && echo Main || echo Backup) storage: new files go to $(policy_text "$now")."
+  [ -n "$live" ] && [ "$live" != "$now" ] && say "This is saved, but the running pool still uses: $(policy_text "$live"). Choosing it again applies it."
   say "Order of the drives: $(order_text "$role")"
   pool_has_limits "$pool" || say "(This pool still has an older setting without a free-space limit per drive. Choosing the first or second option updates it.)"
   act=$(choose "What do you want to do? " \
@@ -96,7 +104,7 @@ fillorder_flow() {
   case "$act" in
     0|1)
       local want=ff; [ "$act" = 1 ] && want=mfs
-      if [ "$now" = "$want" ] && pool_has_limits "$pool"; then
+      if [ "$now" = "$want" ] && pool_has_limits "$pool" && { [ -z "$live" ] || [ "$live" = "$want" ]; }; then
         settings_discard; say "The $role pool already works like that. Nothing was changed."; return 0
       fi
       dry_gate "Save the setting '$(policy_text "$want")' for the $role pool." \

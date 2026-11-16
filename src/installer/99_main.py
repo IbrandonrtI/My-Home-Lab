@@ -1,3 +1,24 @@
+def installer_path_trusted(path, user):
+    """True when only root or the sudo user can change the file and every folder above it. A file or folder that other users can write is not used."""
+    try:
+        pw = pwd.getpwnam(user)
+        others = {u.pw_name for u in pwd.getpwall() if u.pw_gid == pw.pw_gid and u.pw_name != user}
+        others |= {m for m in grp.getgrgid(pw.pw_gid).gr_mem if m != user}
+        p = os.path.realpath(path)
+        while True:
+            st = os.stat(p)
+            sticky_dir = stat.S_ISDIR(st.st_mode) and st.st_mode & stat.S_ISVTX
+            if st.st_uid not in (0, pw.pw_uid) or (st.st_mode & 0o002 and not sticky_dir):
+                return False
+            if st.st_mode & 0o020 and not (st.st_gid in (0, pw.pw_gid) and not others):
+                return False
+            if p == "/":
+                return True
+            p = os.path.dirname(p)
+    except (OSError, KeyError):
+        return False
+
+
 def reexec_newer_installer(cmd, args):
     """After `git pull` the repository holds a newer installer than the one installed in /usr/local/sbin. When a person types `sudo homelab-setup refresh` (or install) at a terminal, run the newer one, so a single refresh uses the fixes that were just downloaded. Background jobs, the control panel and the drives tool never hand over: the repository belongs to the user, so its code must not run as root without a person asking for it."""
     if FAKE or cmd not in ("refresh", "install") or os.environ.get("HLS_REEXEC"):
@@ -11,7 +32,8 @@ def reexec_newer_installer(cmd, args):
         me = os.path.abspath(sys.argv[0])
         if not new or not os.path.isfile(new) or os.path.realpath(new) == os.path.realpath(me):
             return
-        if os.stat(new).st_uid not in (0, pwd.getpwnam(os.environ["SUDO_USER"]).pw_uid):
+        if not installer_path_trusted(new, os.environ["SUDO_USER"]):
+            say("The installer in %s can be changed by other users, so it was not used. Check who may write there, then run the command again." % repo)
             return
         text = read_file(new)
         if not text or text == read_file(me):
@@ -69,15 +91,15 @@ def main(argv):
         elif a in ("--details", "-d"):
             Opt.details = True
         elif a.startswith("-"):
-            out("Unknown option %s. Try: homelab-setup help" % a)
-            return 1
+            out("Unknown option %s, so nothing was done. Try: homelab-setup help" % a)
+            return 2
         else:
             pos.append(a)
         i += 1
     cmd = pos[0] if pos else "checklist"
     if cmd not in COMMANDS and cmd not in ("done", "skip", "unskip", "cards", "lastfm", "audiomuse", "navilist"):
-        out("Unknown command '%s'. Try: homelab-setup help" % cmd)
-        return 1
+        out("Unknown command '%s', so nothing was done. Try: homelab-setup help" % cmd)
+        return 2
     if len(pos) > 1 and cmd not in ("done", "skip", "unskip", "cards", "lastfm", "audiomuse", "navilist"):
         out("'%s' does not take the word '%s', so nothing was done. Try: homelab-setup help" % (cmd, pos[1][:40]))
         return 2

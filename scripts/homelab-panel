@@ -112,6 +112,11 @@ def private_open(path, flags):
     return os.open(path, flags, 0o600)
 
 
+def nofollow_open(path, flags):
+    """Open a file in the Undo history without following a link that someone put in its place."""
+    return os.open(path, flags | os.O_NOFOLLOW, 0o600)
+
+
 def write_atomic(p, text, mode=None):
     """Write a file in one step through a fresh temporary file in the same folder (a planted link cannot be followed). The new file keeps the permissions of the old one, and nobody else can read it before that is set."""
     if mode is None:
@@ -155,12 +160,12 @@ def snap_merge(group, olds):
     for path, text in sorted(olds.items()):
         if path in have:
             continue
-        with open(os.path.join(d, "f%d" % n), "w", encoding="utf-8") as f:
+        with open(os.path.join(d, "f%d" % n), "w", encoding="utf-8", opener=nofollow_open) as f:
             f.write(text)
         meta["files"]["f%d" % n] = {"path": path, "existed": os.path.exists(path)}
         n += 1
     meta["label"] = group
-    with open(os.path.join(d, "meta.json"), "w", encoding="utf-8") as f:
+    with open(os.path.join(d, "meta.json"), "w", encoding="utf-8", opener=nofollow_open) as f:
         json.dump(meta, f)
     return True
 
@@ -198,10 +203,24 @@ class Tx:
         LOCAL.changed = True
         olds = {p: self.old[p] for p in changed}
         group = getattr(LOCAL, "merge", "")
+        saved = None
         if not (group and snap_merge(group, olds)):
-            snap(self.label, olds)
-        for p in changed:
-            write_atomic(p, self.new[p])
+            saved = snap(self.label, olds)
+        written = []
+        try:
+            for p in changed:
+                write_atomic(p, self.new[p])
+                written.append(p)
+        except BaseException:
+            for p in written:
+                try:
+                    write_atomic(p, self.old[p])
+                except (OSError, Fail):
+                    pass
+            if saved:
+                shutil.rmtree(saved, ignore_errors=True)
+            LOCAL.changed = False
+            raise
         return True
 
 
@@ -233,6 +252,7 @@ def snap(label, olds):
     old = sorted(x for x in os.listdir(HISTORY) if os.path.isdir(os.path.join(HISTORY, x)))
     for x in old[:-KEEP_HISTORY]:
         shutil.rmtree(os.path.join(HISTORY, x), ignore_errors=True)
+    return d
 
 
 def history_last():
@@ -254,12 +274,23 @@ def undo():
     if not h:
         raise Fail("There is nothing to undo.")
     d, meta = h
+    files = meta.get("files")
+    allowed = (SETTINGS, SERVICES, BOOKMARKS, CSS, WIDGETS)
+    if not isinstance(files, dict) or any(not re.fullmatch(r"f\d+", str(fn)) or not isinstance(i, dict) or i.get("path") not in allowed for fn, i in files.items()):
+        raise Fail("The last Undo entry does not belong to the dashboard files, so nothing was changed. It can be removed from the .panel-history folder.", 500)
+    texts = {}
+    for fn in files:
+        try:
+            with open(os.path.join(d, fn), encoding="utf-8", opener=nofollow_open) as f:
+                texts[fn] = f.read()
+        except OSError:
+            raise Fail("The last Undo entry cannot be read, so nothing was changed.", 500) from None
     gone = set()
-    for fn, info in meta["files"].items():
+    for fn, info in files.items():
         if info["path"] == SETTINGS:
             gone |= set(re.findall(r"/images/(background-\d{14}\.\w+)", read(SETTINGS)))
-    for fn, info in meta["files"].items():
-        write_atomic(info["path"], read(os.path.join(d, fn)))
+    for fn, info in files.items():
+        write_atomic(info["path"], texts[fn])
     shutil.rmtree(d, ignore_errors=True)
     if gone:
         now = read(SETTINGS) + read(CSS)
@@ -269,7 +300,7 @@ def undo():
                     os.remove(os.path.join(IMAGES, name))
                 except OSError:
                     pass
-    return meta["label"]
+    return meta.get("label", "")
 
 
 YAML_WORDS = {"yes", "no", "true", "false", "on", "off", "null", "~", "y", "n"}

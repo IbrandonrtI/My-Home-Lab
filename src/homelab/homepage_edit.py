@@ -54,7 +54,7 @@ def read(p):
 
 
 def write(p, text):
-    if os.path.exists(p) and not os.path.exists(p + ".before-theme") and p != IDFILE:
+    if os.path.exists(p) and not os.path.lexists(p + ".before-theme") and p != IDFILE:
         shutil.copy2(p, p + ".before-theme")
     write_safely(p, text)
 

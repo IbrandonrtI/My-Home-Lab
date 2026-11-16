@@ -6,6 +6,7 @@ import contextlib
 import getpass
 import fcntl
 import glob
+import grp
 import gzip
 import hashlib
 import ipaddress
@@ -17,6 +18,7 @@ import secrets as pysecrets
 import shutil
 import signal
 import socket
+import stat
 import string
 import subprocess
 import sys

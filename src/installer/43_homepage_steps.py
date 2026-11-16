@@ -114,13 +114,31 @@ class HomepageKeyFiles(Step):
             return "%s missing; `sudo homelab-setup refresh` writes the shipped version (your own look can come back with: sudo homelab-restore-configs)" % " and ".join(gone)
         return "%d file(s) are readable by other users or belong to the wrong user; `sudo homelab-setup refresh` fixes it" % (len(key_files_open()) + len(wrong_owner_files()))
 
+    def open_note(self):
+        gone = missing_look_files()
+        parts = []
+        if gone:
+            parts.append("%s missing. `sudo homelab-setup refresh` writes the shipped version of only that file. Your own copy can come back with: sudo homelab-restore-configs" % " and ".join(gone))
+        if key_files_open() or wrong_owner_files():
+            parts.append("%d file(s) are readable by other users or belong to the wrong user. `sudo homelab-setup refresh` fixes it" % (len(key_files_open()) + len(wrong_owner_files())))
+        return ". ".join(parts)
+
     def run(self):
         for f in missing_look_files():
             if Opt.dry:
                 out("      would write the shipped %s" % f)
                 continue
             write_default_homepage_file(f)
-            warn("%s was missing, so the shipped version was written. Your own look and bookmarks are in the backups and the control panel's Undo history; to bring them back run: sudo homelab-restore-configs" % f)
+            if f == "bookmarks.yaml":
+                # The shipped bookmark groups are not new layout entries: settings.yaml stays as it is.
+                seen = list(State.data.get("layout_seen", []))
+                for g in group_names(read_file(hp_path(f))):
+                    if g not in seen:
+                        seen.append(g)
+                State.data["layout_seen"] = seen
+                State.save()
+            log("homepage-key-files: %s was missing, the shipped version was written" % f)
+            warn("%s was missing, so the shipped version was written. Only that file was changed. Your own copy is in the backups and the control panel's Undo history; to bring it back run: sudo homelab-restore-configs" % f)
         protect_key_files()
 
 
@@ -236,11 +254,13 @@ class HomepageTabs(Step):
         if Opt.dry:
             out("      would add the tabs (Home, Stats, Links), the group icons, the bookmark cards, the STATS cards and their styles to the Homepage files")
             return
+        saved = []
         for name, old, new in (("settings.yaml", old_sett, sett), ("custom.css", old_css, css), ("custom.js", old_js, js), ("services.yaml", old_svc, svc), ("widgets.yaml", old_wid, wid)):
             if new == old:
                 continue
             if old and not os.path.exists(hp_path(name) + ".before-tabs"):
                 write_file(hp_path(name) + ".before-tabs", old, hp_mode(name), own)
+                saved.append(name + ".before-tabs")
             write_file(hp_path(name), new, hp_mode(name), own)
         self.remember(seen)
         State.mark("homepage-tabs")
@@ -257,7 +277,7 @@ class HomepageTabs(Step):
             run_calendar_build()
         if not FAKE and "homepage" in containers_all():
             act(["docker", "restart", "homepage"], timeout=120)
-        out("      Reload the dashboard (Ctrl+Shift+R). The old files are saved as settings.yaml.before-tabs, custom.css.before-tabs, custom.js.before-tabs and services.yaml.before-tabs")
+        out("      Reload the dashboard (Ctrl+Shift+R)." + ((" The old versions of the changed files are saved as %s." % ", ".join(saved)) if saved else ""))
         if STATS_BEGIN in svc:
             out("      The Stats tab is filled in within 15 minutes; folder sizes take a little longer. To fill it in now, run:  sudo homelab-stats")
         if CUSTOM_BEGIN in svc:

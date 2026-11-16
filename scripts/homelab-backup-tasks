@@ -1309,16 +1309,46 @@ def mount_choices():
     return sorted(out, key=lambda x: x["path"])
 
 
+def display_zone():
+    """The time zone the dashboard shows times in (saved by homelab-stats), or None for the server's own."""
+    name = os.environ.get("HLB_DISPLAY_TZ", "")
+    if not name:
+        try:
+            with open(os.path.join(os.environ.get("HOMELAB_STATE_DIR", "/var/lib/homelab"), "display-timezone"), encoding="utf-8") as f:
+                parts = f.read().split()
+            name = parts[1] if len(parts) >= 2 and parts[1] != "none" else ""
+        except OSError:
+            name = ""
+    if not name:
+        return None
+    try:
+        import zoneinfo
+        return zoneinfo.ZoneInfo(name)
+    except Exception:
+        return None
+
+
+def shown_time(dt):
+    """A time of the server's clock as (text, zone name) in the zone the dashboard uses, so the panel, `homelab` and the dashboard agree."""
+    aware = dt.astimezone()
+    zone = display_zone()
+    if zone is not None:
+        aware = aware.astimezone(zone)
+    return aware.strftime("%Y-%m-%d %H:%M"), aware.strftime("%Z")
+
+
 def task_view(t):
     st = read_status(t["id"])
     ref = now()
     nxt = next_scheduled(t["schedule"], ref) if t.get("enabled", True) else None
     running = bool(st.get("running")) and is_running()
     last = parse_stamp(st.get("last_end") or st.get("last_start") or "")
+    next_text, next_zone = shown_time(nxt) if nxt else (None, "")
+    last_text, last_zone = shown_time(last) if last else (None, "")
     return {"id": t["id"], "name": t["name"], "enabled": t.get("enabled", True), "kind": t["kind"], "source": t["source"], "exclude": t["exclude"],
-            "dest": t["dest"], "schedule": t["schedule"], "schedule_text": describe_schedule(t["schedule"]), "keep": t["keep"],
-            "next_run": nxt.strftime("%Y-%m-%d %H:%M") if nxt else None, "running": running,
-            "last": {"result": st.get("result"), "message": st.get("message"), "when": last.strftime("%Y-%m-%d %H:%M") if last else None,
+            "dest": t["dest"], "schedule": t["schedule"], "schedule_text": describe_schedule(t["schedule"]), "schedule_zone": ref.astimezone().strftime("%Z"), "keep": t["keep"],
+            "next_run": next_text, "next_zone": next_zone, "running": running,
+            "last": {"result": st.get("result"), "message": st.get("message"), "when": last_text, "zone": last_zone,
                      "secs": st.get("secs"), "version": st.get("version"), "bytes_sent": st.get("bytes_sent"), "bytes_total": st.get("bytes_total"),
                      "size_bytes": st.get("size_bytes")} if st.get("result") else None,
             "runs": read_runs(t["id"])[-10:][::-1]}

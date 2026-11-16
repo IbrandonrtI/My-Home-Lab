@@ -50,7 +50,7 @@ choose() {
   done
 }
 
-human() { numfmt --to=iec --suffix=B "$1" 2>/dev/null || echo "$1 B"; }
+human() { numfmt --to=si --round=nearest --suffix=B "$1" 2>/dev/null || echo "$1 B"; }
 
 role_prefix() { if [ "$1" = main ]; then echo "$MAIN_PREFIX"; else echo "$BACKUP_PREFIX"; fi; }
 role_pool()   { if [ "$1" = main ]; then echo "$MAIN_POOL";   else echo "$BACKUP_POOL";   fi; }

@@ -40,6 +40,7 @@ BACKUP_STATUS = os.environ.get("HLU_BACKUP_STATUS", "/var/lib/homelab-backup/las
 LOCKFILE = os.environ.get("HOMELAB_STATS_LOCK", "/run/homelab-stats.lock")
 FOLDER_CACHE = os.path.join(STATE_DIR, "stats-folders.json")
 RECOUNT_MIN_SECONDS = 3600
+RECOUNT_EARLY_SECONDS = 600  # a big change in used space (a backup, an import) is counted again after 10 minutes, not an hour
 RECOUNT_MAX_SECONDS = 7 * 86400
 DU_TIMEOUT = 3600
 HTTP_TIMEOUT = 15
@@ -161,6 +162,12 @@ def display_tz():
 
 def at(t):
     return datetime.datetime.fromtimestamp(t, display_tz())
+
+
+def zone_name(t):
+    """The short name of the zone the times are shown in (EST, UTC), also when the server's own zone is used."""
+    d = at(t)
+    return d.strftime("%Z") or d.astimezone().strftime("%Z")
 
 
 def clock(t):
@@ -428,7 +435,7 @@ def backup_info(now):
     try:
         t = time.mktime(time.strptime(when, "%Y-%m-%d %H:%M"))
         days = (at(now).date() - at(t).date()).days
-        hm = at(t).strftime("%H:%M")
+        hm = (at(t).strftime("%H:%M") + " " + zone_name(t)).rstrip()
         if days == 0:
             nice_when = short = "Today %s" % hm
         elif days == 1:
@@ -612,7 +619,10 @@ def folder_sizes(now, spaces, quick):
         fp = int(sp[1]) >> 26
         c = cache.get(key) or {}
         age = now - c.get("at", 0)
-        due = ("bytes" not in c) or (c.get("path") != path) or age > RECOUNT_MAX_SECONDS or (c.get("fp") != fp and age >= RECOUNT_MIN_SECONDS)
+        moved = abs(fp - c.get("fp", fp)) << 26
+        big = moved >= max(512 * 1048576, c.get("bytes", 0) // 20)
+        due = (("bytes" not in c) or (c.get("path") != path) or age > RECOUNT_MAX_SECONDS
+               or (c.get("fp") != fp and (age >= RECOUNT_MIN_SECONDS or (big and age >= RECOUNT_EARLY_SECONDS))))
         if due and not quick:
             b = du_bytes(path)
             if b is not None:

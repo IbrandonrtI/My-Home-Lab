@@ -34,6 +34,8 @@ FSTAB = os.environ.get("HOMELAB_FSTAB", "/etc/fstab")
 BACKUP_POOL = os.environ.get("HOMELAB_BACKUP_POOL", "/mnt/backup")
 VERIFY_STATUS = os.environ.get("HOMELAB_VERIFY_STATUS", os.path.join(os.path.dirname(BACKUP_STATUS), "last-verify"))
 PAGE_HOST = os.environ.get("HOMELAB_PAGE_HOST", "127.0.0.1")
+PAGE_RETRY_SECONDS = float(os.environ.get("HOMELAB_PAGE_RETRY_SECONDS", "12"))
+DOWNTIFY_PORT = int(os.environ.get("HOMELAB_DOWNTIFY_PORT", "8000"))
 # The web address of every service the lab installs: container name and the port on this machine. A container that runs but whose page does not answer
 # is a service the person cannot use, and Docker alone does not say so.
 SERVICE_PORTS = {"homepage": 3001, "portainer": 9000, "adguardhome": 3000, "beszel": 8090, "netdata-netdata-1": 19999, "speedtest-tracker": 8088,
@@ -185,34 +187,44 @@ def stats_items():
         if m and int(m.group(1)) >= 90:
             res.append(item(key + ":space", "bad" if int(m.group(1)) >= 95 else "warn", "%s is %s full" % (label, pct), "Free: %s" % blk.get("free", "-"), "drives"))
     last = st.get("last_backup") or {}
-    result = str(last.get("result", ""))
-    if result.startswith("Failed"):
-        res.append(item("backup:failed", "bad", "The last backup failed", "%s. Open the Backups section of the Drives tab." % last.get("when", ""), "drives"))
+    run = (read(BACKUP_STATUS).strip().splitlines() or [""])[0].split("|")
+    if len(run) >= 2 and run[0].strip():  # the run record is read directly: the saved readings can be up to 15 minutes old
+        failed, when = run[1].strip().upper() != "OK", run[0].strip()
     else:
-        text = read(BACKUP_STATUS).strip().splitlines()
-        f = text[0].split("|") if text else []
+        failed, when = str(last.get("result", "")).startswith("Failed"), last.get("when", "")
+    if failed:
+        res.append(item("backup:failed", "bad", "The last backup failed", "%s. Open the Backups section of the Drives tab." % when, "drives"))
+    else:
         try:
-            t = time.mktime(time.strptime(f[0], "%Y-%m-%d %H:%M"))
+            t = time.mktime(time.strptime(run[0], "%Y-%m-%d %H:%M"))
             if time.time() - t > 36 * 3600:
-                res.append(item("backup:late", "warn", "No backup for more than a day", "The last one was %s." % last.get("when", f[0]), "drives"))
+                res.append(item("backup:late", "warn", "No backup for more than a day", "The last one was %s." % (last.get("when") or run[0]), "drives"))
         except (IndexError, ValueError, OverflowError):
             pass
     return res
 
 
-def backup_drive_configured():
-    """True when /etc/fstab holds a backup drive (a mount point under .../BACKUPn). A drive removed with `drives disconnect` is no longer listed there."""
+def backup_drives_configured():
+    """The backup drives (BACKUP2, BACKUP3) that /etc/fstab holds. A drive removed with `drives disconnect` is no longer listed there."""
+    found = []
     for line in read(FSTAB).splitlines():
         f = line.split()
         if len(f) > 1 and not f[0].startswith("#") and re.search(r"/BACKUP\d+/?$", f[1]):
-            return True
-    return False
+            found.append(f[1].rstrip("/"))
+    return found
+
+
+def backup_drive_configured():
+    return bool(backup_drives_configured())
 
 
 def check_backup_drive():
     """A backup drive that is set up but not mounted is seen at once, not only at the next stats reading (every 15 minutes)."""
     if backup_drive_configured() and not os.path.ismount(BACKUP_POOL):
-        return [item("backup:drive-missing", "warn", "The backup drive is not connected", "Backups go to the boot drive until it is back. Check the cable and the Drives tab, or run: sudo drives status", "drives")]
+        gone = [os.path.basename(m) for m in backup_drives_configured() if not os.path.ismount(m)]
+        name = " " + ", ".join(gone) if gone else ""
+        return [item("backup:drive-missing", "warn", "The backup drive%s is not connected" % name,
+                     "Backups go to the boot drive until it is back. Check the cable, then run: sudo drives remount. If the drive has failed: sudo drives replace", "drives")]
     return []
 
 
@@ -226,9 +238,9 @@ def check_backup_verify():
     return [item("backup:verify", "warn", "Backup copies differ from the originals", "%s file(s) in the backup did not match when checked on %s.%s To copy them again: sudo homelab-backup verify --repair" % (differ or "Some", stamp, where), "drives")]
 
 
-def page_status(port):
+def page_status(port, timeout=4):
     try:
-        with urllib.request.urlopen("http://%s:%d/" % (PAGE_HOST, port), timeout=4) as r:
+        with urllib.request.urlopen("http://%s:%d/" % (PAGE_HOST, port), timeout=timeout) as r:
             return r.status
     except urllib.error.HTTPError as e:
         return e.code
@@ -246,8 +258,49 @@ def check_pages():
         return []
     with ThreadPoolExecutor(max_workers=8) as pool:
         codes = list(pool.map(lambda n: page_status(SERVICE_PORTS[n]), up))
+        slow = [i for i, code in enumerate(codes) if not 0 < code < 500]
+        if slow:
+            again = list(pool.map(lambda i: page_status(SERVICE_PORTS[up[i]], PAGE_RETRY_SECONDS), slow))
+            for i, code in zip(slow, again):
+                codes[i] = code
     return [item("silent:" + n, "bad", "%s runs but its page does not answer" % nice(n), "Look at what it says: sudo docker logs --tail 30 %s" % n, "")
             for n, code in zip(up, codes) if not 0 < code < 500]
+
+
+def downtify_default_login():
+    """True when Downtify still accepts the public first login (admin / downtify)."""
+    body = json.dumps({"username": "admin", "password": "downtify"}).encode()
+    req = urllib.request.Request("http://%s:%d/api/auth/login" % (PAGE_HOST, DOWNTIFY_PORT), data=body, method="POST", headers={"Content-Type": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            return r.status == 200
+    except (OSError, ValueError):
+        return False
+
+
+def check_downtify_login():
+    """Downtify starts with a public login. While it still works, anyone on the network can use it. A good result is only looked at again after an hour."""
+    rc, out = run([DOCKER, "ps", "--format", "{{.Names}}"])
+    if rc != 0 or "downtify" not in out.split():
+        return []
+    cache = os.path.join(STATE_DIR, "downtify-login-checked")
+    try:
+        with open(cache) as f:
+            when, result = f.read().split()[:2]
+        if result == "set" and 0 <= time.time() - float(when) < 3600:
+            return []
+    except (OSError, ValueError):
+        pass
+    default = downtify_default_login()
+    try:
+        with open(cache, "w") as f:
+            f.write("%d %s\n" % (time.time(), "default" if default else "set"))
+    except OSError:
+        pass
+    if not default:
+        return []
+    return [item("downtify:login", "warn", "Downtify still has its public sign-in", "Anyone on your network can sign in to Downtify with admin and downtify.",
+                 "Open Downtify on port %d and set a new password, or run: sudo homelab-setup refresh" % DOWNTIFY_PORT)]
 
 
 def check_space():
@@ -337,7 +390,7 @@ def check_busy():
     return [item("storage:busy", "info", "Files are being written to a storage pool", "Probably an upload or a setup. Its size is not known, so there is no finish time. Updates and drive changes wait until it stops.", "")]
 
 
-CHECKS = (check_containers, check_panel, check_pages, check_updates, stats_items, check_backup_drive, check_backup_verify, check_space, check_tailscale, check_temps, check_busy)
+CHECKS = (check_containers, check_panel, check_pages, check_downtify_login, check_updates, stats_items, check_backup_drive, check_backup_verify, check_space, check_tailscale, check_temps, check_busy)
 
 
 def collect():
@@ -370,12 +423,17 @@ def main(argv):
     if cmd in ("version", "--version"):
         print("homelab-alerts %s" % VERSION)
         return 0
-    if cmd not in ("run", "show", "silent"):
-        sys.stderr.write("Unknown option: %s\n%s\n" % (cmd, "Use: homelab-alerts [show|silent|help|version]"))
+    if cmd not in ("run", "show", "silent", "downtify"):
+        sys.stderr.write("Unknown option: %s\n%s\n" % (cmd, "Use: homelab-alerts [show|silent|downtify|help|version]"))
         return 1
     if cmd == "silent":  # used by `homelab`: names of containers that run but whose page does not answer, one per line
         for i in check_pages():
             print(i["id"].split(":", 1)[1])
+        return 0
+    if cmd == "downtify":  # used by `homelab`: prints "default" when Downtify still accepts the public first login
+        rc, names = run([DOCKER, "ps", "--format", "{{.Names}}"])
+        if rc == 0 and "downtify" in names.split() and downtify_default_login():
+            print("default")
         return 0
     res = collect()
     if cmd == "show":

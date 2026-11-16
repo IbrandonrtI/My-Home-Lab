@@ -17,6 +17,26 @@ def md_old_containers():
     return found
 
 
+def md_volume_mounts(container, binds):
+    """The Docker volumes (named or unnamed) a container uses that are not already listed as binds: (volume name, folder inside the container)."""
+    taken = {b.split(":")[1] for b in binds if b.count(":") >= 1}
+    found = []
+    for m in container.get("Mounts") or []:
+        if m.get("Type") == "volume" and m.get("Name") and m.get("Destination") and m["Destination"] not in taken:
+            found.append((m["Name"], m["Destination"]))
+    return found
+
+
+def md_lost_mounts(old, text):
+    """Folders with data in a Docker volume that the new Compose text would not mount again. Removing the old container would leave that data behind."""
+    lost = []
+    for n, c in old.items():
+        for name, dest in md_volume_mounts(c, [b for b in ((c.get("HostConfig") or {}).get("Binds") or []) if b]):
+            if (name + ":" + dest) not in text:
+                lost.append("%s (%s)" % (n, dest))
+    return lost
+
+
 def md_compose_from_files(old):
     for c in old.values():
         lab = (c.get("Config") or {}).get("Labels") or {}
@@ -39,6 +59,7 @@ def md_compose_from_files(old):
 def md_compose_from_inspect(old):
     """Build a Compose file from the settings a running container was started with (image, ports, folders, environment, user)."""
     lines = ["services:"]
+    volume_names = []
     for n, c in old.items():
         cfg, host = c.get("Config") or {}, c.get("HostConfig") or {}
         image = cfg.get("Image") or ""
@@ -57,9 +78,14 @@ def md_compose_from_inspect(old):
             lines.append("    ports:")
             lines += ['      - "%s"' % p for p in ports]
         binds = [b for b in (host.get("Binds") or []) if b]
-        if binds:
+        vols = md_volume_mounts(c, binds)
+        if binds or vols:
             lines.append("    volumes:")
             lines += ["      - %s" % b for b in binds]
+            lines += ["      - %s:%s" % (name, dest) for name, dest in vols]
+            for name, _ in vols:
+                if name not in volume_names:
+                    volume_names.append(name)
         rc, imgenv = docker("image", "inspect", "-f", "{{range .Config.Env}}{{println .}}{{end}}", image, timeout=30)
         default = set(imgenv.splitlines()) if rc == 0 else set()
         env = [e for e in (cfg.get("Env") or []) if "=" in e and e not in default]
@@ -68,6 +94,10 @@ def md_compose_from_inspect(old):
             for e in env:
                 k, v = e.split("=", 1)
                 lines.append("      %s: %s" % (k, json.dumps(v)))
+    if volume_names:
+        lines.append("volumes:")
+        for name in volume_names:
+            lines += ["  %s:" % name, "    external: true"]
     return "\n".join(lines) + "\n"
 
 
@@ -100,7 +130,8 @@ class MusicDownloaderStack(StackStep):
             return StackStep.run(self)
         if Runtime.unattended:
             raise NeedsPerson("Moving the running Downtify and MeTube into Portainer restarts them, so it waits for `sudo homelab-setup refresh`.")
-        text = md_compose_from_files(old) or md_compose_from_inspect(old)
+        has_volumes = any(md_volume_mounts(c, [b for b in ((c.get("HostConfig") or {}).get("Binds") or []) if b]) for c in old.values())
+        text = (md_compose_from_inspect(old) if has_volumes else md_compose_from_files(old)) or md_compose_from_inspect(old)
         if not text:
             raise Abort("Downtify and MeTube were started by hand and their settings could not be read, so nothing was changed. "
                         "In Portainer, Stacks > Add stack, name it music-downloader and paste the compose file you used.")
@@ -110,6 +141,15 @@ class MusicDownloaderStack(StackStep):
             part = re.search(r"(?ms)^  %s:\n.*?(?=^  \w|\Z)" % missing[0], ours)
             if part:
                 text = text.rstrip("\n") + "\n" + part.group(0).rstrip("\n") + "\n"
+                if "downtify_data:/data" in text and not re.search(r"(?m)^  downtify_data:", text):
+                    if re.search(r"(?m)^volumes:", text):
+                        text = re.sub(r"(?m)^volumes:\n", "volumes:\n  downtify_data:\n", text, count=1)
+                    else:
+                        text += "\nvolumes:\n  downtify_data:\n"
+        lost = md_lost_mounts(old, text)
+        if lost:
+            raise Abort("Moving Downtify and MeTube would leave the data in %s behind, so nothing was changed. "
+                        "Move them into Portainer by hand: Stacks > Add stack, name it music-downloader." % ", ".join(lost))
         prepull(images_in(text))
         os.makedirs(SECRET_DIR, exist_ok=True)
         write_file(MD_BACKUP, text, 0o600)
@@ -123,7 +163,7 @@ class MusicDownloaderStack(StackStep):
         except Abort as e:
             docker("compose", "-p", self.name, "-f", MD_BACKUP, "up", "-d", timeout=300)
             raise Abort("Moving Downtify and MeTube into Portainer did not work (%s). They were started again the way they were." % str(e)[:200]) from None
-        good("Downtify and MeTube are now a Portainer stack (their folders and settings are unchanged)")
+        good("Downtify and MeTube are now a Portainer stack (their folders, settings and saved data are unchanged)")
 
 
 register(MusicDownloaderStack("music-downloader", ("portainer-env", "folders"), "Downtify and MeTube stack (music and video downloads)"))

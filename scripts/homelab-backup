@@ -93,6 +93,8 @@ TODAY=$(date +%F)
 VCOMPARED=0
 VDIFF=0
 VFIXED=0
+VCHANGED=0
+NEWER_N=0
 VDRIVES=""
 ERRORS=0
 NOTES=""
@@ -111,9 +113,10 @@ finish() {
     if [ "$ERRORS" -eq 0 ]; then
       if [ "$VFIXED" -gt 0 ]; then echo "Verify finished: $VFIXED file(s) differed, were copied again, and now every file matches (${secs}s)." >&2
       else echo "Verify finished: every file matches (${secs}s)." >&2; fi
+      [ "$VCHANGED" -gt 0 ] && echo "$VCHANGED file(s) were changed after the last backup. That is normal: the next backup copies them." >&2
     else echo "Verify found problems: ${NOTES%; }" >&2; fi
     mkdir -p "$(dirname "$VERIFY_STATUS_FILE")"
-    printf '%s|%s|%s|%s|%s|%s\n' "$(date '+%F %H:%M')" "$result" "$VCOMPARED" "$VDIFF" "$VFIXED" "$VDRIVES" >"$VERIFY_STATUS_FILE"
+    printf '%s|%s|%s|%s|%s|%s|%s\n' "$(date '+%F %H:%M')" "$result" "$VCOMPARED" "$VDIFF" "$VFIXED" "$VDRIVES" "$VCHANGED" >"$VERIFY_STATUS_FILE"
     [ "$ERRORS" -eq 0 ]
     exit $?
   fi
@@ -205,6 +208,19 @@ drives_holding() {
   echo "${seen# }"
 }
 
+# drop_changed LIST: remove from LIST (one name per line) the files that were written after this run started. A changed original is not a damaged copy.
+drop_changed() {
+  local f m keep
+  keep=$(mktemp) || return 0
+  while IFS= read -r f; do
+    m=$(stat -c %Y "$SRC/$f" 2>/dev/null) || continue
+    [ "$m" -ge "$START" ] 2>/dev/null && continue
+    printf '%s\n' "$f"
+  done <"$1" >"$keep"
+  cat "$keep" >"$1"
+  rm -f "$keep"
+}
+
 # verify_sample CHANGED_FILE: compare a sample of the backup with the originals and copy again what differs.
 verify_sample() {
   [ "$VERIFY_MB" -gt 0 ] 2>/dev/null || return 0
@@ -217,6 +233,9 @@ verify_sample() {
   drop_caches
   bad=$(mktemp) || { rm -f "$list"; return 0; }
   differing_files "$list" >"$bad"
+  n=$(wc -l <"$bad")
+  drop_changed "$bad"
+  [ "$n" -gt "$(wc -l <"$bad")" ] && log "verify: $(( n - $(wc -l <"$bad") )) file(s) were changed while the backup ran, so they are not counted as damaged"
   if [ -s "$bad" ]; then
     n=$(wc -l <"$bad")
     VDRIVES=$(drives_holding "$bad")
@@ -224,18 +243,31 @@ verify_sample() {
     tr '\n' '\0' <"$bad" | rsync -aH --numeric-ids --checksum --from0 --files-from=- "$SRC/" "$DEST/main/" >>"$LOGFILE" 2>&1
     drop_caches
     differing_files "$list" >"$bad"
+    drop_changed "$bad"
     if [ -s "$bad" ]; then
       fail "$(wc -l <"$bad") file(s) in the backup still differ from the originals after copying them again${VDRIVES:+ (held by $VDRIVES)}; the backup drive may be failing: see $LOGFILE"
       while IFS= read -r f; do log "verify: still different: $f"; done <"$bad"
     else
       log "verify: the $n file(s) were copied again and now match (the backup drive had damaged them)"
-      VDRIVES=$(drives_holding "$bad")
       fail "$n file(s) differed from the originals and were copied again${VDRIVES:+, held by $VDRIVES}. Either the backup drive damaged them or they changed during the backup; if it happens again check the drive with: sudo drives check"
     fi
   else
     log "verify: $total file(s) checked, all match the originals"
   fi
   rm -f "$list" "$bad"
+}
+
+# split_newer LIST: take the files whose original is newer than the backup copy out of LIST (one name per line) and count them in NEWER_N.
+# A file changed after the backup is not a damaged copy: the next backup copies it.
+split_newer() {
+  local f keep
+  NEWER_N=0
+  keep=$(mktemp) || return 0
+  while IFS= read -r f; do
+    if [ "$SRC/$f" -nt "$DEST/main/$f" ]; then NEWER_N=$((NEWER_N + 1)); else printf '%s\n' "$f"; fi
+  done <"$1" >"$keep"
+  cat "$keep" >"$1"
+  rm -f "$keep"
 }
 
 # verify_all: compare EVERY file (the `verify` command). With --repair the files that differ are copied again from the originals;
@@ -250,11 +282,17 @@ verify_all() {
   drop_caches
   echo "Comparing every file (this reads all the data on both drives)..." >&2
   differing_files "$all" >"$bad"
+  split_newer "$bad"
+  VCHANGED=$NEWER_N
   n=$(wc -l <"$bad")
   VDIFF=$n
-  if [ "$n" -eq 0 ]; then log "verify: every file matches"; rm -f "$all" "$bad"; return 0; fi
+  if [ "$n" -eq 0 ]; then
+    log "verify: every file matches$([ "$VCHANGED" -gt 0 ] && echo " ($VCHANGED changed since the backup)")"
+    rm -f "$all" "$bad"
+    return 0
+  fi
   VDRIVES=$(drives_holding "$bad")
-  echo "$n file(s) in the backup differ from the originals${VDRIVES:+ (held by $VDRIVES)}. A file you changed after the last backup also shows here:" >&2
+  echo "$n file(s) in the backup differ from the originals${VDRIVES:+ (held by $VDRIVES)}, and the originals did not change since the backup:" >&2
   head -n 50 "$bad" >&2
   if [ "$REPAIR" = 1 ]; then
     mkdir -p "$DEST/_deleted/$TODAY/main"
@@ -263,6 +301,7 @@ verify_all() {
     drop_caches
     left=$(mktemp) || left=/dev/null
     differing_files "$all" >"$left"
+    split_newer "$left"
     # only the files that were listed can still differ in a way that matters; count the ones that still do
     VFIXED=$(( n - $(grep -cxFf "$bad" "$left" 2>/dev/null || true) ))
     if [ -s "$left" ]; then

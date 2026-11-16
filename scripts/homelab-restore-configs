@@ -125,10 +125,12 @@ f = sys.argv[1]
 try:
     text = open(f, encoding="utf-8").read()
     if f.endswith(".json"):
-        json.loads(text)
+        data = json.loads(text)
     else:
         import yaml
-        yaml.safe_load(text)
+        data = yaml.safe_load(text)
+    if not isinstance(data, (dict, list)):  # a settings file holds a mapping or a list; plain text loads as one string
+        sys.exit(0)
 except ImportError:
     sys.exit(1)
 except Exception:

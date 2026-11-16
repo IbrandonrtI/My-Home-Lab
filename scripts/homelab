@@ -446,7 +446,7 @@ def read(p):
 
 
 def write(p, text):
-    if os.path.exists(p) and not os.path.exists(p + ".before-theme") and p != IDFILE:
+    if os.path.exists(p) and not os.path.lexists(p + ".before-theme") and p != IDFILE:
         shutil.copy2(p, p + ".before-theme")
     write_safely(p, text)
 
@@ -1412,13 +1412,19 @@ PY
 # Sizes use powers of 1000 (848 MB), like the dashboard and file managers, not powers of 1024 under the same name.
 human_bytes() { numfmt --to=si --round=nearest --suffix=B "$1" 2>/dev/null || echo "$1 B"; }
 
+# lab_date SECONDS FORMAT: a time shown in the zone the dashboard uses (the server's own zone when none is saved).
+lab_date() {
+  local zone=""
+  [ -r "$STATE_DIR/display-timezone" ] && zone=$(awk '{ if ($2 != "none") print $2 }' "$STATE_DIR/display-timezone" | head -n 1)
+  if [ -n "$zone" ] && TZ="$zone" date -d "@$1" "$2" 2>/dev/null; then return 0; fi
+  date -d "@$1" "$2"
+}
+
 # stamp_in_lab_zone "YYYY-MM-DD HH:MM": a time written by the backup program (server time) shown in the zone the dashboard uses, with the zone's name.
 stamp_in_lab_zone() {
-  local ts zone=""
+  local ts
   ts=$(date -d "$1" +%s 2>/dev/null) || { printf '%s' "$1"; return 0; }
-  [ -r "$STATE_DIR/display-timezone" ] && zone=$(awk '{ if ($2 != "none") print $2 }' "$STATE_DIR/display-timezone" | head -n 1)
-  if [ -n "$zone" ] && TZ="$zone" date -d "@$ts" '+%F %H:%M %Z' 2>/dev/null; then return 0; fi
-  date -d "@$ts" '+%F %H:%M %Z'
+  lab_date "$ts" '+%F %H:%M %Z'
 }
 
 in_words() {
@@ -1434,7 +1440,7 @@ next_run() {
     now=$(date +%s); hhmm=$(printf '%02d:%02d' "$h" "$m")
     t=$(date -d "$hhmm" +%s 2>/dev/null) || { echo "see root's crontab"; return; }
     [ "$t" -gt "$now" ] || t=$(date -d "tomorrow $hhmm" +%s)
-    printf '%s (%s)' "$hhmm" "$(in_words $(( t - now )))"
+    printf '%s (%s)' "$(lab_date "$t" '+%H:%M %Z')" "$(in_words $(( t - now )))"
   else
     echo "see root's crontab"
   fi
@@ -1442,6 +1448,14 @@ next_run() {
 
 sample_age_min() {
   echo $(( ( $(date +%s) - $1 ) / 60 ))
+}
+
+# True when the last backup was written to a place that has no backup in it now (the drive was disconnected or replaced).
+last_backup_gone() {
+  local _st _r dest
+  [ -r "$LAST_RUN_FILE" ] || return 1
+  IFS='|' read -r _st _r dest _ <"$LAST_RUN_FILE"
+  [ -n "$dest" ] && [ "$dest" != none ] && [ ! -d "$dest/main" ]
 }
 
 backup_size_line() {
@@ -1452,7 +1466,9 @@ backup_size_line() {
     IFS='|' read -r m h dom mon dow _e <"$STATE_DIR/schedule"
     next="next run $(next_run "$m" "$h" "$dom" "$mon" "$dow")"
   fi
-  if [[ "${bytes:-}" =~ ^[0-9]+$ ]]; then
+  if last_backup_gone; then
+    text="shows after the next backup run"
+  elif [[ "${bytes:-}" =~ ^[0-9]+$ ]]; then
     text="$(human_bytes "$bytes") in the backup"
   else
     text="size shows after the next backup run"
@@ -1546,6 +1562,15 @@ updates_line() {
 
 pool_mounted() { command -v findmnt >/dev/null 2>&1 && findmnt -n "$1" >/dev/null 2>&1; }
 
+# Names (BACKUP2, BACKUP3) of the backup drives that are set up in fstab but not mounted now.
+missing_backup_drives() {
+  local f="${HOMELAB_FSTAB:-/etc/fstab}" mp
+  [ -r "$f" ] || return 0
+  while read -r mp; do
+    pool_mounted "$mp" || basename "$mp"
+  done < <(awk '!/^[ \t]*#/ && $2 ~ /\/BACKUP[0-9]+\/?$/ {print $2}' "$f")
+}
+
 pool_lines() {
   local used size
   if pool_mounted "$MAIN_POOL"; then
@@ -1572,8 +1597,15 @@ pool_lines() {
       ok "Backup Pool" "mounted"
     fi
   else
-    warn "Backup Pool" "not connected, so the backup goes to the boot drive (connect a drive: sudo drives connect)"
-    suggest 5 "sudo drives" "connect a backup drive (or use part of the boot drive: sudo drives bootsection)"
+    local gone
+    gone=$(missing_backup_drives | tr '\n' ' ')
+    if [ -n "${gone// /}" ]; then
+      warn "Backup Pool" "the backup drive ${gone% } is missing, so the backup goes to the boot drive (check the cable, then: sudo drives remount; if the drive has failed: sudo drives replace)"
+      suggest 2 "sudo drives remount" "a backup drive is missing: check the cable, then mount it again"
+    else
+      warn "Backup Pool" "not connected, so the backup goes to the boot drive (connect a drive: sudo drives connect)"
+      suggest 5 "sudo drives" "connect a backup drive (or use part of the boot drive: sudo drives bootsection)"
+    fi
   fi
 }
 
@@ -1589,6 +1621,9 @@ last_backup_line() {
     if [ "$result" != "OK" ]; then
       bad "Last backup" "$line -> read: sudo tail -20 /var/log/homelab-backup.log"
       suggest 1 "sudo tail -20 /var/log/homelab-backup.log" "the last backup failed: read why"
+    elif last_backup_gone; then
+      warn "Last backup" "$line -> that backup is on a drive that is not connected now (run a new one: sudo homelab-backup)"
+      suggest 3 "sudo homelab-backup" "the last backup is on a drive that is not connected: run a new one"
     elif [ -n "$age_h" ] && [ "$age_h" -ge "$STALE_HOURS" ]; then
       warn "Last backup" "$line -> older than ${STALE_HOURS} h (run one now: sudo homelab-backup)"
       suggest 3 "sudo homelab-backup" "the last backup is old: run one now"
@@ -1690,17 +1725,28 @@ cards_line() {
 
 # The result of the last `homelab-backup verify`: copies that differ from the originals are shown here, with the drive that holds them.
 last_verify_line() {
-  local f stamp result compared differ _fixed drives
+  local f stamp result compared differ _fixed drives changed note=""
   f="${LAST_VERIFY_FILE:-$(dirname "$LAST_RUN_FILE")/last-verify}"
   [ -r "$f" ] || return 0
-  IFS='|' read -r stamp result compared differ _fixed drives <"$f"
+  IFS='|' read -r stamp result compared differ _fixed drives changed <"$f"
+  [[ "${changed:-0}" =~ ^[0-9]+$ ]] && [ "${changed:-0}" -gt 0 ] && note=", ${changed} changed since the backup"
   [ -n "$stamp" ] || return 0
   if [ "$result" = "OK" ]; then
-    ok "Backup check" "$(stamp_in_lab_zone "$stamp")  every file compared matched (${compared:-0} files)"
+    last_backup_gone && note="$note; that backup is on a drive that is not connected now"
+    ok "Backup check" "$(stamp_in_lab_zone "$stamp")  every file compared matched (${compared:-0} files${note})"
   else
     warn "Backup check" "$(stamp_in_lab_zone "$stamp")  ${differ:-some} file(s) did not match${drives:+ (held by $drives)} -> copy them again: sudo homelab-backup verify --repair"
     suggest 2 "sudo homelab-backup verify --repair" "some backup copies differ from the originals: copy them again"
   fi
+}
+
+# Downtify starts with a public login (admin / downtify). It is shown here until the password is changed.
+downtify_line() {
+  command -v docker >/dev/null 2>&1 || return 0
+  timeout 5 docker ps --format '{{.Names}}' 2>/dev/null | grep -qx downtify || return 0
+  [ "$(timeout 15 "${HOMELAB_ALERTS_BIN:-/usr/local/sbin/homelab-alerts}" downtify 2>/dev/null)" = default ] || return 0
+  warn "Downtify" "still has its public sign-in (admin / downtify). Set a new password: open Downtify, or run  sudo homelab-setup refresh"
+  suggest 2 "sudo homelab-setup refresh" "Downtify still has its public sign-in: set a password"
 }
 
 status() {
@@ -1711,6 +1757,7 @@ status() {
   temps_line
   updates_line
   containers_line
+  downtify_line
   cards_line
   boot_drive_line
 }

@@ -469,7 +469,7 @@ def cmd_checklist():
     if Mode.existing and not damaged_state_seen():
         say("This machine already runs the lab (set up by hand). The installer only reads it and changes nothing.")
     elif Mode.existing:
-        say("The installer's state file was damaged, so it only reads this machine for now and changes nothing. To build a new state file from what is installed, run: sudo homelab-setup refresh --force-existing")
+        say("The installer's state file was damaged, so it only reads this machine for now and changes nothing. The step counts below can be wrong until a new state file is built from what is installed: sudo homelab-setup refresh --force-existing")
     show_checklist(res, show_all=Opt.all)
     next_step_section(res)
 

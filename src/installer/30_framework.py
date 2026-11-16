@@ -18,6 +18,10 @@ class Step:
     def applies(self):
         return True
 
+    def open_note(self):
+        """A line under the step in the checklist while it is open: what exactly is missing."""
+        return ""
+
     def probe(self):
         return "todo"
 
@@ -208,6 +212,10 @@ def show_checklist(res, title="Home lab setup", show_help=None, show_all=False):
             elif s.kind == "ack":
                 tag = "  %sdetected automatically%s" % (D, N)
             out("   %s%s%s %s%s" % (col, sym, N, s.title, tag))
+            note = s.open_note() if r.state == "todo" else ""
+            if note:
+                for l in wrap(note, 9):
+                    out("%s%s%s" % (D, l, N))
             if r.state == "failed" and r.detail:
                 for l in wrap("Last attempt failed: " + r.detail, 9):
                     out("%s%s%s" % (R, l, N))

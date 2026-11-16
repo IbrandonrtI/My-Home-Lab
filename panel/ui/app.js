@@ -239,6 +239,15 @@ function showLogin(passwordSet = true, msg = "") {
   if (passwordSet) pw.focus();
 }
 
+window.addEventListener("hashchange", () => {
+  const id = location.hash.slice(1);
+  if (ONLY === "links" || !S || id === view || !VIEWS.some(x => x[0] === id)) return;
+  if (!(LOOKVIEWS.includes(view) && LOOKVIEWS.includes(id))) discardPreview();
+  view = id;
+  render();
+  window.scrollTo(0, 0);
+});
+
 function render() {
   if (!S) return;
   try { sessionStorage.setItem("hlp-view", view); } catch (e) {  }
@@ -1490,9 +1499,9 @@ const BK_KIND = { local: "Drive", ssh: "Another computer", cloud: "Cloud" };
 const BK_WORKING = { run: "Backing up...", dry: "Checking what would be copied...", restore: "Restoring..." };
 const KEEP_LABELS = [["hourly", "Hourly"], ["daily", "Daily"], ["weekly", "Weekly"], ["monthly", "Monthly"], ["yearly", "Yearly"]];
 
-function bkWhen(s) {
+function bkWhen(s, zone) {
   const m = /^(\d{4})-(\d\d)-(\d\d) (\d\d:\d\d)$/.exec(s || "");
-  return m ? MONTHS[+m[2] - 1] + " " + (+m[3]) + ", " + m[4] : (s || "");
+  return m ? MONTHS[+m[2] - 1] + " " + (+m[3]) + ", " + m[4] + (zone ? " " + zone : "") : (s || "");
 }
 function bkDestText(d) {
   if (d.type === "ssh") return d.host + ":" + d.path;
@@ -1541,7 +1550,7 @@ function bkStatus(t) {
   if (t.running) return h("span", { class: "pill warn" }, "Running now");
   if (!t.enabled) return h("span", { class: "pill dim" }, "Off");
   if (!t.last) return h("span", { class: "pill dim" }, "Never run");
-  return t.last.result === "OK" ? h("span", { class: "pill ok" }, "Last run OK, " + bkWhen(t.last.when)) : h("span", { class: "pill bad" }, "Last run failed, " + bkWhen(t.last.when));
+  return t.last.result === "OK" ? h("span", { class: "pill ok" }, "Last run OK, " + bkWhen(t.last.when, t.last.zone)) : h("span", { class: "pill bad" }, "Last run failed, " + bkWhen(t.last.when, t.last.zone));
 }
 function bkTask(t) {
   const mine = BKjob && BKjob.running && BKjob.task === t.id ? BKjob : null;
@@ -1551,7 +1560,7 @@ function bkTask(t) {
   const rows = [
     h("div", { class: "bkline" }, h("span", { class: "k" }, "From"), h("span", { class: "v" }, t.source)),
     h("div", { class: "bkline" }, h("span", { class: "k" }, "To"), h("span", { class: "v" }, bkDestText(t.dest))),
-    h("div", { class: "bkline" }, h("span", { class: "k" }, "When"), h("span", { class: "v" }, t.schedule_text + (t.enabled && t.next_run ? ". Next: " + bkWhen(t.next_run) : ""))),
+    h("div", { class: "bkline" }, h("span", { class: "k" }, "When"), h("span", { class: "v" }, t.schedule_text + (t.schedule_zone && t.schedule.kind !== "hourly" ? " (server time, " + t.schedule_zone + ")" : "") + (t.enabled && t.next_run ? ". Next: " + bkWhen(t.next_run, t.next_zone) : ""))),
     bkKeepText(t) ? h("div", { class: "bkline" }, h("span", { class: "k" }, "Keeps"), h("span", { class: "v" }, bkKeepText(t))) : null,
     last && typeof last.size_bytes === "number" ? h("div", { class: "bkline" }, h("span", { class: "k" }, "Space used"), h("span", { class: "v" }, humanBytes(last.size_bytes) + " in all versions together")) : null,
     last && last.message ? h("div", { class: "bkline" }, h("span", { class: "k" }, "Last run"), h("span", { class: "v " + (last.result === "OK" ? "" : "badtext") }, last.message)) : null];
