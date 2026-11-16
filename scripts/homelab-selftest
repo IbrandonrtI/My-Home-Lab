@@ -297,7 +297,7 @@ PY
     local stamp result dest
     IFS='|' read -r stamp result dest _ </var/lib/homelab-backup/last-run
     if [ -n "$dest" ] && [ "$dest" != none ] && [ ! -d "$dest/main" ]; then
-      warn "the last-backup record ($stamp, $result) points to $dest, which has no backup in it (a record left by an earlier install)"
+      warn "the last-backup record ($stamp, $result) points to $dest, which has no backup in it now (the drive was disconnected or replaced). Run a new backup: sudo homelab-backup"
     else
       info "last backup: $stamp $result -> $dest"
     fi
