@@ -186,15 +186,15 @@ def protect_key_files():
     if Opt.dry:
         return
     for p in wrong_owner_files():
-        os.chown(p, Ctx.uid, Ctx.gid)
+        chown(p, Ctx.uid, Ctx.gid)
     for p in key_files_open():
-        if os.path.isdir(p):
+        if os.path.isdir(p) and not os.path.islink(p):
             for dp, _dirs, files in os.walk(p):
-                os.chmod(dp, 0o700)
+                chmod_nolink(dp, 0o700)
                 for n in files:
-                    os.chmod(os.path.join(dp, n), 0o600)
+                    chmod_nolink(os.path.join(dp, n), 0o600)
         else:
-            os.chmod(p, 0o600)
+            chmod_nolink(p, 0o600)
 
 
 def _indent(line):

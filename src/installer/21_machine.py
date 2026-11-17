@@ -27,7 +27,7 @@ class Ctx:
         cls.hostname = socket.gethostname()
         cls.admin = a.get("admin", "")
         cls.email = a.get("email", "")
-        cls.repo = Opt.repo or State.data.get("repo") or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        cls.repo = find_repo(cls.home)
         cls.refresh_tailscale()
         cls.read_os()
 
@@ -53,6 +53,31 @@ class Ctx:
             cls.ts_id = me.get("ID", "")
             if cls.fqdn.count(".") >= 2:
                 cls.tailnet = cls.fqdn.split(".", 1)[1]
+
+
+REPO_FOLDER_NAMES = ("My-Home-Lab-", "My-Home-Lab", "homelab", "My-Home-Lab-main")
+
+
+def looks_like_repo(path):
+    """True for a downloaded copy of the lab: it holds the installer and the stacks."""
+    return bool(path) and os.path.isfile(os.path.join(path, "installer", "homelab-setup")) and os.path.isdir(os.path.join(path, "stacks"))
+
+
+def find_repo(home):
+    """The downloaded copy of the lab. The folder next to an installed installer is /usr/local, which is not a copy of the lab, so it is never taken when
+    a real copy can be found: the --repo option, the saved path, the folder this installer sits in, or a usual folder name in the lab user's home."""
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if Opt.repo:
+        return Opt.repo
+    saved = State.data.get("repo")
+    for cand in (saved, here):
+        if looks_like_repo(cand):
+            return cand
+    for name in REPO_FOLDER_NAMES:
+        cand = P(os.path.join(home, name))
+        if looks_like_repo(cand):
+            return cand
+    return saved or here
 
 
 def detect_user():
@@ -362,6 +387,16 @@ def subst(text):
 
 def repo_file(*parts):
     return os.path.join(Ctx.repo, *parts)
+
+
+def repo_text_for_root(*parts):
+    """(text, trusted) of a repository file that root is about to install and later run. The text is read from the real file that was checked, so a link
+    cannot be swapped in between. `trusted` is False when other users can change that file or a folder on the way to it."""
+    path = repo_file(*parts)
+    if FAKE:
+        return read_file(path), True
+    real = trusted_real_path(path, Ctx.user)
+    return (read_file(real), True) if real else (read_file(path), False)
 
 
 def stack_text(name):

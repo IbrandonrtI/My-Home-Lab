@@ -28,9 +28,11 @@ Usage (type  homelab event ...  instead of  homelab-calendar ...):
 import datetime
 import hashlib
 import os
+import tempfile
 import pwd
 import re
 import sys
+import time
 import urllib.error
 import urllib.request
 
@@ -176,17 +178,63 @@ def read(path):
         return ""
 
 
-def write_if_changed(path, text, owner_of):
-    if read(path) == text:
-        return False
-    tmp = path + ".tmp"
-    with open(tmp, "w", newline="") as f:
-        f.write(text)
-    os.chmod(tmp, 0o644)
+def drop_old_temp_files(folder, base, older=3600):
+    """A job that was stopped between making its temporary file and swapping it in leaves that file behind; leftovers of this file older than an hour are removed."""
+    prefix = ".%s." % base
+    try:
+        for name in os.listdir(folder):
+            p = os.path.join(folder, name)
+            if name.startswith(prefix) and name.endswith(".tmp") and not os.path.islink(p) and os.path.isfile(p) and time.time() - os.lstat(p).st_mtime > older:
+                os.unlink(p)
+    except OSError:
+        pass
+
+
+def write_file_safely(path, text, mode=0o644, owner=None):
+    """Write a file through a temporary file whose name nobody can guess or plant a link at (the folder may belong to a normal user while this runs as root).
+    Mode and owner are set on the open file, never on a path, and the finished file is swapped in; a link at the final name is replaced, not followed."""
+    folder = os.path.dirname(path) or "."
+    if os.path.islink(folder):
+        raise OSError("%s is a link, so nothing was written there" % folder)
+    fd, tmp = tempfile.mkstemp(prefix=".%s." % os.path.basename(path), suffix=".tmp", dir=folder)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as f:
+            f.write(text)
+            f.flush()
+            os.fchmod(f.fileno(), mode)
+            if owner is not None and os.geteuid() == 0:
+                os.fchown(f.fileno(), owner[0], owner[1])
+        os.replace(tmp, path)
+        drop_old_temp_files(folder, os.path.basename(path))
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def own_folder(path, owner_of):
+    """Make a folder inside the dashboard folder (it must be a real folder, not a link) and give it to the dashboard folder's owner."""
+    if os.path.islink(path):
+        raise Fail("%s is a link, not a folder, so nothing was written there." % path)
+    os.makedirs(path, exist_ok=True)
     if os.geteuid() == 0:
         st = os.stat(owner_of)
-        os.chown(tmp, st.st_uid, st.st_gid)
-    os.replace(tmp, path)
+        os.chown(path, st.st_uid, st.st_gid, follow_symlinks=False)
+
+
+def write_if_changed(path, text, owner_of, mode=0o644):
+    if read(path) == text:
+        return False
+    owner = None
+    if os.geteuid() == 0:
+        st = os.stat(owner_of)
+        owner = (st.st_uid, st.st_gid)
+    try:
+        write_file_safely(path, text, mode, owner)
+    except OSError as e:
+        raise Fail("Could not write %s: %s" % (path, e))
     return True
 
 
@@ -250,8 +298,7 @@ def load_feeds(hp):
 
 def save_feeds(hp, feeds):
     path = os.path.join(hp, "calendars.txt")
-    write_if_changed(path, FEEDS_HEADER + "".join("%s | %s\n" % f for f in feeds), hp)
-    os.chmod(path, 0o600)
+    write_if_changed(path, FEEDS_HEADER + "".join("%s | %s\n" % f for f in feeds), hp, 0o600)
 
 
 def feed_url(addr):
@@ -347,10 +394,7 @@ def merged_feeds(hp):
 
 def sync_feeds(hp, only=None):
     cache = os.path.join(hp, "calendar-cache")
-    os.makedirs(cache, exist_ok=True)
-    if os.geteuid() == 0:
-        st = os.stat(hp)
-        os.chown(cache, st.st_uid, st.st_gid)
+    own_folder(cache, hp)
     results = []
     for name, addr in load_feeds(hp):
         if only and name != only:
@@ -366,10 +410,7 @@ def sync_feeds(hp, only=None):
 
 def build(hp):
     img = os.path.join(hp, "images")
-    os.makedirs(img, exist_ok=True)
-    if os.geteuid() == 0:
-        st = os.stat(hp)
-        os.chown(img, st.st_uid, st.st_gid)
+    own_folder(img, hp)
     ys = list(years())
     hol = sorted(e for y in ys for e in official(y))
     obs = sorted(e for y in ys for e in observances(y))
@@ -418,10 +459,7 @@ def feed_cmd(hp, a):
         feeds.append((name, addr))
         save_feeds(hp, feeds)
         cache = os.path.join(hp, "calendar-cache")
-        os.makedirs(cache, exist_ok=True)
-        if os.geteuid() == 0:
-            st = os.stat(hp)
-            os.chown(cache, st.st_uid, st.st_gid)
+        own_folder(cache, hp)
         write_if_changed(os.path.join(cache, feed_slug(name) + ".ics"), text, hp)
         build(hp)
         n = len(feed_parts(text, name)[1])

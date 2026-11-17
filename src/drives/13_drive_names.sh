@@ -204,8 +204,10 @@ branch_name_calc() {
 }
 
 disk_details() {
-  local d=$1
-  printf '(%s, %s, %s, %s)' "$d" "$(lsblk -dno SIZE "$d" | tr -d ' ')" "$(lsblk -dno MODEL "$d" | sed 's/ *$//')" "$(lsblk -dno TRAN "$d" | sed 's/ *$//')"
+  local d=$1 size bytes
+  bytes=$(lsblk -bdno SIZE "$d" 2>/dev/null | tr -d ' ')
+  if [[ $bytes =~ ^[0-9]+$ ]]; then size=$(pretty_size "$bytes"); else size=$(lsblk -dno SIZE "$d" | tr -d ' '); fi
+  printf '(%s, %s, %s, %s)' "$d" "$size" "$(lsblk -dno MODEL "$d" | sed 's/ *$//')" "$(lsblk -dno TRAN "$d" | sed 's/ *$//')"
 }
 
 disk_summary() {

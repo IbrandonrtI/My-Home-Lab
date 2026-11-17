@@ -547,6 +547,11 @@ def cmd_upgrade():
         good("Files downloaded.")
     if not os.path.exists(new_installer):
         raise Abort("The downloaded files have no installer/homelab-setup. Look in %s." % repo)
+    if not FAKE:
+        real = trusted_real_path(new_installer, Ctx.user)
+        if not real:
+            raise Abort("The installer in %s can be changed by other users, so it was not run. Check who may write there, then run the command again." % repo)
+        new_installer = real
     out("")
     say("Now putting the new scripts on this machine (with the new installer):")
     return subprocess.call([sys.executable, new_installer, "refresh"] + (["--repo", Opt.repo] if Opt.repo else []))

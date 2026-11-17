@@ -248,6 +248,11 @@ class HomepageTabs(Step):
         new_js = js_groups_block(read_file(hp_path("custom.js")), read_file(repo_file("homepage-config", "custom.js")))
         return sett, new_css, seen, new_js, svc
 
+    def open_note(self):
+        if "custom.css" in missing_look_files():
+            return "waits for custom.css, which is missing or empty (see the dashboard's key files item); the layout is added after it is restored"
+        return ""
+
     def widgets_new(self):
         old = read_file(hp_path("widgets.yaml")) if os.path.exists(hp_path("widgets.yaml")) else ""
         if State.ran("homepage-clock") or not old:
@@ -358,10 +363,7 @@ class HomepageBackground(Step):
         name = "background" + ext
         os.makedirs(hp_path("images"), exist_ok=True)
         path = hp_path("images/" + name)
-        with open(path, "wb") as f:
-            f.write(data)
-        os.chmod(path, 0o644)
-        chown(path, Ctx.uid, Ctx.gid)
+        write_bytes(path, data, 0o644, (Ctx.uid, Ctx.gid))
         if not os.path.exists(hp_path("settings.yaml") + ".before-background"):
             write_file(hp_path("settings.yaml") + ".before-background", sett, 0o644, (Ctx.uid, Ctx.gid))
         write_file(hp_path("settings.yaml"), settings_with_background(sett, "/images/" + name), 0o644, (Ctx.uid, Ctx.gid))

@@ -591,19 +591,34 @@ def write_bytes(path, data, mode=None, owner=None):
     _write_safely(path, data, True, mode, owner)
 
 
+def chmod_nolink(path, mode):
+    """chmod that never follows a link: the folder may belong to a normal user, who could plant a link to a system file while this runs as root."""
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except OSError:
+        return
+    try:
+        os.fchmod(fd, mode)
+    except OSError:
+        pass
+    finally:
+        os.close(fd)
+
+
 def chown(path, uid, gid, recursive=False):
+    """chown that never follows a link (see chmod_nolink)."""
     if FAKE or Opt.dry:
         return
     try:
-        if recursive and os.path.isdir(path):
+        if recursive and os.path.isdir(path) and not os.path.islink(path):
             for dp, _dirs, fn in os.walk(path):
-                os.chown(dp, uid, gid)
+                os.chown(dp, uid, gid, follow_symlinks=False)
                 for n in fn:
                     try:
-                        os.chown(os.path.join(dp, n), uid, gid)
+                        os.chown(os.path.join(dp, n), uid, gid, follow_symlinks=False)
                     except OSError:
                         pass
-        os.chown(path, uid, gid)
+        os.chown(path, uid, gid, follow_symlinks=False)
     except OSError:
         pass
 
@@ -614,10 +629,7 @@ def mkdirs(path, uid=None, gid=None, mode=0o755):
             out("      would create folder: %s" % path)
         return
     os.makedirs(path, exist_ok=True)
-    try:
-        os.chmod(path, mode)
-    except OSError:
-        pass
+    chmod_nolink(path, mode)
     if uid is not None:
         chown(path, uid, gid)
 
@@ -965,7 +977,7 @@ class Ctx:
         cls.hostname = socket.gethostname()
         cls.admin = a.get("admin", "")
         cls.email = a.get("email", "")
-        cls.repo = Opt.repo or State.data.get("repo") or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        cls.repo = find_repo(cls.home)
         cls.refresh_tailscale()
         cls.read_os()
 
@@ -991,6 +1003,31 @@ class Ctx:
             cls.ts_id = me.get("ID", "")
             if cls.fqdn.count(".") >= 2:
                 cls.tailnet = cls.fqdn.split(".", 1)[1]
+
+
+REPO_FOLDER_NAMES = ("My-Home-Lab-", "My-Home-Lab", "homelab", "My-Home-Lab-main")
+
+
+def looks_like_repo(path):
+    """True for a downloaded copy of the lab: it holds the installer and the stacks."""
+    return bool(path) and os.path.isfile(os.path.join(path, "installer", "homelab-setup")) and os.path.isdir(os.path.join(path, "stacks"))
+
+
+def find_repo(home):
+    """The downloaded copy of the lab. The folder next to an installed installer is /usr/local, which is not a copy of the lab, so it is never taken when
+    a real copy can be found: the --repo option, the saved path, the folder this installer sits in, or a usual folder name in the lab user's home."""
+    here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    if Opt.repo:
+        return Opt.repo
+    saved = State.data.get("repo")
+    for cand in (saved, here):
+        if looks_like_repo(cand):
+            return cand
+    for name in REPO_FOLDER_NAMES:
+        cand = P(os.path.join(home, name))
+        if looks_like_repo(cand):
+            return cand
+    return saved or here
 
 
 def detect_user():
@@ -1300,6 +1337,16 @@ def subst(text):
 
 def repo_file(*parts):
     return os.path.join(Ctx.repo, *parts)
+
+
+def repo_text_for_root(*parts):
+    """(text, trusted) of a repository file that root is about to install and later run. The text is read from the real file that was checked, so a link
+    cannot be swapped in between. `trusted` is False when other users can change that file or a folder on the way to it."""
+    path = repo_file(*parts)
+    if FAKE:
+        return read_file(path), True
+    real = trusted_real_path(path, Ctx.user)
+    return (read_file(real), True) if real else (read_file(path), False)
 
 
 def stack_text(name):
@@ -2385,15 +2432,15 @@ def protect_key_files():
     if Opt.dry:
         return
     for p in wrong_owner_files():
-        os.chown(p, Ctx.uid, Ctx.gid)
+        chown(p, Ctx.uid, Ctx.gid)
     for p in key_files_open():
-        if os.path.isdir(p):
+        if os.path.isdir(p) and not os.path.islink(p):
             for dp, _dirs, files in os.walk(p):
-                os.chmod(dp, 0o700)
+                chmod_nolink(dp, 0o700)
                 for n in files:
-                    os.chmod(os.path.join(dp, n), 0o600)
+                    chmod_nolink(os.path.join(dp, n), 0o600)
         else:
-            os.chmod(p, 0o600)
+            chmod_nolink(p, 0o600)
 
 
 def _indent(line):
@@ -4368,6 +4415,11 @@ class HomepageTabs(Step):
         new_js = js_groups_block(read_file(hp_path("custom.js")), read_file(repo_file("homepage-config", "custom.js")))
         return sett, new_css, seen, new_js, svc
 
+    def open_note(self):
+        if "custom.css" in missing_look_files():
+            return "waits for custom.css, which is missing or empty (see the dashboard's key files item); the layout is added after it is restored"
+        return ""
+
     def widgets_new(self):
         old = read_file(hp_path("widgets.yaml")) if os.path.exists(hp_path("widgets.yaml")) else ""
         if State.ran("homepage-clock") or not old:
@@ -4478,10 +4530,7 @@ class HomepageBackground(Step):
         name = "background" + ext
         os.makedirs(hp_path("images"), exist_ok=True)
         path = hp_path("images/" + name)
-        with open(path, "wb") as f:
-            f.write(data)
-        os.chmod(path, 0o644)
-        chown(path, Ctx.uid, Ctx.gid)
+        write_bytes(path, data, 0o644, (Ctx.uid, Ctx.gid))
         if not os.path.exists(hp_path("settings.yaml") + ".before-background"):
             write_file(hp_path("settings.yaml") + ".before-background", sett, 0o644, (Ctx.uid, Ctx.gid))
         write_file(hp_path("settings.yaml"), settings_with_background(sett, "/images/" + name), 0o644, (Ctx.uid, Ctx.gid))
@@ -5792,8 +5841,9 @@ RETIRED_SCRIPTS = ["/usr/local/bin/hdd-recover", "/usr/local/bin/homelab-check"]
 
 
 def render_script(name):
-    text = read_file(repo_file("scripts", name))
-    return text.replace("$(getent passwd 1000 | cut -d: -f1)", Ctx.user)
+    """(text, trusted) of a script as it will be installed for this machine's user."""
+    text, trusted = repo_text_for_root("scripts", name)
+    return text.replace("$(getent passwd 1000 | cut -d: -f1)", Ctx.user), trusted
 
 
 def installed_copy(name, where):
@@ -5811,15 +5861,14 @@ class ScriptsInstalled(Step):
     needs = ("packages",)
 
     def _wanted(self):
-        items = [(n, d, render_script(n)) for n, d in SCRIPTS if n != "homelab-panel" or panel_applies()]
-        me = repo_file("installer", "homelab-setup")
-        items.append(("homelab-setup", "/usr/local/sbin", read_file(me)))
+        items = [(n, d) + render_script(n) for n, d in SCRIPTS if n != "homelab-panel" or panel_applies()]
+        items.append(("homelab-setup", "/usr/local/sbin") + repo_text_for_root("installer", "homelab-setup"))
         return items
 
     def probe(self):
         if any(os.path.exists(P(old)) for old in RETIRED_SCRIPTS):
             return "todo"
-        for n, d, body in self._wanted():
+        for n, d, body, _trusted in self._wanted():
             if not body:
                 return "todo"
             p = installed_copy(n, d)
@@ -5829,9 +5878,15 @@ class ScriptsInstalled(Step):
 
     def run(self):
         panel_changed = False
-        for n, d, body in self._wanted():
+        wanted = self._wanted()
+        for n, d, body, trusted in wanted:
             if not body:
                 raise Abort("The repository copy of %s is missing (looked in %s)." % (n, Ctx.repo))
+            dst = P(d + "/" + n)
+            if not trusted and not (os.path.exists(dst) and read_file(dst) == body):
+                # root would run this file from now on, so nothing is copied (not even in a dry run) unless only root and the lab user can change it
+                raise Abort("The helper commands in %s can be changed by other users (first one found: %s), so nothing was installed from there. Check who may write there, then run the command again." % (Ctx.repo, n))
+        for n, d, body, _trusted in wanted:
             dst = P(d + "/" + n)
             if os.path.exists(dst) and read_file(dst) == body:
                 continue
@@ -6976,6 +7031,111 @@ def homepage_file_problems():
     return found
 
 
+def remember_repo():
+    """Save where the downloaded copy of the lab is, but never a folder that is not one (an installed installer sits in /usr/local)."""
+    if looks_like_repo(Ctx.repo) or Opt.repo:
+        State.data["repo"] = Ctx.repo
+
+
+# One-time actions of a first install. A lab that already runs has had them; running them again would upgrade every package or put the shipped layout back.
+ONE_TIME_STEPS = ("apt-update", "apt-upgrade", "homepage-tabs", "homepage-stats", "homepage-calendar", "homepage-customize", "homepage-clock", "speedtest-first")
+SALVAGE_ANSWERS = ("admin", "email", "lan", "tz", "tz_found", "adguard", "lvm_grow", "tailscale_token_asked")
+
+
+def salvage_state_text(body):
+    """The readable parts of a damaged state file: answers and finished one-time actions written as plain "name": "value" pairs."""
+    found = {"answers": {}, "ran": {}}
+    for key in SALVAGE_ANSWERS:
+        m = re.search(r'"%s"\s*:\s*"([^"\\]*)"' % re.escape(key), body)
+        if m:
+            found["answers"][key] = m.group(1)
+    m = re.search(r'"ran"\s*:\s*\{([^{}]*)(?:\}|$)', body)
+    if m:
+        for k, v in re.findall(r'"([A-Za-z0-9_-]+)"\s*:\s*"([^"\\]*)"', m.group(1)):
+            found["ran"][k] = v
+    m = re.search(r'"weather"\s*:\s*\{([^{}]*)\}', body)
+    if m:
+        w = dict(re.findall(r'"([a-z]+)"\s*:\s*"([^"\\]*)"', m.group(1)))
+        w.update({k: float(v) for k, v in re.findall(r'"(lat|lon)"\s*:\s*(-?[0-9.]+)', m.group(1))})
+        if w.get("name"):
+            found["answers"]["weather"] = w
+    return found
+
+
+def newest_damaged_copy():
+    folder = os.path.dirname(STATE_FILE)
+    try:
+        names = sorted(f for f in os.listdir(folder) if f.startswith(os.path.basename(STATE_FILE) + ".damaged-"))
+    except OSError:
+        return ""
+    return os.path.join(folder, names[-1]) if names else ""
+
+
+def read_back_answers():
+    """The admin name and e-mail address as they are written in the logins of Homepage's widgets (AdGuard Home: the admin name; Beszel: the e-mail)."""
+    found = {}
+    try:
+        import yaml
+        data = yaml.safe_load(read_file(hp_path("services.yaml")) or "")
+    except Exception:  # no yaml module, or a file that is not valid yaml
+        return found
+
+    def walk(node):
+        if isinstance(node, dict):
+            kind, user = node.get("type"), node.get("username")
+            if isinstance(user, str) and user.strip():
+                if kind == "adguard":
+                    found.setdefault("admin", user.strip())
+                elif kind == "beszel" and re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", user.strip()):
+                    found.setdefault("email", user.strip())
+            for v in node.values():
+                walk(v)
+        elif isinstance(node, list):
+            for v in node:
+                walk(v)
+    walk(data)
+    return found
+
+
+def rebuild_state_from_machine():
+    """`refresh --force-existing`: write a new state file for a lab that already runs. Answers come from the damaged copy when it is readable, then from what
+    is installed; only what cannot be found is asked. One-time first-install actions count as done, so the rebuild does not upgrade every package or put
+    the shipped dashboard layout back."""
+    a = State.data["answers"]
+    copy = newest_damaged_copy()
+    salvaged = salvage_state_text(read_file(copy)) if copy else {"answers": {}, "ran": {}}
+    for k, v in salvaged["answers"].items():
+        a.setdefault(k, v)
+    for k, v in read_back_answers().items():
+        if not a.get(k):
+            a[k] = v
+    if "adguard" not in a:
+        a["adguard"] = "yes" if "adguard" in containers_all() else "no"
+    missing = [k for k in ("admin", "email") if not a.get(k)]
+    if missing:
+        if not interactive():
+            raise Abort("The %s could not be read back from this machine and no terminal is open to ask for it. Run `sudo homelab-setup refresh --force-existing` in a terminal." % " and ".join(
+                "admin name" if k == "admin" else "email address" for k in missing))
+        out("")
+        say("Some answers could not be read back from this machine, so they are asked once more:")
+        if "admin" in missing:
+            a["admin"] = ask("Admin name for every service", Ctx.user.capitalize())
+        if "email" in missing:
+            a["email"] = ask("Email address (login for Immich, Beszel and Speedtest Tracker)", "")
+            while not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", a["email"]):
+                a["email"] = ask("That is not a valid email address. Enter it again", "")
+    Ctx.detect()
+    remember_repo()
+    stamp = time.strftime("%F %T")
+    for k, v in salvaged["ran"].items():
+        State.data["ran"].setdefault(k, v)
+    for k in ONE_TIME_STEPS:
+        State.data["ran"].setdefault(k, stamp)
+    State.mark("install-started")
+    kept = [k for k in a if a.get(k)]
+    say("Answers kept or read back: %s." % (", ".join(sorted(kept)) or "none"))
+
+
 def damaged_state_seen():
     """True when this run found a state file it could not read."""
     return Mode.state_damaged
@@ -7547,7 +7707,7 @@ def cmd_install():
             ask_answers()
         else:
             Ctx.detect()
-        State.data["repo"] = Ctx.repo
+        remember_repo()
         State.save()
         ask_grow_boot_volume(State.data["answers"])
         ask_restore_plan()
@@ -7692,11 +7852,13 @@ def cmd_refresh():
         return
     if Mode.existing:
         # The owner asked for it: build a new state file from what is installed, then check everything again.
-        if not Opt.dry:
-            State.data["repo"] = Ctx.repo
-            State.mark("install-started")
-            Mode.existing = False
+        if not looks_like_repo(Ctx.repo):
+            raise Abort("The downloaded copy of the lab was not found (looked in %s and in the home folder of %s). Run the command again and name its folder:\n"
+                        "  sudo homelab-setup refresh --force-existing --repo ~/My-Home-Lab-" % (Ctx.repo, Ctx.user))
         say("Building a new setup state file from what is installed.")
+        if not Opt.dry:
+            rebuild_state_from_machine()
+            Mode.existing = False
     elif not State.exists():
         raise Abort("The installer has not run on this machine yet. Run `sudo homelab-setup install`.")
     refuse_while_finishing()
@@ -8264,6 +8426,11 @@ def cmd_upgrade():
         good("Files downloaded.")
     if not os.path.exists(new_installer):
         raise Abort("The downloaded files have no installer/homelab-setup. Look in %s." % repo)
+    if not FAKE:
+        real = trusted_real_path(new_installer, Ctx.user)
+        if not real:
+            raise Abort("The installer in %s can be changed by other users, so it was not run. Check who may write there, then run the command again." % repo)
+        new_installer = real
     out("")
     say("Now putting the new scripts on this machine (with the new installer):")
     return subprocess.call([sys.executable, new_installer, "refresh"] + (["--repo", Opt.repo] if Opt.repo else []))

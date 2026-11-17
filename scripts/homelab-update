@@ -875,10 +875,18 @@ cmd_auto() {
   return 0
 }
 
+# lab_time EPOCH: a time in the zone the dashboard uses, with the zone's name (the server's own zone when none is saved).
+lab_time() {
+  local zone=""
+  [ -r "$STATE_DIR/display-timezone" ] && zone=$(awk '{ if ($2 != "none") print $2 }' "$STATE_DIR/display-timezone" | head -n 1)
+  if [ -n "$zone" ] && TZ="$zone" date -d "@$1" '+%F %H:%M %Z' 2>/dev/null; then return 0; fi
+  date -d "@$1" '+%F %H:%M %Z'
+}
+
 cmd_list() {
   local ep; ep=$(summary_epoch) || ep=""
   rule "Container updates"
-  if [ -n "$ep" ]; then echo "  Last check online: $(date -d "@$ep" '+%F %H:%M') ($(( ($(date +%s) - ep) / 86400 )) day(s) ago)"
+  if [ -n "$ep" ]; then echo "  Last check online: $(lab_time "$ep") ($(( ($(date +%s) - ep) / 86400 )) day(s) ago)"
   else echo "  No check has been saved yet. Run: sudo homelab-update check"; fi
   echo
   load_containers || die "Cannot talk to Docker (is your user in the docker group?)."

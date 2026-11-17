@@ -25,6 +25,7 @@ Usage:
 import datetime
 import json
 import os
+import tempfile
 import re
 import subprocess
 import sys
@@ -72,12 +73,44 @@ def load_json(path):
         return {}
 
 
+def drop_old_temp_files(folder, base, older=3600):
+    """A job that was stopped between making its temporary file and swapping it in leaves that file behind; leftovers of this file older than an hour are removed."""
+    prefix = ".%s." % base
+    try:
+        for name in os.listdir(folder):
+            p = os.path.join(folder, name)
+            if name.startswith(prefix) and name.endswith(".tmp") and not os.path.islink(p) and os.path.isfile(p) and time.time() - os.lstat(p).st_mtime > older:
+                os.unlink(p)
+    except OSError:
+        pass
+
+
+def write_file_safely(path, text, mode=0o644, owner=None):
+    """Write a file through a temporary file whose name nobody can guess or plant a link at (the folder may belong to a normal user while this runs as root).
+    Mode and owner are set on the open file, never on a path, and the finished file is swapped in; a link at the final name is replaced, not followed."""
+    folder = os.path.dirname(path) or "."
+    if os.path.islink(folder):
+        raise OSError("%s is a link, so nothing was written there" % folder)
+    fd, tmp = tempfile.mkstemp(prefix=".%s." % os.path.basename(path), suffix=".tmp", dir=folder)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as f:
+            f.write(text)
+            f.flush()
+            os.fchmod(f.fileno(), mode)
+            if owner is not None and os.geteuid() == 0:
+                os.fchown(f.fileno(), owner[0], owner[1])
+        os.replace(tmp, path)
+        drop_old_temp_files(folder, os.path.basename(path))
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
 def write_atomic(path, text, mode=0o644):
-    tmp = "%s.tmp.%d" % (path, os.getpid())
-    with open(tmp, "w") as f:
-        f.write(text)
-    os.chmod(tmp, mode)
-    os.replace(tmp, path)
+    write_file_safely(path, text, mode)
 
 
 def human(n):
@@ -457,7 +490,7 @@ def backup_info(now):
     else:
         saved, note = "Boot drive", "Boot drive (no backup drive connected)"
     gone = bool(dest) and dest != "none" and not os.path.isdir(os.path.join(dest, "main"))  # that backup is on a drive that is not connected now
-    return {"when": nice_when, "ago": ago, "result": res_text, "size": human(size) if size.isdigit() and not gone else "-", "took": took_text, "short": short,
+    return {"when": nice_when, "ago": ago, "result": res_text, "size": human(size) if size.isdigit() and not gone and ok else "-", "took": took_text, "short": short,
             "saved_to": saved, "saved_note": note}
 
 

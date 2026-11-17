@@ -6,8 +6,9 @@ RETIRED_SCRIPTS = ["/usr/local/bin/hdd-recover", "/usr/local/bin/homelab-check"]
 
 
 def render_script(name):
-    text = read_file(repo_file("scripts", name))
-    return text.replace("$(getent passwd 1000 | cut -d: -f1)", Ctx.user)
+    """(text, trusted) of a script as it will be installed for this machine's user."""
+    text, trusted = repo_text_for_root("scripts", name)
+    return text.replace("$(getent passwd 1000 | cut -d: -f1)", Ctx.user), trusted
 
 
 def installed_copy(name, where):
@@ -25,15 +26,14 @@ class ScriptsInstalled(Step):
     needs = ("packages",)
 
     def _wanted(self):
-        items = [(n, d, render_script(n)) for n, d in SCRIPTS if n != "homelab-panel" or panel_applies()]
-        me = repo_file("installer", "homelab-setup")
-        items.append(("homelab-setup", "/usr/local/sbin", read_file(me)))
+        items = [(n, d) + render_script(n) for n, d in SCRIPTS if n != "homelab-panel" or panel_applies()]
+        items.append(("homelab-setup", "/usr/local/sbin") + repo_text_for_root("installer", "homelab-setup"))
         return items
 
     def probe(self):
         if any(os.path.exists(P(old)) for old in RETIRED_SCRIPTS):
             return "todo"
-        for n, d, body in self._wanted():
+        for n, d, body, _trusted in self._wanted():
             if not body:
                 return "todo"
             p = installed_copy(n, d)
@@ -43,9 +43,15 @@ class ScriptsInstalled(Step):
 
     def run(self):
         panel_changed = False
-        for n, d, body in self._wanted():
+        wanted = self._wanted()
+        for n, d, body, trusted in wanted:
             if not body:
                 raise Abort("The repository copy of %s is missing (looked in %s)." % (n, Ctx.repo))
+            dst = P(d + "/" + n)
+            if not trusted and not (os.path.exists(dst) and read_file(dst) == body):
+                # root would run this file from now on, so nothing is copied (not even in a dry run) unless only root and the lab user can change it
+                raise Abort("The helper commands in %s can be changed by other users (first one found: %s), so nothing was installed from there. Check who may write there, then run the command again." % (Ctx.repo, n))
+        for n, d, body, _trusted in wanted:
             dst = P(d + "/" + n)
             if os.path.exists(dst) and read_file(dst) == body:
                 continue

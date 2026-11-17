@@ -45,10 +45,14 @@ done
 REAL_USER="${HOMELAB_USER:-${SUDO_USER:-$(getent passwd 1000 | cut -d: -f1)}}"
 REAL_HOME=$(getent passwd "$REAL_USER" | cut -d: -f6)
 REAL_HOME=${REAL_HOME:-/root}
-REPORT="$REAL_HOME/homelab-selftest-$(date +%Y%m%d-%H%M).txt"
-: >"$REPORT" 2>/dev/null || REPORT="/tmp/homelab-selftest-$(date +%Y%m%d-%H%M).txt"
-chmod 600 "$REPORT" 2>/dev/null || true
-[ "$REAL_HOME" != /root ] && chown "$REAL_USER:" "$REPORT" 2>/dev/null
+# The report is created new (never through an existing file or link: the folder belongs to a normal user while this runs as root), readable by its owner only.
+STAMP=$(date +%Y%m%d-%H%M)
+REPORT=""
+for cand in "$REAL_HOME/homelab-selftest-$STAMP.txt" "$REAL_HOME/homelab-selftest-$STAMP-$$.txt" "/tmp/homelab-selftest-$STAMP-$$.txt"; do
+  if ( set -C; umask 077; : >"$cand" ) 2>/dev/null; then REPORT="$cand"; break; fi
+done
+[ -n "$REPORT" ] || { echo "Could not create a report file."; exit 1; }
+[ "$REAL_HOME" != /root ] && chown -h "$REAL_USER:" "$REPORT" 2>/dev/null
 # Keep only the 10 newest reports so they do not pile up in the home folder.
 case "$REPORT" in
   "$REAL_HOME"/homelab-selftest-*.txt)

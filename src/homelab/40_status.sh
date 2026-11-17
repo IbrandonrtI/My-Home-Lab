@@ -57,6 +57,8 @@ backup_size_line() {
   fi
   if last_backup_gone; then
     text="shows after the next backup run"
+  elif [ -n "${result:-}" ] && [ "$(printf '%s' "$result" | tr '[:lower:]' '[:upper:]')" != OK ]; then
+    text="no size (the last run failed)"
   elif [[ "${bytes:-}" =~ ^[0-9]+$ ]]; then
     text="$(human_bytes "$bytes") in the backup"
   else
@@ -185,7 +187,11 @@ pool_lines() {
       warn "Backup Pool" "mounted, but only on a section of the boot drive (lost if that drive fails; fix: sudo drives connect)"
       suggest 4 "sudo drives" "connect a real backup drive: the backup is on the boot drive now"
     else
-      ok "Backup Pool" "mounted"
+      local bused bsize
+      read -r bused bsize < <(df -B1 --output=used,size "$BACKUP_POOL" 2>/dev/null | awk 'NR==2 {print $1, $2}')
+      [ -n "${bused:-}" ] && bused=$(human_bytes "$bused")
+      [ -n "${bsize:-}" ] && bsize=$(human_bytes "$bsize")
+      ok "Backup Pool" "mounted, ${bused:-?} used of ${bsize:-?}"
     fi
   else
     local gone
@@ -232,10 +238,11 @@ last_backup_line() {
 
 # Summary line of the containers. A stopped container whose restart policy is "no" was stopped on purpose and is ignored.
 containers_line() {
-  local n_run=0 n_all=0 down="" silent unhealthy cname cstate cpol crc cstart restarted="" st_ts now
+  local n_run=0 n_all=0 down="" silent unhealthy cname cstate cpol crc cstart restarted="" st_ts now info_rc=1
+  command -v docker >/dev/null 2>&1 && { timeout 5 docker info >/dev/null 2>&1; info_rc=$?; }
   if [ "$JUST_BOOTED" -eq 1 ]; then
     warn "Containers" "the server just started and the apps are still starting (live check in a few minutes: homelab status)"
-  elif command -v docker >/dev/null 2>&1 && timeout 5 docker info >/dev/null 2>&1; then
+  elif [ "$info_rc" -eq 0 ]; then
     now=$(date +%s)
     while read -r cname cstate cpol crc cstart; do
       [ -n "$cname" ] || continue
@@ -271,7 +278,9 @@ containers_line() {
     case "$(systemctl is-active docker 2>/dev/null)" in
       activating) warn "Containers" "Docker is still starting after the restart. Wait a minute, then run  homelab  again" ;;
       inactive|failed) warn "Containers" "Docker is not running. Start it with:  sudo systemctl start docker" ;;
-      *) if [ "$(id -u)" != 0 ] && getent group docker 2>/dev/null | cut -d: -f4 | tr ',' '\n' | grep -qx "$(id -un)" && ! id -nG | tr ' ' '\n' | grep -qx docker; then
+      *) if [ "$info_rc" -eq 124 ]; then
+           warn "Containers" "Docker did not answer within 5 seconds (it is busy). Wait a minute, then run  homelab  again"
+         elif [ "$(id -u)" != 0 ] && getent group docker 2>/dev/null | cut -d: -f4 | tr ',' '\n' | grep -qx "$(id -un)" && ! id -nG | tr ' ' '\n' | grep -qx docker; then
            warn "Containers" "this terminal has not picked up your Docker access yet. Log out and back in (or run: newgrp docker), or use: sudo homelab"
          else
            warn "Containers" "cannot read Docker (is Docker running, and are you in the docker group?)"

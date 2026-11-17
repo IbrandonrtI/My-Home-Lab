@@ -28,6 +28,7 @@ Image updates need nothing here: sudo homelab-update already looks after every r
 import fcntl
 import json
 import os
+import tempfile
 import pwd
 import re
 import shutil
@@ -177,6 +178,18 @@ def read_text(path):
         return ""
 
 
+def drop_old_temp_files(folder, base, older=3600):
+    """A job that was stopped between making its temporary file and swapping it in leaves that file behind; leftovers of this file older than an hour are removed."""
+    prefix = ".%s." % base
+    try:
+        for name in os.listdir(folder):
+            p = os.path.join(folder, name)
+            if name.startswith(prefix) and name.endswith(".tmp") and not os.path.islink(p) and os.path.isfile(p) and time.time() - os.lstat(p).st_mtime > older:
+                os.unlink(p)
+    except OSError:
+        pass
+
+
 def write_text(path, text, like=None):
     like = like or path
     try:
@@ -187,25 +200,40 @@ def write_text(path, text, like=None):
         owner = st or os.stat(os.path.dirname(path) or ".")
     except OSError:
         owner = None
-    tmp = path + ".homelab-cards.tmp"
-    if os.path.islink(tmp):
-        os.unlink(tmp)
-    with open(tmp, "w", encoding="utf-8", opener=lambda p, fl: os.open(p, fl | os.O_NOFOLLOW, 0o600)) as f:
-        f.write(text)
-    os.chmod(tmp, (st.st_mode & 0o777) if st else 0o644)
-    if owner:
+    folder = os.path.dirname(path) or "."
+    if os.path.islink(folder):
+        raise OSError("%s is a link, so nothing was written there" % folder)
+    fd, tmp = tempfile.mkstemp(prefix=".%s." % os.path.basename(path), suffix=".tmp", dir=folder)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(text)
+            f.flush()
+            os.fchmod(f.fileno(), (st.st_mode & 0o777) if st else 0o644)
+            if owner:
+                try:
+                    os.fchown(f.fileno(), owner.st_uid, owner.st_gid)
+                except OSError:
+                    pass
+        os.replace(tmp, path)
+        drop_old_temp_files(folder, os.path.basename(path))
+    except BaseException:
         try:
-            os.chown(tmp, owner.st_uid, owner.st_gid)
+            os.unlink(tmp)
         except OSError:
             pass
-    os.replace(tmp, path)
+        raise
 
 
 def backup_once(path, suffix=".before-cards"):
-    if os.path.exists(path) and not os.path.exists(path + suffix):
-        with open(path, "rb") as src, open(path + suffix, "wb", opener=lambda p, fl: os.open(p, fl, 0o600)) as dst:
+    if os.path.exists(path) and not os.path.lexists(path + suffix):
+        st = os.stat(path)
+        # new file only (a link planted at the copy's name is never followed); mode and times are set on the open file
+        fd = os.open(path + suffix, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        with open(path, "rb") as src, os.fdopen(fd, "wb") as dst:
             shutil.copyfileobj(src, dst)
-        shutil.copystat(path, path + suffix)
+            dst.flush()
+            os.fchmod(dst.fileno(), st.st_mode & 0o777)
+            os.utime(dst.fileno(), ns=(st.st_atime_ns, st.st_mtime_ns))
 
 
 def keep_damaged_copy(path):

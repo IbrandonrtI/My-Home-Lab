@@ -111,19 +111,34 @@ def write_bytes(path, data, mode=None, owner=None):
     _write_safely(path, data, True, mode, owner)
 
 
+def chmod_nolink(path, mode):
+    """chmod that never follows a link: the folder may belong to a normal user, who could plant a link to a system file while this runs as root."""
+    try:
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except OSError:
+        return
+    try:
+        os.fchmod(fd, mode)
+    except OSError:
+        pass
+    finally:
+        os.close(fd)
+
+
 def chown(path, uid, gid, recursive=False):
+    """chown that never follows a link (see chmod_nolink)."""
     if FAKE or Opt.dry:
         return
     try:
-        if recursive and os.path.isdir(path):
+        if recursive and os.path.isdir(path) and not os.path.islink(path):
             for dp, _dirs, fn in os.walk(path):
-                os.chown(dp, uid, gid)
+                os.chown(dp, uid, gid, follow_symlinks=False)
                 for n in fn:
                     try:
-                        os.chown(os.path.join(dp, n), uid, gid)
+                        os.chown(os.path.join(dp, n), uid, gid, follow_symlinks=False)
                     except OSError:
                         pass
-        os.chown(path, uid, gid)
+        os.chown(path, uid, gid, follow_symlinks=False)
     except OSError:
         pass
 
@@ -134,10 +149,7 @@ def mkdirs(path, uid=None, gid=None, mode=0o755):
             out("      would create folder: %s" % path)
         return
     os.makedirs(path, exist_ok=True)
-    try:
-        os.chmod(path, mode)
-    except OSError:
-        pass
+    chmod_nolink(path, mode)
     if uid is not None:
         chown(path, uid, gid)
 

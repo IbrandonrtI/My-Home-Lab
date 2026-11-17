@@ -311,8 +311,7 @@ verify_all() {
   all=$(mktemp) || return 1
   bad=$(mktemp) || return 1
   ( cd "$DEST/main" && find . -type f -print0 ) | sed -z 's|^\./||' >"$all"
-  VCOMPARED=$(tr -cd '\0' <"$all" | wc -c)
-  [ -s "$all" ] && VCOMPARED=$((VCOMPARED + 1))
+  VCOMPARED=$(tr -cd '\0' <"$all" | wc -c)   # find -print0 ends every name with a NUL, so the NULs are the files
   drop_caches
   echo "Comparing every file (this reads all the data on both drives)..." >&2
   differing_files "$all" >"$bad"

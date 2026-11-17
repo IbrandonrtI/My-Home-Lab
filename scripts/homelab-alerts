@@ -14,6 +14,7 @@ a detail and an action the bell can offer ("update", "restart" or ""). Settings 
 HOMELAB_STATS_IN, HOMELAB_DOCKER, HOMELAB_TAILSCALE, HOMELAB_APT_GET, HOMELAB_REBOOT_FILE, HOMELAB_ROOT_PATH, HOMELAB_TEMP_WARN, HOMELAB_TEMP_BAD, HOMELAB_BUSY (none or any text), HOMELAB_POOL_DEVS, HOMELAB_SYS_BLOCK, HOMELAB_BUSY_SECS, HOMELAB_FSTAB, HOMELAB_BACKUP_POOL, HOMELAB_VERIFY_STATUS, HOMELAB_PAGE_HOST, HOMELAB_SERVICE_PORTS (JSON)."""
 import json
 import os
+import tempfile
 import re
 import subprocess
 import sys
@@ -255,7 +256,7 @@ def check_backup_verify():
     if not stamp or result.strip().upper() == "OK":
         return []
     where = " Held by %s." % drives.strip() if drives.strip() else ""
-    return [item("backup:verify", "warn", "Backup copies differ from the originals", "%s file(s) in the backup did not match when checked on %s.%s To copy them again: sudo homelab-backup verify --repair" % (differ or "Some", stamp, where), "drives")]
+    return [item("backup:verify", "warn", "Backup copies differ from the originals", "%s file(s) in the backup did not match when checked on %s.%s To copy them again: sudo homelab-backup verify --repair" % (differ or "Some", shown_stamp(stamp), where), "drives")]
 
 
 def page_status(port, timeout=4):
@@ -338,8 +339,7 @@ def check_downtify_login():
         pass
     default = downtify_default_login()
     try:
-        with open(cache, "w") as f:
-            f.write("%d %s\n" % (time.time(), "default" if default else "set"))
+        write_file_safely(cache, "%d %s\n" % (time.time(), "default" if default else "set"))
     except OSError:
         pass
     if not default:
@@ -450,13 +450,45 @@ def collect():
     return {"version": 1, "updated": now, "counts": {k: sum(1 for i in items if i["level"] == k) for k in ORDER}, "items": items}
 
 
+def drop_old_temp_files(folder, base, older=3600):
+    """A job that was stopped between making its temporary file and swapping it in leaves that file behind; leftovers of this file older than an hour are removed."""
+    prefix = ".%s." % base
+    try:
+        for name in os.listdir(folder):
+            p = os.path.join(folder, name)
+            if name.startswith(prefix) and name.endswith(".tmp") and not os.path.islink(p) and os.path.isfile(p) and time.time() - os.lstat(p).st_mtime > older:
+                os.unlink(p)
+    except OSError:
+        pass
+
+
+def write_file_safely(path, text, mode=0o644, owner=None):
+    """Write a file through a temporary file whose name nobody can guess or plant a link at (the folder may belong to a normal user while this runs as root).
+    Mode and owner are set on the open file, never on a path, and the finished file is swapped in; a link at the final name is replaced, not followed."""
+    folder = os.path.dirname(path) or "."
+    if os.path.islink(folder):
+        raise OSError("%s is a link, so nothing was written there" % folder)
+    fd, tmp = tempfile.mkstemp(prefix=".%s." % os.path.basename(path), suffix=".tmp", dir=folder)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8", newline="") as f:
+            f.write(text)
+            f.flush()
+            os.fchmod(f.fileno(), mode)
+            if owner is not None and os.geteuid() == 0:
+                os.fchown(f.fileno(), owner[0], owner[1])
+        os.replace(tmp, path)
+        drop_old_temp_files(folder, os.path.basename(path))
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
 def save(res, path):
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(res, f, indent=1)
-    os.chmod(tmp, 0o644)
-    os.replace(tmp, path)
+    write_file_safely(path, json.dumps(res, indent=1))
 
 
 def main(argv):

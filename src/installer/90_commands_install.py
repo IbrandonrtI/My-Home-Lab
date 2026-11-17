@@ -35,6 +35,111 @@ def homepage_file_problems():
     return found
 
 
+def remember_repo():
+    """Save where the downloaded copy of the lab is, but never a folder that is not one (an installed installer sits in /usr/local)."""
+    if looks_like_repo(Ctx.repo) or Opt.repo:
+        State.data["repo"] = Ctx.repo
+
+
+# One-time actions of a first install. A lab that already runs has had them; running them again would upgrade every package or put the shipped layout back.
+ONE_TIME_STEPS = ("apt-update", "apt-upgrade", "homepage-tabs", "homepage-stats", "homepage-calendar", "homepage-customize", "homepage-clock", "speedtest-first")
+SALVAGE_ANSWERS = ("admin", "email", "lan", "tz", "tz_found", "adguard", "lvm_grow", "tailscale_token_asked")
+
+
+def salvage_state_text(body):
+    """The readable parts of a damaged state file: answers and finished one-time actions written as plain "name": "value" pairs."""
+    found = {"answers": {}, "ran": {}}
+    for key in SALVAGE_ANSWERS:
+        m = re.search(r'"%s"\s*:\s*"([^"\\]*)"' % re.escape(key), body)
+        if m:
+            found["answers"][key] = m.group(1)
+    m = re.search(r'"ran"\s*:\s*\{([^{}]*)(?:\}|$)', body)
+    if m:
+        for k, v in re.findall(r'"([A-Za-z0-9_-]+)"\s*:\s*"([^"\\]*)"', m.group(1)):
+            found["ran"][k] = v
+    m = re.search(r'"weather"\s*:\s*\{([^{}]*)\}', body)
+    if m:
+        w = dict(re.findall(r'"([a-z]+)"\s*:\s*"([^"\\]*)"', m.group(1)))
+        w.update({k: float(v) for k, v in re.findall(r'"(lat|lon)"\s*:\s*(-?[0-9.]+)', m.group(1))})
+        if w.get("name"):
+            found["answers"]["weather"] = w
+    return found
+
+
+def newest_damaged_copy():
+    folder = os.path.dirname(STATE_FILE)
+    try:
+        names = sorted(f for f in os.listdir(folder) if f.startswith(os.path.basename(STATE_FILE) + ".damaged-"))
+    except OSError:
+        return ""
+    return os.path.join(folder, names[-1]) if names else ""
+
+
+def read_back_answers():
+    """The admin name and e-mail address as they are written in the logins of Homepage's widgets (AdGuard Home: the admin name; Beszel: the e-mail)."""
+    found = {}
+    try:
+        import yaml
+        data = yaml.safe_load(read_file(hp_path("services.yaml")) or "")
+    except Exception:  # no yaml module, or a file that is not valid yaml
+        return found
+
+    def walk(node):
+        if isinstance(node, dict):
+            kind, user = node.get("type"), node.get("username")
+            if isinstance(user, str) and user.strip():
+                if kind == "adguard":
+                    found.setdefault("admin", user.strip())
+                elif kind == "beszel" and re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", user.strip()):
+                    found.setdefault("email", user.strip())
+            for v in node.values():
+                walk(v)
+        elif isinstance(node, list):
+            for v in node:
+                walk(v)
+    walk(data)
+    return found
+
+
+def rebuild_state_from_machine():
+    """`refresh --force-existing`: write a new state file for a lab that already runs. Answers come from the damaged copy when it is readable, then from what
+    is installed; only what cannot be found is asked. One-time first-install actions count as done, so the rebuild does not upgrade every package or put
+    the shipped dashboard layout back."""
+    a = State.data["answers"]
+    copy = newest_damaged_copy()
+    salvaged = salvage_state_text(read_file(copy)) if copy else {"answers": {}, "ran": {}}
+    for k, v in salvaged["answers"].items():
+        a.setdefault(k, v)
+    for k, v in read_back_answers().items():
+        if not a.get(k):
+            a[k] = v
+    if "adguard" not in a:
+        a["adguard"] = "yes" if "adguard" in containers_all() else "no"
+    missing = [k for k in ("admin", "email") if not a.get(k)]
+    if missing:
+        if not interactive():
+            raise Abort("The %s could not be read back from this machine and no terminal is open to ask for it. Run `sudo homelab-setup refresh --force-existing` in a terminal." % " and ".join(
+                "admin name" if k == "admin" else "email address" for k in missing))
+        out("")
+        say("Some answers could not be read back from this machine, so they are asked once more:")
+        if "admin" in missing:
+            a["admin"] = ask("Admin name for every service", Ctx.user.capitalize())
+        if "email" in missing:
+            a["email"] = ask("Email address (login for Immich, Beszel and Speedtest Tracker)", "")
+            while not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", a["email"]):
+                a["email"] = ask("That is not a valid email address. Enter it again", "")
+    Ctx.detect()
+    remember_repo()
+    stamp = time.strftime("%F %T")
+    for k, v in salvaged["ran"].items():
+        State.data["ran"].setdefault(k, v)
+    for k in ONE_TIME_STEPS:
+        State.data["ran"].setdefault(k, stamp)
+    State.mark("install-started")
+    kept = [k for k in a if a.get(k)]
+    say("Answers kept or read back: %s." % (", ".join(sorted(kept)) or "none"))
+
+
 def damaged_state_seen():
     """True when this run found a state file it could not read."""
     return Mode.state_damaged
@@ -606,7 +711,7 @@ def cmd_install():
             ask_answers()
         else:
             Ctx.detect()
-        State.data["repo"] = Ctx.repo
+        remember_repo()
         State.save()
         ask_grow_boot_volume(State.data["answers"])
         ask_restore_plan()
@@ -751,11 +856,13 @@ def cmd_refresh():
         return
     if Mode.existing:
         # The owner asked for it: build a new state file from what is installed, then check everything again.
-        if not Opt.dry:
-            State.data["repo"] = Ctx.repo
-            State.mark("install-started")
-            Mode.existing = False
+        if not looks_like_repo(Ctx.repo):
+            raise Abort("The downloaded copy of the lab was not found (looked in %s and in the home folder of %s). Run the command again and name its folder:\n"
+                        "  sudo homelab-setup refresh --force-existing --repo ~/My-Home-Lab-" % (Ctx.repo, Ctx.user))
         say("Building a new setup state file from what is installed.")
+        if not Opt.dry:
+            rebuild_state_from_machine()
+            Mode.existing = False
     elif not State.exists():
         raise Abort("The installer has not run on this machine yet. Run `sudo homelab-setup install`.")
     refuse_while_finishing()
