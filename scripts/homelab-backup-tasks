@@ -443,6 +443,8 @@ def clean_schedule(s):
 
 
 def clean_keep(k, dest_type):
+    if k is not None and not isinstance(k, dict):
+        raise Bad("Choose how many copies to keep.")
     if dest_type == "cloud":
         try:
             days = int((k or {}).get("days", 30))
@@ -1256,6 +1258,14 @@ def make_restore_folders(src_root, base, into):
             os.close(fd)
 
 
+def replaced_folder_owner(src_root):
+    """Who gets the folder of replaced files: the owner of the data folder, or, when that is root, the person who runs the lab (who can then delete it without sudo)."""
+    own = os.stat(src_root)
+    if own.st_uid == 0:
+        return lab_owner() or (own.st_uid, own.st_gid)
+    return own.st_uid, own.st_gid
+
+
 def restore(task, version, rel, target):
     """Copy a file or folder of a version back. target 'folder' copies into <source>/_restored/<time>/ (safe). target 'original' copies over the files in the source, after moving what it replaces aside."""
     rel = clean_rel(rel)
@@ -1301,8 +1311,8 @@ def restore(task, version, rel, target):
             raise Bad("The restore stopped with code %d. %s" % (rc, " ".join([x for x in text.split("\n") if x.strip()][-2:])[:200]))
         msg = "Restored. The files are in %s." % (base if target == "folder" else (src_root + "/" + rel if rel else src_root))
         if replaced and os.path.isdir(replaced):
-            own = os.stat(src_root)
-            os.chown(replaced, own.st_uid, own.st_gid, follow_symlinks=False)
+            ids = replaced_folder_owner(src_root)
+            os.chown(replaced, ids[0], ids[1], follow_symlinks=False)
             msg += " What they replaced was kept in %s." % replaced
         say(msg)
         return msg

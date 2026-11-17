@@ -14,7 +14,7 @@ restores and every other command that changes the machine are NOT run. Part 1 ru
 the exit code, the time it took and error words in its output. Part 2 checks the state of the machine:
 the pools, Docker, the containers, the web pages, the schedule, leftovers from an earlier install, and so on.
 Part 3 tries the ready-made setups (sudo drives wizard, preset, spare, cache and their options) in look-only form: the list, the
-plan of every setup with --dry-run, the refusals, the help texts, and the repository's own unit tests. It compares
+plan of every setup with --dry-run, the refusals, the help texts, and the repository's own unit tests (only when root owns the test file and every folder above it: a file in your home folder could be changed by anything that runs as you, so it is not run as root). It compares
 /etc/fstab, /etc/crypttab, mdadm.conf and the drive records before and after, and fails if anything changed.
 Part 4 (only with --builds) builds every ready-made setup (plain pool, mirror, SnapRAID, ZFS, RAID, with and without hot spare,
 SSD cache and encryption) on fake drives made of files, with the INSTALLED drives command, and checks what each one did: the files
@@ -50,11 +50,9 @@ REAL_HOME=${REAL_HOME:-/root}
 STAMP=$(date +%Y%m%d-%H%M)
 REPORT=""
 WORK=$(mktemp /tmp/homelab-selftest.XXXXXX) || { echo "Could not create a report file."; exit 1; }
-publish_report() {
-  [ -n "$WORK" ] && [ -f "$WORK" ] || return 0
-  local cand
-  for cand in "$REAL_HOME/homelab-selftest-$STAMP.txt" "$REAL_HOME/homelab-selftest-$STAMP-$$.txt" "/tmp/homelab-selftest-$STAMP-$$.txt"; do
-    if python3 - "$WORK" "$cand" "$REAL_USER" "$REAL_HOME" <<'PY' 2>/dev/null
+# copy_new_file SOURCE DEST: puts a copy of SOURCE at DEST as a NEW file (never through an existing file, a link, a device or a pipe), readable by the real user only.
+copy_new_file() {
+  python3 - "$1" "$2" "$REAL_USER" "$REAL_HOME" <<'PY' 2>/dev/null
 import os, pwd, sys
 src, dest, user, home = sys.argv[1:5]
 fd = os.open(dest, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
@@ -68,16 +66,72 @@ with os.fdopen(fd, "wb") as out, open(src, "rb") as f:
         except (KeyError, OSError):
             pass
 PY
-    then REPORT="$cand"; break; fi
+}
+
+# prune_reports PREFIX: keeps the 10 newest REAL files named PREFIX-<digit>*.txt in the home folder and removes the others. Names are read with their folder, one by one (a newline in a name is harmless), and links are never counted or removed.
+prune_reports() {
+  python3 - "$REAL_HOME" "$1" <<'PY' 2>/dev/null
+import os, re, stat, sys
+home, prefix = sys.argv[1:3]
+pat = re.compile(re.escape(prefix) + r"-[0-9].*\.txt\Z", re.S)
+found = []
+with os.scandir(home) as it:
+    for e in it:
+        if not pat.match(e.name):
+            continue
+        try:
+            st = os.lstat(e.path)
+        except OSError:
+            continue
+        if stat.S_ISREG(st.st_mode):
+            found.append((st.st_mtime, e.path))
+found.sort(reverse=True)
+for _t, path in found[10:]:
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
+PY
+}
+
+# trusted_file FILE: true only when root owns FILE and every folder above it, and no other user can change any of them. Root runs only files that pass this.
+trusted_file() {
+  python3 - "$1" <<'PY' 2>/dev/null
+import os, stat, sys
+p = os.path.realpath(sys.argv[1])
+if not stat.S_ISREG(os.lstat(p).st_mode):
+    sys.exit(1)
+while True:
+    st = os.lstat(p)
+    if st.st_uid != 0 or st.st_mode & 0o022:
+        sys.exit(1)
+    if p == "/":
+        break
+    p = os.path.dirname(p)
+PY
+}
+
+publish_report() {
+  [ -n "$WORK" ] && [ -f "$WORK" ] || return 0
+  local cand
+  for cand in "$REAL_HOME/homelab-selftest-$STAMP.txt" "$REAL_HOME/homelab-selftest-$STAMP-$$.txt" "/tmp/homelab-selftest-$STAMP-$$.txt"; do
+    if copy_new_file "$WORK" "$cand"; then REPORT="$cand"; break; fi
   done
   rm -f -- "$WORK"; WORK=""
   case "$REPORT" in
-    "$REAL_HOME"/homelab-selftest-*.txt)
-      # Keep only the 10 newest reports so they do not pile up in the home folder.
-      # shellcheck disable=SC2012
-      ls -1t "$REAL_HOME"/homelab-selftest-[0-9]*.txt 2>/dev/null | tail -n +11 | while IFS= read -r old; do [ -f "$old" ] && [ ! -L "$old" ] && rm -f -- "$old"; done ;;
+    "$REAL_HOME"/homelab-selftest-*.txt) prune_reports homelab-selftest ;;
   esac
 }
+
+# Ctrl-C or a stop signal ends the run at once: the checks that are running are stopped, and what was found so far is still saved (by the EXIT trap).
+stop_now() {
+  trap '' INT TERM
+  local p
+  for p in $(jobs -p); do pkill -TERM -P "$p" 2>/dev/null; kill -TERM "$p" 2>/dev/null; done
+  echo; echo "Stopped. The report of the checks that ran is saved."
+  exit 130
+}
+trap stop_now INT TERM
 trap 'publish_report' EXIT
 
 N_OK=0; N_INFO=0; N_WARN=0; N_FAIL=0
@@ -104,7 +158,7 @@ run_limited() {
   local dir=$1 secs=$2 tmp
   shift 2
   tmp=$(mktemp)
-  { ( cd "$dir" && timeout -k 5 "$secs" "$@" ) >"$tmp" 2>&1 </dev/null; } 2>/dev/null
+  { ( cd "$dir" && timeout -k 5 "$secs" "$@" ) >"$tmp" 2>&1 </dev/null & wait $!; } 2>/dev/null
   RC=$?
   OUT=$(cat "$tmp")
   rm -f "$tmp"
@@ -528,7 +582,9 @@ part_presets() {
   expect_cmd "drives health" 180 "0 1" 'DRIVE +DEVICE|HEALTH' -- drives health
 
   repo=$(repo_dir)
-  if [ -n "$repo" ] && [ -f "$repo/tests/t_preset.sh" ]; then
+  if [ -n "$repo" ] && [ -f "$repo/tests/t_preset.sh" ] && ! trusted_file "$repo/tests/t_preset.sh"; then
+    info "the repository's own tests were not run: $repo/tests/t_preset.sh belongs to $REAL_USER, and this check runs as root (run it yourself: cd $repo && sudo bash tests/t_preset.sh)"
+  elif [ -n "$repo" ] && [ -f "$repo/tests/t_preset.sh" ]; then
     local t_out t_rc
     run_limited "$repo" 300 bash tests/t_preset.sh
     t_out=$OUT t_rc=$RC
@@ -549,10 +605,16 @@ part_presets() {
 # Part 4: build every setup on fake drives.
 part_builds() {
   section "Part 4: build every ready-made setup on FAKE drives (no real drive is touched)"
-  local repo bench work log drives_bin before after rc pid n last free_kb bad_lines runs line dev mp
-  repo=$(repo_dir); bench="$repo/tools/drive-bench/bench.py"
-  if [ -z "$repo" ] || [ ! -f "$bench" ]; then
+  local repo bench work log drives_bin before after rc pid n last free_kb bad_lines runs line dev mp builds_file=""
+  repo=$(repo_dir); bench=""
+  for line in /usr/local/lib/homelab/drive-bench/bench.py ${repo:+"$repo/tools/drive-bench/bench.py"}; do
+    [ -f "$line" ] && { bench=$line; break; }
+  done
+  if [ -z "$bench" ]; then
     info "the build test on fake drives was skipped: it is a developer test and its files are not in this repository"; return
+  fi
+  if ! trusted_file "$bench"; then
+    info "the build test on fake drives was skipped: $bench can be changed by other users, and this test runs it as root (a copy owned by root in /usr/local/lib/homelab/drive-bench/ is used when it exists)"; return
   fi
   drives_bin=$(command -v drives) || { fail "drives is not installed"; return; }
   local tool missing=""
@@ -575,7 +637,7 @@ part_builds() {
         --work "$work" --drives "$drives_bin" >"$log" 2>&1 </dev/null; echo "$?" >"$log.rc" ) &
   pid=$!; last=-1
   while kill -0 "$pid" 2>/dev/null; do
-    sleep 20
+    sleep 20 & wait $!
     n=$(wc -l <"$work/results.jsonl" 2>/dev/null || echo 0)
     [ "$n" != "$last" ] && [ "$n" -gt 0 ] && { printf '        ... %s runs done\n' "$n"; last=$n; }
   done
@@ -583,8 +645,10 @@ part_builds() {
   rc=$(cat "$log.rc" 2>/dev/null || echo 99); rm -f "$log.rc"
   { printf '\n--- the build test   exit %s\n' "$rc"; tail -30 "$log" 2>/dev/null; } | to_report
   if [ -f "$work/report.txt" ]; then
-    cp "$work/report.txt" "$REAL_HOME/homelab-selftest-builds-$(date +%Y%m%d-%H%M).txt" 2>/dev/null
-    chmod 600 "$REAL_HOME"/homelab-selftest-builds-*.txt 2>/dev/null; [ "$REAL_HOME" != /root ] && chown "$REAL_USER:" "$REAL_HOME"/homelab-selftest-builds-*.txt 2>/dev/null
+    for line in "$REAL_HOME/homelab-selftest-builds-$STAMP.txt" "$REAL_HOME/homelab-selftest-builds-$STAMP-$$.txt"; do
+      if copy_new_file "$work/report.txt" "$line"; then builds_file=$line; break; fi
+    done
+    [ -n "$builds_file" ] && prune_reports homelab-selftest-builds
     runs=$(grep -m1 -o 'runs: [0-9]*' "$work/report.txt" | tr -dc 0-9)
     if [ "$rc" = 0 ] && grep -q '^No problems found' "$work/report.txt"; then
       ok "every setup built, was checked and was taken apart again on fake drives (${runs:-?} runs, no problems)"
@@ -592,7 +656,7 @@ part_builds() {
       bad_lines=$(grep -E '^\[(HIGH|MEDIUM|LOW)\]' "$work/report.txt" | head -8 | cut -c1-150)
       fail "the build test found problems (exit $rc, ${runs:-?} runs):"
       printf '%s\n' "$bad_lines" | while IFS= read -r line; do [ -n "$line" ] && emit "          $line"; done
-      emit "          (the full text is in the file homelab-selftest-builds-*.txt in $REAL_HOME)"
+      emit "          (the full text is in ${builds_file:-the build test report, which could not be saved in $REAL_HOME})"
     fi
   else
     fail "the build test did not write a report (exit $rc). Last lines: $(tail -3 "$log" 2>/dev/null | tr '\n' ' ' | cut -c1-200)"

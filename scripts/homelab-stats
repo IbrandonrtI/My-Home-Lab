@@ -99,7 +99,7 @@ def pin_folder(folder):
             if stat.S_ISLNK(st.st_mode):
                 hops += 1
                 if hops > 32 or st.st_uid != 0 or not parts:
-                    raise OSError("%s is a link, so nothing was written there" % folder)
+                    raise OSError("the part '%s' of %s is a link, so nothing was written there" % (name, folder))
                 target = os.readlink(name, dir_fd=fd)
                 if target.startswith("/"):
                     os.close(fd)
@@ -115,9 +115,19 @@ def pin_folder(folder):
         raise
 
 
-def write_file_safely(path, text, mode=0o644, owner=None):
+def write_file_safely(path, text, mode=0o644, owner=None, make_folder=False):
     """Write a file through a temporary file whose name nobody can guess or plant a link at (the folder may belong to a normal user while this runs as root).
     Every folder on the way is checked, mode and owner are set on the open file, never on a path, and the finished file is swapped in; a link at the final name is replaced, not followed."""
+    if make_folder:
+        # Only the last folder is made, and only inside a parent that was checked first (a link higher up is refused), never with os.makedirs.
+        where = os.path.abspath(os.path.dirname(path) or ".")
+        parent = pin_folder(os.path.dirname(where))
+        try:
+            os.mkdir(os.path.basename(where), 0o755, dir_fd=parent)
+        except FileExistsError:
+            pass
+        finally:
+            os.close(parent)
     handle = pin_folder(os.path.dirname(path) or ".")
     try:
         folder = "/proc/self/fd/%d" % handle
@@ -751,8 +761,7 @@ def collect(quick):
 def save(res, out_path):
     if not out_path:
         return False
-    os.makedirs(os.path.dirname(out_path), exist_ok=True)
-    write_atomic(out_path, json.dumps(res, indent=1))
+    write_file_safely(out_path, json.dumps(res, indent=1), make_folder=True)
     return True
 
 
@@ -787,7 +796,12 @@ def main(argv):
         return 0
     os.makedirs(STATE_DIR, exist_ok=True)
     res, out_path, spaces, pending = collect(arg == "quick")
-    if not save(res, out_path):
+    try:
+        saved = save(res, out_path)
+    except OSError as err:
+        print("homelab-stats: %s" % err, file=sys.stderr)
+        return 1
+    if not saved:
         print("homelab-stats: could not find the Homepage folder, so nothing was saved.", file=sys.stderr)
         return 1
     if arg != "quick":
@@ -796,7 +810,11 @@ def main(argv):
             res["folders"] = texts
             res["updated"] = int(time.time())
             res["updated_text"] = clock(res["updated"])
-            save(res, out_path)
+            try:
+                save(res, out_path)
+            except OSError as err:
+                print("homelab-stats: %s" % err, file=sys.stderr)
+                return 1
     if sys.stdout.isatty():
         print("Saved %s" % out_path)
         g = res["glance"]

@@ -283,6 +283,14 @@ def fresh_container(status):
     return int(word.split()[0]) < 3
 
 
+def machine_busy():
+    """True while the machine has more work than processors (a backup or a verify is reading the drives, say): pages can then be slow for a minute."""
+    try:
+        return os.getloadavg()[0] > (os.cpu_count() or 1)
+    except OSError:
+        return False
+
+
 def check_pages():
     """A container that runs but whose page does not answer (a status of 0 or 500 and above). Only containers that are running are tried.
     One that started a moment ago is shown as still starting, not as broken."""
@@ -304,11 +312,14 @@ def check_pages():
             for i, code in zip(slow, again):
                 codes[i] = code
     found = []
+    busy = machine_busy()
     for n, code in zip(up, codes):
         if 0 < code < 500:
             continue
         if fresh_container(status[n]):
             found.append(item("starting:" + n, "info", "%s is still starting" % nice(n), "It started a moment ago and its page is not ready yet. This goes away by itself; if it is still here in a few minutes: sudo docker logs --tail 30 %s" % n, ""))
+        elif busy:
+            found.append(item("slow:" + n, "warn", "%s is slow to answer" % nice(n), "The machine is busy right now, so its page did not answer in time. If this is still here when the machine is quiet: sudo docker logs --tail 30 %s" % n, ""))
         else:
             found.append(item("silent:" + n, "bad", "%s runs but its page does not answer" % nice(n), "Look at what it says: sudo docker logs --tail 30 %s" % n, ""))
     return found
@@ -476,7 +487,7 @@ def pin_folder(folder):
             if stat.S_ISLNK(st.st_mode):
                 hops += 1
                 if hops > 32 or st.st_uid != 0 or not parts:
-                    raise OSError("%s is a link, so nothing was written there" % folder)
+                    raise OSError("the part '%s' of %s is a link, so nothing was written there" % (name, folder))
                 target = os.readlink(name, dir_fd=fd)
                 if target.startswith("/"):
                     os.close(fd)
@@ -492,9 +503,19 @@ def pin_folder(folder):
         raise
 
 
-def write_file_safely(path, text, mode=0o644, owner=None):
+def write_file_safely(path, text, mode=0o644, owner=None, make_folder=False):
     """Write a file through a temporary file whose name nobody can guess or plant a link at (the folder may belong to a normal user while this runs as root).
     Every folder on the way is checked, mode and owner are set on the open file, never on a path, and the finished file is swapped in; a link at the final name is replaced, not followed."""
+    if make_folder:
+        # Only the last folder is made, and only inside a parent that was checked first (a link higher up is refused), never with os.makedirs.
+        where = os.path.abspath(os.path.dirname(path) or ".")
+        parent = pin_folder(os.path.dirname(where))
+        try:
+            os.mkdir(os.path.basename(where), 0o755, dir_fd=parent)
+        except FileExistsError:
+            pass
+        finally:
+            os.close(parent)
     handle = pin_folder(os.path.dirname(path) or ".")
     try:
         folder = "/proc/self/fd/%d" % handle
@@ -519,8 +540,7 @@ def write_file_safely(path, text, mode=0o644, owner=None):
 
 
 def save(res, path):
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    write_file_safely(path, json.dumps(res, indent=1))
+    write_file_safely(path, json.dumps(res, indent=1), make_folder=True)
 
 
 def main(argv):
@@ -556,7 +576,11 @@ def main(argv):
     if not path:
         sys.stderr.write("homelab-alerts: the Homepage folder was not found, nothing written.\n")
         return 1
-    save(res, path)
+    try:
+        save(res, path)
+    except OSError as err:
+        sys.stderr.write("homelab-alerts: %s\n" % err)
+        return 1
     return 0
 
 

@@ -94,6 +94,7 @@ VCOMPARED=0
 VDIFF=0
 VFIXED=0
 VCHANGED=0
+VGONE=0
 NEWER_N=0
 VDRIVES=""
 ERRORS=0
@@ -121,7 +122,7 @@ finish() {
     [ "$ERRORS" -eq 0 ]
     exit $?
   fi
-  if [ -n "$DEST" ] && [ -d "$DEST" ]; then size=$(timeout 300 du -sb "$DEST" 2>/dev/null | awk '{print $1}'); fi
+  if [ -n "$DEST" ] && [ -d "$DEST" ]; then size=$(timeout 300 du -sbD "$DEST" 2>/dev/null | awk '{print $1}'); fi
   mkdir -p "$(dirname "$STATUS_FILE")"
   printf '%s|%s|%s|%s|%s\n' "$(date '+%F %H:%M')" "$result" "${DEST_SHOWN:-${DEST:-none}}" "$secs" "$size" >"$STATUS_FILE"
   log "finished: $result in ${secs}s"
@@ -305,6 +306,20 @@ split_newer() {
   rm -f "$keep"
 }
 
+# split_gone LIST: take the names whose original is no longer on Main out of LIST (NUL-separated, changed in place) and print how many there were.
+# They cannot be compared, and the next backup moves them to _deleted.
+split_gone() {
+  python3 - "$1" "$SRC" <<'PY'
+import os, sys
+path, src = sys.argv[1:3]
+names = [n for n in open(path, "rb").read().split(b"\0") if n]
+base = os.fsencode(src)
+kept = [n for n in names if os.path.lexists(os.path.join(base, n))]
+open(path, "wb").write(b"".join(n + b"\0" for n in kept))
+print(len(names) - len(kept))
+PY
+}
+
 # verify_all: compare EVERY file (the `verify` command). With --repair the files that differ are copied again from the originals;
 # the version the backup held before is kept in _deleted/<date> like in a nightly run, and a second compare says what is still different.
 verify_all() {
@@ -312,7 +327,12 @@ verify_all() {
   all=$(mktemp) || return 1
   bad=$(mktemp) || return 1
   ( cd "$DEST/main" && find . -type f -print0 ) | sed -z 's|^\./||' >"$all"
+  VGONE=$(split_gone "$all" 2>/dev/null || echo 0)
   VCOMPARED=$(tr -cd '\0' <"$all" | wc -c)   # find -print0 ends every name with a NUL, so the NULs are the files
+  if [ "${VGONE:-0}" -gt 0 ] 2>/dev/null; then
+    log "verify: $VGONE file(s) are in the backup but no longer on Main, so they were not compared (the next backup moves them to _deleted)"
+    echo "$VGONE file(s) are in the backup but no longer on Main. That is normal: the next backup moves them to _deleted." >&2
+  fi
   drop_caches
   echo "Comparing every file (this reads all the data on both drives)..." >&2
   differing_files "$all" >"$bad"
@@ -371,21 +391,65 @@ trap 'backup_drive_timers 120' EXIT
 if mountpoint -q "$DEST_POOL"; then
   DEST="$DEST_POOL"
 elif [ -n "$DEST_FALLBACK" ]; then
-  # The fallback folder sits inside a folder that belongs to a normal user, who could swap it for a link or a folder of their own while this runs as root.
-  # It is opened once, checked on the open handle (a real folder, owned by root, and the same folder the name leads to), and used only through that handle.
-  mkdir -p "$DEST_FALLBACK"
-  if { exec {PIN}<"$DEST_FALLBACK"; } 2>/dev/null \
-     && [ "$(stat -L -c '%u %F' "/proc/self/fd/$PIN" 2>/dev/null)" = "0 directory" ] \
-     && [ "$(stat -c '%d:%i' -- "$DEST_FALLBACK" 2>/dev/null)" = "$(stat -L -c '%d:%i' "/proc/self/fd/$PIN" 2>/dev/null)" ]; then
-    DEST="/proc/self/fd/$PIN"
-    DEST_SHOWN="$DEST_FALLBACK"
-    log "backup pool not mounted, using the fallback folder $DEST_SHOWN"
-  else
-    DEST_SHOWN="$DEST_FALLBACK"
-    DEST=""
-    fail "the fallback folder $DEST_FALLBACK is not a real folder owned by root (a link or another owner), so nothing was copied"
-    finish
-  fi
+  # The fallback folder sits inside a folder that belongs to a normal user, who could swap any part of its path for a link, or the folder itself for a folder of their own, while this runs as root.
+  # A helper opens the path one part at a time (a link made by a normal user anywhere in it is refused), makes the last folder when it is missing, checks that it is a folder owned by root,
+  # and keeps it open. Everything below uses it only through that open handle, so nothing can be swapped in afterwards.
+  PIN_PY=$(cat <<'PY'
+import os, stat, sys
+
+
+def pin(folder):
+    parts = [p for p in os.path.abspath(folder).split("/") if p]
+    fd = os.open("/", os.O_RDONLY | os.O_DIRECTORY)
+    hops = 0
+    while parts:
+        name = parts.pop(0)
+        try:
+            st = os.stat(name, dir_fd=fd, follow_symlinks=False)
+        except FileNotFoundError:
+            os.mkdir(name, 0o755, dir_fd=fd)
+            st = os.stat(name, dir_fd=fd, follow_symlinks=False)
+        if stat.S_ISLNK(st.st_mode):
+            hops += 1
+            if hops > 32 or st.st_uid != 0 or not parts:
+                raise OSError("a link")
+            target = os.readlink(name, dir_fd=fd)
+            if target.startswith("/"):
+                os.close(fd)
+                fd = os.open("/", os.O_RDONLY | os.O_DIRECTORY)
+            parts = [p for p in target.split("/") if p] + parts
+            continue
+        nxt = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+        os.close(fd)
+        fd = nxt
+    return fd
+
+
+try:
+    handle = pin(sys.argv[1])
+    st = os.fstat(handle)
+    if not stat.S_ISDIR(st.st_mode) or st.st_uid != 0:
+        raise OSError("not owned by root")
+    print("OK %d" % handle, flush=True)
+except OSError:
+    print("REFUSED", flush=True)
+    sys.exit(1)
+sys.stdin.read()
+PY
+)
+  coproc PINH { exec python3 -c "$PIN_PY" "$DEST_FALLBACK"; }
+  PIN_ANSWER=""
+  read -r -t 30 PIN_ANSWER <&"${PINH[0]}" || true
+  DEST_SHOWN="$DEST_FALLBACK"
+  case "$PIN_ANSWER" in
+    "OK "[0-9]*)
+      DEST="/proc/$PINH_PID/fd/${PIN_ANSWER#OK }"
+      log "backup pool not mounted, using the fallback folder $DEST_SHOWN" ;;
+    *)
+      DEST=""
+      fail "the fallback folder $DEST_FALLBACK is not a real folder owned by root (a link, in it or above it, or another owner), so nothing was copied"
+      finish ;;
+  esac
 else
   fail "backup storage ($DEST_POOL) is not mounted and no fallback is set"
   finish
@@ -438,7 +502,7 @@ if docker info >/dev/null 2>&1 && docker ps --format '{{.Names}}' | grep -qx "$N
      && gzip -t "$dump.tmp" && [ "$(stat -c %s "$dump.tmp")" -gt 1024 ]; then
     mv "$dump.tmp" "$dump"
     chmod 600 "$dump"
-    log "database dump saved: $dump"
+    log "database dump saved: ${dump/"$DEST"/"${DEST_SHOWN:-$DEST}"}"
   else
     rm -f "$dump.tmp"
     fail "the Nextcloud database dump failed"

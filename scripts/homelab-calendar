@@ -204,7 +204,7 @@ def pin_folder(folder):
             if stat.S_ISLNK(st.st_mode):
                 hops += 1
                 if hops > 32 or st.st_uid != 0 or not parts:
-                    raise OSError("%s is a link, so nothing was written there" % folder)
+                    raise OSError("the part '%s' of %s is a link, so nothing was written there" % (name, folder))
                 target = os.readlink(name, dir_fd=fd)
                 if target.startswith("/"):
                     os.close(fd)

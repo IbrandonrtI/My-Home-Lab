@@ -75,9 +75,25 @@ def newest_damaged_copy():
     return os.path.join(folder, names[-1]) if names else ""
 
 
+def read_back_zone():
+    """The time zone the lab was set up with: the dashboard clock's zone (tz_found) and the TZ of the Immich container (tz). None for what cannot be found."""
+    clock = re.search(r"- datetime:(.*?)(?:\n- |\Z)", read_file(hp_path("widgets.yaml")), re.S)
+    zone = re.search(r"\n\s+timeZone:\s*[\"']?([A-Za-z0-9_+/-]{1,60})", clock.group(1)) if clock else None
+    shown = zone.group(1) if zone else None
+    rc, txt = run(["docker", "inspect", "-f", "{{range .Config.Env}}{{println .}}{{end}}", "immich_server"], timeout=20, quiet=True)
+    env = re.search(r"^TZ=([A-Za-z0-9_+/-]{1,60})$", txt, re.M) if rc == 0 else None
+    return (env.group(1) if env else shown), shown
+
+
 def read_back_answers():
-    """The admin name and e-mail address as they are written in the logins of Homepage's widgets (AdGuard Home: the admin name; Beszel: the e-mail)."""
+    """The admin name and e-mail address as they are written in the logins of Homepage's widgets (AdGuard Home: the admin name; Beszel: the e-mail),
+    and the time zone the lab runs in."""
     found = {}
+    tz, tz_found = read_back_zone()
+    if tz:
+        found["tz"] = tz
+    if tz_found:
+        found["tz_found"] = tz_found
     try:
         import yaml
         data = yaml.safe_load(read_file(hp_path("services.yaml")) or "")
@@ -165,7 +181,8 @@ def preview_rebuild():
     """The dry run of `refresh --force-existing`: what the rebuild would keep, ask for and mark as done."""
     found, salvaged = gather_rebuild_answers()
     out("")
-    say("It would keep or read back these answers: %s." % (", ".join(sorted(k for k in found if found.get(k))) or "none"))
+    shown = {k for k in found if found.get(k)} | {"lan"} | ({"tz"} if Ctx.tz else set())
+    say("It would keep or read back these answers: %s." % ", ".join(sorted(shown)))
     still = [("admin name" if k == "admin" else "email address") for k in ("admin", "email") if not found.get(k)]
     if still:
         say("It would ask for: %s." % " and ".join(still))

@@ -9,11 +9,9 @@ boot_folder_ready() {
   local d
   mkdir -p "$MAIN_POOL/immich" "$MAIN_POOL/nextcloud" || return 1
   give_to_owner "$MAIN_POOL/immich"
-  chown 33:33 "$MAIN_POOL/nextcloud" 2>/dev/null || true
+  chown -h 33:33 "$MAIN_POOL/nextcloud" 2>/dev/null || true
   for d in $IMMICH_DIRS; do
-    mkdir -p "$MAIN_POOL/immich/$d"
-    [ -e "$MAIN_POOL/immich/$d/.immich" ] || : >"$MAIN_POOL/immich/$d/.immich"
-    give_to_owner "$MAIN_POOL/immich/$d"; give_to_owner "$MAIN_POOL/immich/$d/.immich"
+    immich_marker "$MAIN_POOL/immich/$d"
   done
   return 0
 }

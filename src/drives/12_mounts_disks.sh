@@ -1,6 +1,64 @@
+# give_to_owner PATH: hands the folder or file to the lab's owner. A link is never followed (chown -h), so a link a user planted cannot make root change another file.
 give_to_owner() {
-  id -u "$OWNER" >/dev/null 2>&1 && chown "$OWNER:$OWNER" "$1"
+  id -u "$OWNER" >/dev/null 2>&1 && chown -h "$OWNER:$OWNER" "$1"
   return 0
+}
+
+# app_marker FOLDER NAME UID GID TEXT [MODE]: makes FOLDER (under the main pool) and the marker file NAME in it for Immich or Nextcloud.
+# Every part of the path below the main pool is opened without following links. A link at the marker's name is replaced by a plain file. Returns 1 when a part is a link or not a real folder, and then changes nothing there.
+app_marker() {
+  local rel=${1#"$MAIN_POOL"}
+  rel=${rel#/}
+  command -v python3 >/dev/null 2>&1 || return 1
+  python3 - "$MAIN_POOL" "$rel" "$2" "$3" "$4" "$5" "${6:-}" <<'PY' 2>/dev/null
+import os, stat, sys
+base, rel, name, uid, gid, text, mode = sys.argv[1:8]
+uid, gid = int(uid), int(gid)
+flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+try:
+    fd = os.open(os.path.realpath(base), os.O_RDONLY | os.O_DIRECTORY)
+    for part in [p for p in rel.split("/") if p]:
+        try:
+            os.mkdir(part, 0o755, dir_fd=fd)
+        except FileExistsError:
+            pass
+        nfd = os.open(part, flags, dir_fd=fd)
+        os.close(fd)
+        fd = nfd
+    os.fchown(fd, uid, gid)
+    if mode:
+        os.fchmod(fd, int(mode, 8))
+    try:
+        st = os.stat(name, dir_fd=fd, follow_symlinks=False)
+    except FileNotFoundError:
+        st = None
+    if st is not None and stat.S_ISLNK(st.st_mode):
+        os.unlink(name, dir_fd=fd)
+        st = None
+    if st is None:
+        f = os.open(name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644, dir_fd=fd)
+        os.write(f, text.encode())
+        os.fchown(f, uid, gid)
+        os.close(f)
+    elif stat.S_ISREG(st.st_mode):
+        os.chown(name, uid, gid, dir_fd=fd, follow_symlinks=False)
+    else:
+        sys.exit(1)
+except OSError:
+    sys.exit(1)
+PY
+}
+
+# immich_marker FOLDER: the folder and its .immich marker belong to the owner.
+immich_marker() {
+  local u g
+  u=$(id -u "$OWNER" 2>/dev/null) && g=$(id -g "$OWNER" 2>/dev/null) || return 0
+  app_marker "$1" .immich "$u" "$g" "" || { log "left alone: $1 is not a real folder (a link or another kind of file is in the way)"; return 0; }
+}
+
+# nextcloud_marker: the Nextcloud data folder and its .ncdata marker belong to uid 33.
+nextcloud_marker() {
+  app_marker "$MAIN_POOL/nextcloud" .ncdata 33 33 $'# Nextcloud data directory\n' 750 || { log "left alone: $MAIN_POOL/nextcloud is not a real folder (a link or another kind of file is in the way)"; return 0; }
 }
 
 ensure_mp() {

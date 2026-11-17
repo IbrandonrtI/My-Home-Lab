@@ -551,29 +551,70 @@ def existing_mode(path):
         return 0o644
 
 
-def _write_safely(path, data, binary, mode, owner):
-    """Write a file atomically. The temporary file is created new, with a random name, in the same folder, and never follows a link; a link in place of the target is replaced, not written through."""
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    want = existing_mode(path) if mode is None else mode
-    fd, tmp = tempfile.mkstemp(prefix=os.path.basename(path) + ".tmp-", dir=os.path.dirname(path))
+def pin_folder(folder, make=False):
+    """Open a folder one part at a time and return an open handle to it, without following a link: a link at the last part is refused, and a link higher up is refused
+    unless root made it (a normal user who owns an upper folder cannot swap it for a link). With make, missing folders are made one at a time inside the folder already opened.
+    Use the folder as /proc/self/fd/<handle> afterwards, so nothing can be swapped in later."""
+    parts = [p for p in os.path.abspath(folder).split("/") if p]
+    fd = os.open("/", os.O_RDONLY | os.O_DIRECTORY)
+    hops = 0
     try:
-        with os.fdopen(fd, "wb" if binary else "w") as f:
-            f.write(data)
-            f.flush()
-            os.fsync(f.fileno())
-            os.fchmod(f.fileno(), want)
-            if owner and not FAKE:
-                try:
-                    os.fchown(f.fileno(), *owner)
-                except OSError:
-                    pass
-        os.replace(tmp, path)
+        while parts:
+            name = parts.pop(0)
+            try:
+                st = os.stat(name, dir_fd=fd, follow_symlinks=False)
+            except FileNotFoundError:
+                if not make:
+                    raise
+                os.mkdir(name, 0o755, dir_fd=fd)
+                st = os.stat(name, dir_fd=fd, follow_symlinks=False)
+            if stat.S_ISLNK(st.st_mode):
+                hops += 1
+                if hops > 32 or st.st_uid != 0 or not parts:
+                    raise OSError("the part '%s' of %s is a link, so nothing was written there" % (name, folder))
+                target = os.readlink(name, dir_fd=fd)
+                if target.startswith("/"):
+                    os.close(fd)
+                    fd = os.open("/", os.O_RDONLY | os.O_DIRECTORY)
+                parts = [p for p in target.split("/") if p] + parts
+                continue
+            nxt = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+            os.close(fd)
+            fd = nxt
+        return fd
     except BaseException:
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
+        os.close(fd)
         raise
+
+
+def _write_safely(path, data, binary, mode, owner):
+    """Write a file atomically. Every folder on the way is checked first (see pin_folder), the temporary file is created new, with a random name, inside the checked folder,
+    and a link in place of the target is replaced, not written through."""
+    want = existing_mode(path) if mode is None else mode
+    handle = pin_folder(os.path.dirname(os.path.abspath(path)), make=True)
+    try:
+        folder = "/proc/self/fd/%d" % handle
+        fd, tmp = tempfile.mkstemp(prefix=os.path.basename(path) + ".tmp-", dir=folder)
+        try:
+            with os.fdopen(fd, "wb" if binary else "w") as f:
+                f.write(data)
+                f.flush()
+                os.fsync(f.fileno())
+                os.fchmod(f.fileno(), want)
+                if owner and not FAKE:
+                    try:
+                        os.fchown(f.fileno(), *owner)
+                    except OSError:
+                        pass
+            os.replace(tmp, os.path.join(folder, os.path.basename(path)))
+        except BaseException:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
+    finally:
+        os.close(handle)
 
 
 def write_file(path, text, mode=None, owner=None):
@@ -7073,9 +7114,25 @@ def newest_damaged_copy():
     return os.path.join(folder, names[-1]) if names else ""
 
 
+def read_back_zone():
+    """The time zone the lab was set up with: the dashboard clock's zone (tz_found) and the TZ of the Immich container (tz). None for what cannot be found."""
+    clock = re.search(r"- datetime:(.*?)(?:\n- |\Z)", read_file(hp_path("widgets.yaml")), re.S)
+    zone = re.search(r"\n\s+timeZone:\s*[\"']?([A-Za-z0-9_+/-]{1,60})", clock.group(1)) if clock else None
+    shown = zone.group(1) if zone else None
+    rc, txt = run(["docker", "inspect", "-f", "{{range .Config.Env}}{{println .}}{{end}}", "immich_server"], timeout=20, quiet=True)
+    env = re.search(r"^TZ=([A-Za-z0-9_+/-]{1,60})$", txt, re.M) if rc == 0 else None
+    return (env.group(1) if env else shown), shown
+
+
 def read_back_answers():
-    """The admin name and e-mail address as they are written in the logins of Homepage's widgets (AdGuard Home: the admin name; Beszel: the e-mail)."""
+    """The admin name and e-mail address as they are written in the logins of Homepage's widgets (AdGuard Home: the admin name; Beszel: the e-mail),
+    and the time zone the lab runs in."""
     found = {}
+    tz, tz_found = read_back_zone()
+    if tz:
+        found["tz"] = tz
+    if tz_found:
+        found["tz_found"] = tz_found
     try:
         import yaml
         data = yaml.safe_load(read_file(hp_path("services.yaml")) or "")
@@ -7163,7 +7220,8 @@ def preview_rebuild():
     """The dry run of `refresh --force-existing`: what the rebuild would keep, ask for and mark as done."""
     found, salvaged = gather_rebuild_answers()
     out("")
-    say("It would keep or read back these answers: %s." % (", ".join(sorted(k for k in found if found.get(k))) or "none"))
+    shown = {k for k in found if found.get(k)} | {"lan"} | ({"tz"} if Ctx.tz else set())
+    say("It would keep or read back these answers: %s." % ", ".join(sorted(shown)))
     still = [("admin name" if k == "admin" else "email address") for k in ("admin", "email") if not found.get(k)]
     if still:
         say("It would ask for: %s." % " and ".join(still))

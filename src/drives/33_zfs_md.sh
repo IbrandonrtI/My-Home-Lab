@@ -55,7 +55,7 @@ array_service_folders() {
   mkdir -p "$MAIN_POOL/immich" "$MAIN_POOL/nextcloud"
   give_to_owner "$MAIN_POOL"
   give_to_owner "$MAIN_POOL/immich"
-  chown 33:33 "$MAIN_POOL/nextcloud" 2>/dev/null || true
+  chown -h 33:33 "$MAIN_POOL/nextcloud" 2>/dev/null || true
 }
 
 key_make() {

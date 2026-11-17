@@ -236,9 +236,9 @@ repair_music_folder() {
   d=$(music_folder)
   [ -n "$d" ] && [ -d "$d" ] || return 0
   case "$d" in "$MAIN_POOL"|"$MAIN_POOL"/*|"$BACKUP_POOL"|"$BACKUP_POOL"/*) ;; *) return 0 ;; esac
-  [ "$(stat -c %u "$d" 2>/dev/null)" = 0 ] || return 0
+  [ ! -L "$d" ] && [ "$(stat -c %u "$d" 2>/dev/null)" = 0 ] || return 0
   id -u "$OWNER" >/dev/null 2>&1 || return 0
-  chown "$OWNER:$OWNER" "$d" 2>/dev/null && { say "The music folder ($d) is yours again, so songs can be uploaded to it."; log "gave the music folder $d to $OWNER"; }
+  chown -h "$OWNER:$OWNER" "$d" 2>/dev/null && { say "The music folder ($d) is yours again, so songs can be uploaded to it."; log "gave the music folder $d to $OWNER"; }
   return 0
 }
 
@@ -275,16 +275,12 @@ apps_fresh() {
   for a in "$@"; do
     case "$a" in
       nextcloud)
-        mkdir -p "$MAIN_POOL/nextcloud"
-        [ -f "$MAIN_POOL/nextcloud/.ncdata" ] || printf '# Nextcloud data directory\n' >"$MAIN_POOL/nextcloud/.ncdata"
-        chown 33:33 "$MAIN_POOL/nextcloud" "$MAIN_POOL/nextcloud/.ncdata" 2>/dev/null || true
-        chmod 750 "$MAIN_POOL/nextcloud" 2>/dev/null || true ;;
+        nextcloud_marker ;;
       immich)
+        mkdir -p "$MAIN_POOL/immich"
         give_to_owner "$MAIN_POOL/immich"
         for f in $IMMICH_FOLDERS; do
-          mkdir -p "$MAIN_POOL/immich/$f"
-          [ -f "$MAIN_POOL/immich/$f/.immich" ] || : >"$MAIN_POOL/immich/$f/.immich"
-          give_to_owner "$MAIN_POOL/immich/$f"; give_to_owner "$MAIN_POOL/immich/$f/.immich"
+          immich_marker "$MAIN_POOL/immich/$f"
         done ;;
     esac
   done

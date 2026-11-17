@@ -71,29 +71,70 @@ def existing_mode(path):
         return 0o644
 
 
-def _write_safely(path, data, binary, mode, owner):
-    """Write a file atomically. The temporary file is created new, with a random name, in the same folder, and never follows a link; a link in place of the target is replaced, not written through."""
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    want = existing_mode(path) if mode is None else mode
-    fd, tmp = tempfile.mkstemp(prefix=os.path.basename(path) + ".tmp-", dir=os.path.dirname(path))
+def pin_folder(folder, make=False):
+    """Open a folder one part at a time and return an open handle to it, without following a link: a link at the last part is refused, and a link higher up is refused
+    unless root made it (a normal user who owns an upper folder cannot swap it for a link). With make, missing folders are made one at a time inside the folder already opened.
+    Use the folder as /proc/self/fd/<handle> afterwards, so nothing can be swapped in later."""
+    parts = [p for p in os.path.abspath(folder).split("/") if p]
+    fd = os.open("/", os.O_RDONLY | os.O_DIRECTORY)
+    hops = 0
     try:
-        with os.fdopen(fd, "wb" if binary else "w") as f:
-            f.write(data)
-            f.flush()
-            os.fsync(f.fileno())
-            os.fchmod(f.fileno(), want)
-            if owner and not FAKE:
-                try:
-                    os.fchown(f.fileno(), *owner)
-                except OSError:
-                    pass
-        os.replace(tmp, path)
+        while parts:
+            name = parts.pop(0)
+            try:
+                st = os.stat(name, dir_fd=fd, follow_symlinks=False)
+            except FileNotFoundError:
+                if not make:
+                    raise
+                os.mkdir(name, 0o755, dir_fd=fd)
+                st = os.stat(name, dir_fd=fd, follow_symlinks=False)
+            if stat.S_ISLNK(st.st_mode):
+                hops += 1
+                if hops > 32 or st.st_uid != 0 or not parts:
+                    raise OSError("the part '%s' of %s is a link, so nothing was written there" % (name, folder))
+                target = os.readlink(name, dir_fd=fd)
+                if target.startswith("/"):
+                    os.close(fd)
+                    fd = os.open("/", os.O_RDONLY | os.O_DIRECTORY)
+                parts = [p for p in target.split("/") if p] + parts
+                continue
+            nxt = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+            os.close(fd)
+            fd = nxt
+        return fd
     except BaseException:
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
+        os.close(fd)
         raise
+
+
+def _write_safely(path, data, binary, mode, owner):
+    """Write a file atomically. Every folder on the way is checked first (see pin_folder), the temporary file is created new, with a random name, inside the checked folder,
+    and a link in place of the target is replaced, not written through."""
+    want = existing_mode(path) if mode is None else mode
+    handle = pin_folder(os.path.dirname(os.path.abspath(path)), make=True)
+    try:
+        folder = "/proc/self/fd/%d" % handle
+        fd, tmp = tempfile.mkstemp(prefix=os.path.basename(path) + ".tmp-", dir=folder)
+        try:
+            with os.fdopen(fd, "wb" if binary else "w") as f:
+                f.write(data)
+                f.flush()
+                os.fsync(f.fileno())
+                os.fchmod(f.fileno(), want)
+                if owner and not FAKE:
+                    try:
+                        os.fchown(f.fileno(), *owner)
+                    except OSError:
+                        pass
+            os.replace(tmp, os.path.join(folder, os.path.basename(path)))
+        except BaseException:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
+    finally:
+        os.close(handle)
 
 
 def write_file(path, text, mode=None, owner=None):
