@@ -19,10 +19,14 @@ mount_fstab() {
   mountpoint -q "$1"
 }
 
+# xattr_get FILE NAME / xattr_set FILE NAME VALUE: read or set an extended attribute with python3, so the `attr` package is not needed.
+xattr_get() { python3 -c 'import os, sys; sys.stdout.write(os.getxattr(sys.argv[1], sys.argv[2]).decode())' "$1" "$2" 2>/dev/null; }
+xattr_set() { python3 -c 'import os, sys; os.setxattr(sys.argv[1], sys.argv[2], sys.argv[3].encode())' "$1" "$2" "$3" 2>/dev/null; }
+
 pool_is_live() {
   local pool
   pool=$(role_pool "$1") || return 1
-  command -v setfattr >/dev/null 2>&1 || return 1
+  command -v python3 >/dev/null 2>&1 || return 1
   mountpoint -q "$pool" 2>/dev/null || return 1
   [ "$(findmnt -no FSTYPE "$pool" 2>/dev/null)" = fuse.mergerfs ] && [ -e "$pool/.mergerfs" ]
 }

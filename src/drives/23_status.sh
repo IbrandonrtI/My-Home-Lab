@@ -1,6 +1,17 @@
+# stamp_in_lab_zone "YYYY-MM-DD HH:MM": the backup program writes server time; show it in the zone the dashboard uses, with the zone's name.
+stamp_in_lab_zone() {
+  local zone="" ts
+  [ -r "$DISPLAY_TZ_FILE" ] && zone=$(awk '{ if ($2 != "none") print $2 }' "$DISPLAY_TZ_FILE" | head -n 1)
+  ts=$(date -d "$1" +%s 2>/dev/null) || { printf '%s' "$1"; return 0; }
+  if [ -n "$zone" ] && TZ="$zone" date -d "@$ts" '+%F %H:%M %Z' 2>/dev/null; then return 0; fi
+  date -d "@$ts" '+%F %H:%M %Z'
+}
+
 last_backup_line() {
+  local stamp result dest secs
   if [ -f "$BACKUP_STATUS_FILE" ]; then
-    awk -F'|' '{printf "%s  result: %s  destination: %s  took: %ss\n", $1, $2, $3, $4}' "$BACKUP_STATUS_FILE"
+    IFS='|' read -r stamp result dest secs _ <"$BACKUP_STATUS_FILE"
+    printf '%s  result: %s  destination: %s  took: %ss\n' "$(stamp_in_lab_zone "$stamp")" "$result" "$dest" "$secs"
   else
     echo "no backup has run yet"
   fi

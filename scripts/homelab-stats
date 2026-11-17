@@ -456,7 +456,8 @@ def backup_info(now):
         saved, note = "Backup pool", "Backup pool"
     else:
         saved, note = "Boot drive", "Boot drive (no backup drive connected)"
-    return {"when": nice_when, "ago": ago, "result": res_text, "size": human(size) if size.isdigit() else "-", "took": took_text, "short": short,
+    gone = bool(dest) and dest != "none" and not os.path.isdir(os.path.join(dest, "main"))  # that backup is on a drive that is not connected now
+    return {"when": nice_when, "ago": ago, "result": res_text, "size": human(size) if size.isdigit() and not gone else "-", "took": took_text, "short": short,
             "saved_to": saved, "saved_note": note}
 
 

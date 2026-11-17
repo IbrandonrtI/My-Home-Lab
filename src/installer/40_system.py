@@ -1,5 +1,6 @@
 class Mode:
     existing = False
+    state_damaged = False
 
 
 def adguard_wanted():

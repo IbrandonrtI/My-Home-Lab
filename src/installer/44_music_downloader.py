@@ -17,6 +17,11 @@ def md_old_containers():
     return found
 
 
+def md_in_stack(old, project):
+    """True when every container was created by the Compose project (Portainer stack) of that name."""
+    return bool(old) and all(((c.get("Config") or {}).get("Labels") or {}).get("com.docker.compose.project") == project for c in old.values())
+
+
 def md_volume_mounts(container, binds):
     """The Docker volumes (named or unnamed) a container uses that are not already listed as binds: (volume name, folder inside the container)."""
     taken = {b.split(":")[1] for b in binds if b.count(":") >= 1}
@@ -73,7 +78,9 @@ def md_compose_from_inspect(old):
         ports = []
         for cport, binds in (host.get("PortBindings") or {}).items():
             for b in binds or []:
-                ports.append("%s:%s" % (b.get("HostPort", ""), cport.split("/")[0]) + ("/udp" if cport.endswith("/udp") else ""))
+                ip = b.get("HostIp", "")
+                ip = ip if ip not in ("", "0.0.0.0", "::") else ""
+                ports.append("%s%s:%s" % (ip + ":" if ip else "", b.get("HostPort", ""), cport.split("/")[0]) + ("/udp" if cport.endswith("/udp") else ""))
         if ports:
             lines.append("    ports:")
             lines += ['      - "%s"' % p for p in ports]
@@ -127,6 +134,18 @@ class MusicDownloaderStack(StackStep):
                     chown(P(p), Ctx.uid, Ctx.gid)
         old = {} if Opt.dry else md_old_containers()
         if not old:
+            return StackStep.run(self)
+        if md_in_stack(old, self.name) and Portainer.alive() and Portainer.stack_named(self.name):
+            # They already belong to the stack Portainer manages and may only be stopped: start them, keep the same containers.
+            stopped = [n for n, c in old.items() if not (c.get("State") or {}).get("Running")]
+            if stopped:
+                log("music-downloader: starting %s (already in the stack)" % ", ".join(stopped))
+                rc, txt = docker("start", *stopped, timeout=120)
+                if rc != 0:
+                    raise Abort("Could not start %s: %s" % (", ".join(stopped), txt.strip()[-160:]))
+            if len(old) == len(MD_NAMES):
+                wait_for(lambda: stack_up(self.name), "the music-downloader containers to start", 60)
+                return
             return StackStep.run(self)
         if Runtime.unattended:
             raise NeedsPerson("Moving the running Downtify and MeTube into Portainer restarts them, so it waits for `sudo homelab-setup refresh`.")

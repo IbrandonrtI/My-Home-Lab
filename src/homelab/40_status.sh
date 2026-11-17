@@ -163,7 +163,9 @@ missing_backup_drives() {
 pool_lines() {
   local used size
   if pool_mounted "$MAIN_POOL"; then
-    read -r used size < <(df -h --output=used,size "$MAIN_POOL" 2>/dev/null | awk 'NR==2 {print $1, $2}')
+    read -r used size < <(df -B1 --output=used,size "$MAIN_POOL" 2>/dev/null | awk 'NR==2 {print $1, $2}')
+    [ -n "${used:-}" ] && used=$(human_bytes "$used")
+    [ -n "${size:-}" ] && size=$(human_bytes "$size")
     if only_boot_section MAIN; then
       warn "Main Pool" "mounted, ${used:-?} used of ${size:-?}, but only on a section of the boot drive (no separate drive: sudo drives)"
       suggest 3 "sudo drives" "the main pool is only a section of the boot drive: connect a real drive"
@@ -280,7 +282,10 @@ containers_line() {
 
 boot_drive_line() {
   local line sec_dir="${HOMELAB_BOOT_SECTION_DIR:-/var/lib/homelab-boot-sections}" sec_gb="" f free_b
-  line=$(df -h --output=pcent,avail / 2>/dev/null | awk 'NR==2 {print $1 " used, " $2 " free"}')
+  local pcent avail
+  read -r pcent avail < <(df -B1 --output=pcent,avail / 2>/dev/null | awk 'NR==2 {print $1, $2}')
+  line=""
+  [ -n "${avail:-}" ] && line="$pcent used, $(human_bytes "$avail") free"
   for f in "$sec_dir"/*.img; do [ -f "$f" ] && sec_gb="$sec_gb $(( $(stat -c %s "$f") / 1000000000 ))"; done
   if [ -n "$sec_gb" ]; then
     line="$line; sections for pools:$(printf '%s' "$sec_gb" | sed 's/ \([0-9]*\)/ \1 GB,/g; s/,$//')"

@@ -158,7 +158,7 @@ since = float(os.environ.get("VERIFY_SINCE") or 0)
 picked, seen, used = [], set(), 0
 def add(rel):
     global used
-    if rel in seen or "\\#" in rel:
+    if rel in seen:
         return False
     try:
         a, b = os.lstat(os.path.join(src, rel)), os.lstat(os.path.join(dst, rel))
@@ -173,7 +173,7 @@ def add(rel):
     seen.add(rel); picked.append(rel); used += a.st_size
     return True
 try:
-    names = [l.rstrip("\n") for l in open(changed, errors="replace")]
+    names = [n.decode("utf-8", "surrogateescape") for n in open(changed, "rb").read().split(b"\0") if n]
 except OSError:
     names = []
 for n in names:
@@ -191,15 +191,43 @@ sys.stdout.buffer.write(b"\0".join(p.encode("utf-8", "surrogateescape") for p in
 PY
 }
 
-# differing_files LIST: the files in LIST (NUL-separated) whose content is not the same in the backup as in the original.
-differing_files() {
-  rsync -rn --checksum --itemize-changes --from0 --files-from="$1" "$SRC/" "$DEST/main/" 2>>"$LOGFILE" | sed -n 's/^>f[^ ]* //p'
+# rsync_names PATTERN: read rsync's output lines, keep the lines for copied files (">f...") and print each file name NUL-terminated.
+# rsync writes a name with a newline, a backslash or (without a UTF-8 locale, as under cron) an accent as \#ooo (octal); this turns them back into the real bytes.
+rsync_names() {
+  python3 -c '
+import re, sys
+pat = re.compile(rb"^>f[^ |]*[ |]")
+esc = re.compile(rb"\\#([0-7]{3})")
+out = sys.stdout.buffer
+for line in sys.stdin.buffer.read().split(b"\n"):
+    m = pat.match(line)
+    if m:
+        out.write(esc.sub(lambda e: bytes([int(e.group(1), 8) & 255]), line[m.end():]) + b"\0")
+'
 }
 
-# drives_holding LIST: the backup drives (their folder names under /mnt/disks) that hold the files in LIST (one name per line).
+# nul_count LIST: how many names a NUL-separated list holds.
+nul_count() { tr -cd '\0' <"$1" | wc -c; }
+
+# show_names LIST N: print the first N names of a NUL-separated list, one per line (a newline or other odd character inside a name is shown as an escape).
+show_names() {
+  python3 -c '
+import sys
+data = open(sys.argv[1], "rb").read().split(b"\0")
+for n in [x for x in data if x][: int(sys.argv[2])]:
+    print(n.decode("utf-8", "replace").encode("unicode_escape").decode("ascii") if any(c < 32 or c == 127 for c in n) else n.decode("utf-8", "replace"))
+' "$1" "$2"
+}
+
+# differing_files LIST: the files in LIST (NUL-separated) whose content is not the same in the backup as in the original (printed NUL-separated).
+differing_files() {
+  rsync -rn --checksum --itemize-changes --from0 --files-from="$1" "$SRC/" "$DEST/main/" 2>>"$LOGFILE" | rsync_names
+}
+
+# drives_holding LIST: the backup drives (their folder names under /mnt/disks) that hold the files in LIST (NUL-separated).
 drives_holding() {
   local f d seen=""
-  while IFS= read -r f; do
+  while IFS= read -r -d '' f; do
     for d in "${HOMELAB_DISKS_DIR:-/mnt/disks}"/BACKUP*; do
       [ -e "$d/main/$f" ] || continue
       case " $seen " in *" $(basename "$d") "*) ;; *) seen="$seen $(basename "$d")" ;; esac
@@ -208,14 +236,20 @@ drives_holding() {
   echo "${seen# }"
 }
 
-# drop_changed LIST: remove from LIST (one name per line) the files that were written after this run started. A changed original is not a damaged copy.
+# names_in_both LIST1 LIST2: how many names two NUL-separated lists have in common.
+names_in_both() {
+  [ -s "$2" ] || { echo 0; return; }
+  comm -z -12 <(LC_ALL=C sort -z "$1") <(LC_ALL=C sort -z "$2") | tr -cd '\0' | wc -c
+}
+
+# drop_changed LIST: remove from LIST (NUL-separated) the files that were written after this run started. A changed original is not a damaged copy.
 drop_changed() {
   local f m keep
   keep=$(mktemp) || return 0
-  while IFS= read -r f; do
+  while IFS= read -r -d '' f; do
     m=$(stat -c %Y "$SRC/$f" 2>/dev/null) || continue
     [ "$m" -ge "$START" ] 2>/dev/null && continue
-    printf '%s\n' "$f"
+    printf '%s\0' "$f"
   done <"$1" >"$keep"
   cat "$keep" >"$1"
   rm -f "$keep"
@@ -233,20 +267,20 @@ verify_sample() {
   drop_caches
   bad=$(mktemp) || { rm -f "$list"; return 0; }
   differing_files "$list" >"$bad"
-  n=$(wc -l <"$bad")
+  n=$(nul_count "$bad")
   drop_changed "$bad"
-  [ "$n" -gt "$(wc -l <"$bad")" ] && log "verify: $(( n - $(wc -l <"$bad") )) file(s) were changed while the backup ran, so they are not counted as damaged"
+  [ "$n" -gt "$(nul_count "$bad")" ] && log "verify: $(( n - $(nul_count "$bad") )) file(s) were changed while the backup ran, so they are not counted as damaged"
   if [ -s "$bad" ]; then
-    n=$(wc -l <"$bad")
+    n=$(nul_count "$bad")
     VDRIVES=$(drives_holding "$bad")
     log "verify: $n of $total checked file(s) differ from the originals, copying them again${VDRIVES:+ (held by $VDRIVES)}"
-    tr '\n' '\0' <"$bad" | rsync -aH --numeric-ids --checksum --from0 --files-from=- "$SRC/" "$DEST/main/" >>"$LOGFILE" 2>&1
+    rsync -aH --numeric-ids --checksum --from0 --files-from="$bad" "$SRC/" "$DEST/main/" >>"$LOGFILE" 2>&1
     drop_caches
     differing_files "$list" >"$bad"
     drop_changed "$bad"
     if [ -s "$bad" ]; then
-      fail "$(wc -l <"$bad") file(s) in the backup still differ from the originals after copying them again${VDRIVES:+ (held by $VDRIVES)}; the backup drive may be failing: see $LOGFILE"
-      while IFS= read -r f; do log "verify: still different: $f"; done <"$bad"
+      fail "$(nul_count "$bad") file(s) in the backup still differ from the originals after copying them again${VDRIVES:+ (held by $VDRIVES)}; the backup drive may be failing: see $LOGFILE"
+      show_names "$bad" 50 | while IFS= read -r f; do log "verify: still different: $f"; done
     else
       log "verify: the $n file(s) were copied again and now match (the backup drive had damaged them)"
       fail "$n file(s) differed from the originals and were copied again${VDRIVES:+, held by $VDRIVES}. Either the backup drive damaged them or they changed during the backup; if it happens again check the drive with: sudo drives check"
@@ -257,14 +291,14 @@ verify_sample() {
   rm -f "$list" "$bad"
 }
 
-# split_newer LIST: take the files whose original is newer than the backup copy out of LIST (one name per line) and count them in NEWER_N.
+# split_newer LIST: take the files whose original is newer than the backup copy out of LIST (NUL-separated) and count them in NEWER_N.
 # A file changed after the backup is not a damaged copy: the next backup copies it.
 split_newer() {
   local f keep
   NEWER_N=0
   keep=$(mktemp) || return 0
-  while IFS= read -r f; do
-    if [ "$SRC/$f" -nt "$DEST/main/$f" ]; then NEWER_N=$((NEWER_N + 1)); else printf '%s\n' "$f"; fi
+  while IFS= read -r -d '' f; do
+    if [ "$SRC/$f" -nt "$DEST/main/$f" ]; then NEWER_N=$((NEWER_N + 1)); else printf '%s\0' "$f"; fi
   done <"$1" >"$keep"
   cat "$keep" >"$1"
   rm -f "$keep"
@@ -284,7 +318,7 @@ verify_all() {
   differing_files "$all" >"$bad"
   split_newer "$bad"
   VCHANGED=$NEWER_N
-  n=$(wc -l <"$bad")
+  n=$(nul_count "$bad")
   VDIFF=$n
   if [ "$n" -eq 0 ]; then
     log "verify: every file matches$([ "$VCHANGED" -gt 0 ] && echo " ($VCHANGED changed since the backup)")"
@@ -293,20 +327,20 @@ verify_all() {
   fi
   VDRIVES=$(drives_holding "$bad")
   echo "$n file(s) in the backup differ from the originals${VDRIVES:+ (held by $VDRIVES)}, and the originals did not change since the backup:" >&2
-  head -n 50 "$bad" >&2
+  show_names "$bad" 50 >&2
   if [ "$REPAIR" = 1 ]; then
     mkdir -p "$DEST/_deleted/$TODAY/main"
-    tr '\n' '\0' <"$bad" | rsync -aH --numeric-ids --checksum --from0 --files-from=- \
+    rsync -aH --numeric-ids --checksum --from0 --files-from="$bad" \
       --backup --backup-dir="$DEST/_deleted/$TODAY/main" "$SRC/" "$DEST/main/" >>"$LOGFILE" 2>&1
     drop_caches
     left=$(mktemp) || left=/dev/null
     differing_files "$all" >"$left"
     split_newer "$left"
     # only the files that were listed can still differ in a way that matters; count the ones that still do
-    VFIXED=$(( n - $(grep -cxFf "$bad" "$left" 2>/dev/null || true) ))
+    VFIXED=$(( n - $(names_in_both "$bad" "$left") ))
     if [ -s "$left" ]; then
-      echo "$VFIXED file(s) were copied again from the originals; $(wc -l <"$left") still differ. The old versions are kept in _deleted/$TODAY for 30 days." >&2
-      fail "$(wc -l <"$left") file(s) in the backup still differ from the originals after copying them again"
+      echo "$VFIXED file(s) were copied again from the originals; $(nul_count "$left") still differ. The old versions are kept in _deleted/$TODAY for 30 days." >&2
+      fail "$(nul_count "$left") file(s) in the backup still differ from the originals after copying them again"
     else
       echo "$n file(s) were copied again from the originals and now match. The old versions are kept in _deleted/$TODAY for 30 days." >&2
       log "verify: $n file(s) repaired"
@@ -405,7 +439,7 @@ changed=$(mktemp)
 rsync -aHS --numeric-ids --delete --exclude=/lost+found \
   --temp-dir="$DEST/.rsync-tmp" \
   --backup --backup-dir="$DEST/_deleted/$TODAY/main" \
-  --out-format='%i|%n' "$SRC/" "$DEST/main/" 2>>"$LOGFILE" | sed -n 's/^>f[^|]*|//p' >"$changed"
+  --out-format='%i|%n' "$SRC/" "$DEST/main/" 2>>"$LOGFILE" | rsync_names >"$changed"
 rc=${PIPESTATUS[0]}
 if rsync_ok "$rc"; then log "main storage copied"; else fail "rsync of main storage exited with code $rc"; fi
 verify_sample "$changed"

@@ -88,6 +88,7 @@ SETTINGS_FILE="${SETTINGS_FILE:-$STATE_DIR/pool-settings}"
 BALANCE_TOLERANCE="${BALANCE_TOLERANCE:-5}"
 BRANCH_OPTS="defaults,noatime,nofail,x-systemd.device-timeout=10"
 BACKUP_STATUS_FILE="${BACKUP_STATUS_FILE:-/var/lib/homelab-backup/last-run}"
+DISPLAY_TZ_FILE="${HOMELAB_DISPLAY_TZ_FILE:-/var/lib/homelab/display-timezone}"
 DRAIN_SPARE_BYTES="${DRAIN_SPARE_BYTES:-2147483648}"
 
 DRY_RUN=0

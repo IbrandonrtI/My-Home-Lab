@@ -85,6 +85,10 @@ class RestoreConfigs(Step):
         tool = repo_file("scripts", "homelab-restore-configs")
         if not os.path.exists(tool):
             raise Abort("homelab-restore-configs is missing from the repository copy.")
+        if not FAKE:
+            tool = trusted_real_path(tool, Ctx.user)
+            if not tool:
+                raise Abort("The restore tool in %s can be changed by other users, so it was not run. Check who may write there, then run the command again." % Ctx.repo)
         if Opt.dry:
             out("      would run the safe restore tool on %s (it shows a preview and asks you to type RESTORE)" % path)
             return

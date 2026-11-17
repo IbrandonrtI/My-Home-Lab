@@ -1,22 +1,60 @@
-def installer_path_trusted(path, user):
-    """True when only root or the sudo user can change the file and every folder above it. A file or folder that other users can write is not used."""
+def acl_present(p):
+    try:
+        names = os.listxattr(p, follow_symlinks=False)
+    except OSError:
+        return False
+    return any(n in ("system.posix_acl_access", "system.posix_acl_default") for n in names)
+
+
+def trusted_real_path(path, user):
+    """The real location of a file that only root or the sudo user can change, or None. Every folder that is walked through, every link on the way and the file
+    itself must belong to root or that user, must not be writable by anybody else (the mode bits and an access list both count), and a link counts at the place it
+    is found, not only where it points. The caller must use the returned path and not open the given one again, so that a link cannot be swapped in between."""
     try:
         pw = pwd.getpwnam(user)
         others = {u.pw_name for u in pwd.getpwall() if u.pw_gid == pw.pw_gid and u.pw_name != user}
         others |= {m for m in grp.getgrgid(pw.pw_gid).gr_mem if m != user}
-        p = os.path.realpath(path)
-        while True:
-            st = os.stat(p)
+
+        def fine(st, where):
             sticky_dir = stat.S_ISDIR(st.st_mode) and st.st_mode & stat.S_ISVTX
             if st.st_uid not in (0, pw.pw_uid) or (st.st_mode & 0o002 and not sticky_dir):
                 return False
             if st.st_mode & 0o020 and not (st.st_gid in (0, pw.pw_gid) and not others):
                 return False
-            if p == "/":
-                return True
-            p = os.path.dirname(p)
+            return not acl_present(where)
+
+        if not os.path.isabs(path) or not fine(os.stat("/"), "/"):
+            return None
+        cur, parts, hops = "/", path.split("/"), 0
+        while parts:
+            name = parts.pop(0)
+            if name in ("", "."):
+                continue
+            if name == "..":
+                cur = os.path.dirname(cur)
+                continue
+            nxt = os.path.join(cur, name)
+            st = os.lstat(nxt)
+            if stat.S_ISLNK(st.st_mode):
+                hops += 1
+                if hops > 32 or st.st_uid not in (0, pw.pw_uid):
+                    return None
+                target = os.readlink(nxt)
+                if target.startswith("/"):
+                    cur = "/"
+                parts = target.split("/") + parts
+                continue
+            if not fine(st, nxt):
+                return None
+            cur = nxt
+        return cur if os.path.isfile(cur) else None
     except (OSError, KeyError):
-        return False
+        return None
+
+
+def installer_path_trusted(path, user):
+    """True when only root or the sudo user can change the file and every folder and link on the way to it."""
+    return trusted_real_path(path, user) is not None
 
 
 def reexec_newer_installer(cmd, args):
@@ -32,9 +70,11 @@ def reexec_newer_installer(cmd, args):
         me = os.path.abspath(sys.argv[0])
         if not new or not os.path.isfile(new) or os.path.realpath(new) == os.path.realpath(me):
             return
-        if not installer_path_trusted(new, os.environ["SUDO_USER"]):
+        real = trusted_real_path(new, os.environ["SUDO_USER"])
+        if not real:
             say("The installer in %s can be changed by other users, so it was not used. Check who may write there, then run the command again." % repo)
             return
+        new = real
         text = read_file(new)
         if not text or text == read_file(me):
             return
@@ -46,10 +86,15 @@ def reexec_newer_installer(cmd, args):
     os.execve(sys.executable, [sys.executable, new] + list(args), env)
 
 
+def stop_like_ctrl_c(_signum, _frame):
+    raise KeyboardInterrupt
+
+
 def main(argv):
     """Read the command line and run the requested command."""
     try:
         signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+        signal.signal(signal.SIGTERM, stop_like_ctrl_c)
     except (AttributeError, ValueError):
         pass
     args = list(argv[1:])

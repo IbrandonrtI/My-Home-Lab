@@ -6,6 +6,24 @@ FINISH_PW = P("/run/homelab-finish.pw")
 FINISH_SEEDS = ("stack-immich", "stack-nextcloud", "nextcloud-ready", "nextcloud-restore-db", "immich-admin", "beszel-user", "beszel-agent-key", "apt-upgrade")
 
 
+def clean_stale_temp_files():
+    """Remove half-written temporary files that a killed run left in the dashboard's images folder (older than ten minutes)."""
+    folder = hp_path("images")
+    try:
+        names = os.listdir(folder)
+    except OSError:
+        return
+    for n in names:
+        if ".tmp-" not in n or n.split(".tmp-")[0] not in ("install-status.json", "job-status.json"):
+            continue
+        path = os.path.join(folder, n)
+        try:
+            if os.path.isfile(path) and not os.path.islink(path) and time.time() - os.path.getmtime(path) > 600:
+                os.unlink(path)
+        except OSError:
+            pass
+
+
 def background_mode():
     if Opt.dry or Opt.no_background:
         return False

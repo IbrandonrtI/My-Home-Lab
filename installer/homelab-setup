@@ -2897,6 +2897,7 @@ def run_pass(res, selected=None, skip=None):
     return gained
 class Mode:
     existing = False
+    state_damaged = False
 
 
 def adguard_wanted():
@@ -4054,6 +4055,10 @@ class RestoreConfigs(Step):
         tool = repo_file("scripts", "homelab-restore-configs")
         if not os.path.exists(tool):
             raise Abort("homelab-restore-configs is missing from the repository copy.")
+        if not FAKE:
+            tool = trusted_real_path(tool, Ctx.user)
+            if not tool:
+                raise Abort("The restore tool in %s can be changed by other users, so it was not run. Check who may write there, then run the command again." % Ctx.repo)
         if Opt.dry:
             out("      would run the safe restore tool on %s (it shows a preview and asks you to type RESTORE)" % path)
             return
@@ -4207,8 +4212,20 @@ class HomepageFiles(Step):
         protect_key_files()
 
 
+def homepage_skeleton_bookmarks(text):
+    """True for the sample bookmarks.yaml that Homepage writes itself (groups Developer, Social and Entertainment with GitHub, Reddit and YouTube)."""
+    return bool(text) and len(text) < 700 and "abbr: GH" in text and "abbr: YT" in text and "reddit" in text.lower()
+
+
 def missing_look_files():
-    return [f for f in LOOK_FILES if not os.path.exists(hp_path(f))]
+    """The look files that are gone, or that hold only what Homepage puts there itself: it writes an empty custom.css and a sample bookmarks.yaml as soon as its
+    page is asked for while the file is missing, so the file being there does not mean it is the user's own."""
+    gone = []
+    for f in LOOK_FILES:
+        text = read_file(hp_path(f)) if os.path.exists(hp_path(f)) else None
+        if text is None or (f == "custom.css" and not text.strip()) or (f == "bookmarks.yaml" and homepage_skeleton_bookmarks(text)):
+            gone.append(f)
+    return gone
 
 
 @step
@@ -4226,14 +4243,14 @@ class HomepageKeyFiles(Step):
     def detail(self):
         gone = missing_look_files()
         if gone and not key_files_open() and not wrong_owner_files():
-            return "%s missing; `sudo homelab-setup refresh` writes the shipped version (your own look can come back with: sudo homelab-restore-configs)" % " and ".join(gone)
+            return "%s missing or empty; `sudo homelab-setup refresh` writes the shipped version (your own look can come back with: sudo homelab-restore-configs)" % " and ".join(gone)
         return "%d file(s) are readable by other users or belong to the wrong user; `sudo homelab-setup refresh` fixes it" % (len(key_files_open()) + len(wrong_owner_files()))
 
     def open_note(self):
         gone = missing_look_files()
         parts = []
         if gone:
-            parts.append("%s missing. `sudo homelab-setup refresh` writes the shipped version of only that file. Your own copy can come back with: sudo homelab-restore-configs" % " and ".join(gone))
+            parts.append("%s missing or empty (Homepage puts an empty or sample file there when it is gone). `sudo homelab-setup refresh` writes the shipped version of only that file. Your own copy can come back with: sudo homelab-restore-configs" % " and ".join(gone))
         if key_files_open() or wrong_owner_files():
             parts.append("%d file(s) are readable by other users or belong to the wrong user. `sudo homelab-setup refresh` fixes it" % (len(key_files_open()) + len(wrong_owner_files())))
         return ". ".join(parts)
@@ -4252,14 +4269,27 @@ class HomepageKeyFiles(Step):
                         seen.append(g)
                 State.data["layout_seen"] = seen
                 State.save()
-            log("homepage-key-files: %s was missing, the shipped version was written" % f)
-            warn("%s was missing, so the shipped version was written. Only that file was changed. Your own copy is in the backups and the control panel's Undo history; to bring it back run: sudo homelab-restore-configs" % f)
+            log("homepage-key-files: %s was missing or empty, the shipped version was written" % f)
+            warn("%s was missing or empty, so the shipped version was written. Only that file was changed. Your own copy is in the backups and the control panel's Undo history; to bring it back run: sudo homelab-restore-configs" % f)
         protect_key_files()
+
+
+def panel_script_for_root(check):
+    """The control panel script that root may run. Only the installed copy (root's own) is used for a look at the checklist; the copy in the repository, which the
+    lab user can change, only when a person asked for a refresh and nobody else can change that file either."""
+    installed = installed_copy("homelab-panel", "/usr/local/sbin")
+    if installed:
+        return installed
+    if check:
+        return None
+    return trusted_real_path(repo_file("scripts", "homelab-panel"), Ctx.user) if not FAKE else repo_file("scripts", "homelab-panel")
 
 
 def theme_pictures_run(check):
     """Ask the control panel's own script to store the picture of every theme. Returns True when all are stored."""
-    script = repo_file("scripts", "homelab-panel")
+    script = panel_script_for_root(check)
+    if not script:
+        return False
     env = dict(os.environ, HLP_HOME=P(Ctx.home), HOMELAB_HOMEPAGE_DIR=hp_path(""))
     rc, _ = run([sys.executable, script, "theme-pictures"] + (["--check"] if check else []), env=env, timeout=60 if check else 600)
     return rc == 0
@@ -5154,6 +5184,11 @@ def md_old_containers():
     return found
 
 
+def md_in_stack(old, project):
+    """True when every container was created by the Compose project (Portainer stack) of that name."""
+    return bool(old) and all(((c.get("Config") or {}).get("Labels") or {}).get("com.docker.compose.project") == project for c in old.values())
+
+
 def md_volume_mounts(container, binds):
     """The Docker volumes (named or unnamed) a container uses that are not already listed as binds: (volume name, folder inside the container)."""
     taken = {b.split(":")[1] for b in binds if b.count(":") >= 1}
@@ -5210,7 +5245,9 @@ def md_compose_from_inspect(old):
         ports = []
         for cport, binds in (host.get("PortBindings") or {}).items():
             for b in binds or []:
-                ports.append("%s:%s" % (b.get("HostPort", ""), cport.split("/")[0]) + ("/udp" if cport.endswith("/udp") else ""))
+                ip = b.get("HostIp", "")
+                ip = ip if ip not in ("", "0.0.0.0", "::") else ""
+                ports.append("%s%s:%s" % (ip + ":" if ip else "", b.get("HostPort", ""), cport.split("/")[0]) + ("/udp" if cport.endswith("/udp") else ""))
         if ports:
             lines.append("    ports:")
             lines += ['      - "%s"' % p for p in ports]
@@ -5264,6 +5301,18 @@ class MusicDownloaderStack(StackStep):
                     chown(P(p), Ctx.uid, Ctx.gid)
         old = {} if Opt.dry else md_old_containers()
         if not old:
+            return StackStep.run(self)
+        if md_in_stack(old, self.name) and Portainer.alive() and Portainer.stack_named(self.name):
+            # They already belong to the stack Portainer manages and may only be stopped: start them, keep the same containers.
+            stopped = [n for n, c in old.items() if not (c.get("State") or {}).get("Running")]
+            if stopped:
+                log("music-downloader: starting %s (already in the stack)" % ", ".join(stopped))
+                rc, txt = docker("start", *stopped, timeout=120)
+                if rc != 0:
+                    raise Abort("Could not start %s: %s" % (", ".join(stopped), txt.strip()[-160:]))
+            if len(old) == len(MD_NAMES):
+                wait_for(lambda: stack_up(self.name), "the music-downloader containers to start", 60)
+                return
             return StackStep.run(self)
         if Runtime.unattended:
             raise NeedsPerson("Moving the running Downtify and MeTube into Portainer restarts them, so it waits for `sudo homelab-setup refresh`.")
@@ -6585,6 +6634,24 @@ FINISH_PW = P("/run/homelab-finish.pw")
 FINISH_SEEDS = ("stack-immich", "stack-nextcloud", "nextcloud-ready", "nextcloud-restore-db", "immich-admin", "beszel-user", "beszel-agent-key", "apt-upgrade")
 
 
+def clean_stale_temp_files():
+    """Remove half-written temporary files that a killed run left in the dashboard's images folder (older than ten minutes)."""
+    folder = hp_path("images")
+    try:
+        names = os.listdir(folder)
+    except OSError:
+        return
+    for n in names:
+        if ".tmp-" not in n or n.split(".tmp-")[0] not in ("install-status.json", "job-status.json"):
+            continue
+        path = os.path.join(folder, n)
+        try:
+            if os.path.isfile(path) and not os.path.islink(path) and time.time() - os.path.getmtime(path) > 600:
+                os.unlink(path)
+        except OSError:
+            pass
+
+
 def background_mode():
     if Opt.dry or Opt.no_background:
         return False
@@ -6910,15 +6977,13 @@ def homepage_file_problems():
 
 
 def damaged_state_seen():
-    """True when this run found a state file it could not read (a copy .damaged-<date> sits next to it)."""
-    try:
-        return any(f.startswith(os.path.basename(STATE_FILE) + ".damaged-") for f in os.listdir(os.path.dirname(STATE_FILE)))
-    except OSError:
-        return False
+    """True when this run found a state file it could not read."""
+    return Mode.state_damaged
 
 
 def load_all():
     State.load()
+    Mode.state_damaged = State.damaged
     if State.damaged:
         kept = State.keep_damaged()
         warn("The setup state file %s is damaged and cannot be read. %sAnswers you gave earlier may have to be given again. To build a new one from what is installed: sudo homelab-setup refresh --force-existing." % (
@@ -6928,6 +6993,8 @@ def load_all():
     apply_adopted_ports()
     Mode.existing = is_existing()
     State.readonly = Mode.existing and not Opt.force_existing
+    if not State.readonly and not Opt.dry:
+        clean_stale_temp_files()
 
 
 def password_warning():
@@ -7205,6 +7272,32 @@ def added_services():
     return sorted(found.values(), key=lambda x: x[0].lower())
 
 
+def young_containers():
+    """True when a container started less than three minutes ago or Docker still lists one as starting."""
+    rc, txt = docker("ps", "--format", "{{.Status}}", timeout=20)
+    if rc != 0:
+        return False
+    for line in txt.splitlines():
+        if "health: starting" in line or re.match(r"Up (Less than a second|a second|\d+ seconds?|About a minute|[12] minutes?)\b", line):
+            return True
+    return False
+
+
+class PageWait:
+    left = 60.0
+
+
+def page_answers(link):
+    """True when the page answers. A page of a container that only just started gets up to a minute (shared by all pages) to wake up."""
+    while True:
+        if 0 < http("GET", link, timeout=10)[0] < 500:
+            return True
+        if PageWait.left <= 0 or not young_containers():
+            return False
+        time.sleep(5)
+        PageWait.left -= 5
+
+
 def system_check():
     """Check the running system and report whether everything is up. Returns the number of problems found."""
     rule("System check")
@@ -7258,8 +7351,7 @@ def system_check():
     for key, label in SERVICE_LABELS:
         if key == "adguard" and not adguard_wanted():
             continue
-        st = http("GET", url(key), timeout=10)[0]
-        if 0 < st < 500:
+        if page_answers(url(key)):
             out("  %s%s%s %-18s %s" % (G, S_OK, N, label, mark(url(key))))
         else:
             out("  %s%s%s %-18s %s  (no answer)" % (R, S_BAD, N, label, mark(url(key))))
@@ -7270,8 +7362,7 @@ def system_check():
         out("  %sOther services%s" % (B, N))
         for label, container, port, _ in extras:
             link = "http://%s:%d" % (svc_host(), port)
-            st = http("GET", link, timeout=10)[0]
-            if 0 < st < 500:
+            if page_answers(link):
                 out("  %s%s%s %-18s %s" % (G, S_OK, N, label, mark(link)))
             elif container in ("navidrome", "audiomuse-flask", "navilist") and (
                     container == "navidrome" or (container == "audiomuse-flask" and audiomuse_wanted()) or (container == "navilist" and navilist_wanted())):
@@ -7591,13 +7682,22 @@ def storage_notice(res):
 def cmd_refresh():
     """`refresh`: check every step again and do whatever is now possible."""
     load_all()
-    if Mode.existing:
+    if Mode.existing and not Opt.force_existing:
         say("This machine already runs the lab. Its checklist is shown read-only.")
+        if damaged_state_seen():
+            say("The setup state file was damaged. To build a new one from what is installed: sudo homelab-setup refresh --force-existing")
         res = evaluate()
         show_checklist(res)
         write_progress(res)
         return
-    if not State.exists():
+    if Mode.existing:
+        # The owner asked for it: build a new state file from what is installed, then check everything again.
+        if not Opt.dry:
+            State.data["repo"] = Ctx.repo
+            State.mark("install-started")
+            Mode.existing = False
+        say("Building a new setup state file from what is installed.")
+    elif not State.exists():
         raise Abort("The installer has not run on this machine yet. Run `sudo homelab-setup install`.")
     refuse_while_finishing()
     wait_for_apps()
@@ -9129,25 +9229,63 @@ def cmd_uninstall():
 
 
 COMMANDS["uninstall"] = cmd_uninstall
-def installer_path_trusted(path, user):
-    """True when only root or the sudo user can change the file and every folder above it. A file or folder that other users can write is not used."""
+def acl_present(p):
+    try:
+        names = os.listxattr(p, follow_symlinks=False)
+    except OSError:
+        return False
+    return any(n in ("system.posix_acl_access", "system.posix_acl_default") for n in names)
+
+
+def trusted_real_path(path, user):
+    """The real location of a file that only root or the sudo user can change, or None. Every folder that is walked through, every link on the way and the file
+    itself must belong to root or that user, must not be writable by anybody else (the mode bits and an access list both count), and a link counts at the place it
+    is found, not only where it points. The caller must use the returned path and not open the given one again, so that a link cannot be swapped in between."""
     try:
         pw = pwd.getpwnam(user)
         others = {u.pw_name for u in pwd.getpwall() if u.pw_gid == pw.pw_gid and u.pw_name != user}
         others |= {m for m in grp.getgrgid(pw.pw_gid).gr_mem if m != user}
-        p = os.path.realpath(path)
-        while True:
-            st = os.stat(p)
+
+        def fine(st, where):
             sticky_dir = stat.S_ISDIR(st.st_mode) and st.st_mode & stat.S_ISVTX
             if st.st_uid not in (0, pw.pw_uid) or (st.st_mode & 0o002 and not sticky_dir):
                 return False
             if st.st_mode & 0o020 and not (st.st_gid in (0, pw.pw_gid) and not others):
                 return False
-            if p == "/":
-                return True
-            p = os.path.dirname(p)
+            return not acl_present(where)
+
+        if not os.path.isabs(path) or not fine(os.stat("/"), "/"):
+            return None
+        cur, parts, hops = "/", path.split("/"), 0
+        while parts:
+            name = parts.pop(0)
+            if name in ("", "."):
+                continue
+            if name == "..":
+                cur = os.path.dirname(cur)
+                continue
+            nxt = os.path.join(cur, name)
+            st = os.lstat(nxt)
+            if stat.S_ISLNK(st.st_mode):
+                hops += 1
+                if hops > 32 or st.st_uid not in (0, pw.pw_uid):
+                    return None
+                target = os.readlink(nxt)
+                if target.startswith("/"):
+                    cur = "/"
+                parts = target.split("/") + parts
+                continue
+            if not fine(st, nxt):
+                return None
+            cur = nxt
+        return cur if os.path.isfile(cur) else None
     except (OSError, KeyError):
-        return False
+        return None
+
+
+def installer_path_trusted(path, user):
+    """True when only root or the sudo user can change the file and every folder and link on the way to it."""
+    return trusted_real_path(path, user) is not None
 
 
 def reexec_newer_installer(cmd, args):
@@ -9163,9 +9301,11 @@ def reexec_newer_installer(cmd, args):
         me = os.path.abspath(sys.argv[0])
         if not new or not os.path.isfile(new) or os.path.realpath(new) == os.path.realpath(me):
             return
-        if not installer_path_trusted(new, os.environ["SUDO_USER"]):
+        real = trusted_real_path(new, os.environ["SUDO_USER"])
+        if not real:
             say("The installer in %s can be changed by other users, so it was not used. Check who may write there, then run the command again." % repo)
             return
+        new = real
         text = read_file(new)
         if not text or text == read_file(me):
             return
@@ -9177,10 +9317,15 @@ def reexec_newer_installer(cmd, args):
     os.execve(sys.executable, [sys.executable, new] + list(args), env)
 
 
+def stop_like_ctrl_c(_signum, _frame):
+    raise KeyboardInterrupt
+
+
 def main(argv):
     """Read the command line and run the requested command."""
     try:
         signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+        signal.signal(signal.SIGTERM, stop_like_ctrl_c)
     except (AttributeError, ValueError):
         pass
     args = list(argv[1:])

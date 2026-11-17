@@ -1710,7 +1710,7 @@ function bkEdit(t) {
     if (s.kind === "weekly") kids.push(h("select", { "aria-label": "Day of the week", onchange: e => { s.dow = +e.target.value; } }, WEEKDAYS.map((n, i) => h("option", { value: i, selected: s.dow === i }, n))));
     if (s.kind === "monthly") kids.push(h("select", { "aria-label": "Day of the month", onchange: e => { s.dom = +e.target.value; } }, Array.from({ length: 28 }, (_, i) => h("option", { value: i + 1, selected: s.dom === i + 1 }, "Day " + (i + 1)))));
     if (s.kind === "hourly") kids.push(h("label", { class: "inl" }, "at minute ", h("input", { type: "number", min: 0, max: 59, value: s.minute || 0, "aria-label": "Minute of the hour", oninput: e => { s.minute = Math.max(0, Math.min(59, parseInt(e.target.value, 10) || 0)); } })));
-    else kids.push(h("label", { class: "inl" }, "at ", h("input", { type: "time", value: s.time || "02:00", "aria-label": "Time of day", oninput: e => { s.time = e.target.value || "02:00"; } })));
+    else kids.push(h("label", { class: "inl" }, "at ", h("input", { type: "time", value: s.time || "02:00", "aria-label": "Time of day", oninput: e => { s.time = e.target.value || "02:00"; } }), BK && BK.server_zone ? h("span", { class: "muted" }, " (the server's own time, " + BK.server_zone + "; the list shows the result in your zone)") : ""));
     put(when, h("div", { class: "field" }, h("label", {}, "When should it run?"), h("div", { class: "row tight" }, kids)));
   };
   const drawKeep = () => {

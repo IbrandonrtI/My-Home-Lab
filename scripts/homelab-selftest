@@ -49,6 +49,12 @@ REPORT="$REAL_HOME/homelab-selftest-$(date +%Y%m%d-%H%M).txt"
 : >"$REPORT" 2>/dev/null || REPORT="/tmp/homelab-selftest-$(date +%Y%m%d-%H%M).txt"
 chmod 600 "$REPORT" 2>/dev/null || true
 [ "$REAL_HOME" != /root ] && chown "$REAL_USER:" "$REPORT" 2>/dev/null
+# Keep only the 10 newest reports so they do not pile up in the home folder.
+case "$REPORT" in
+  "$REAL_HOME"/homelab-selftest-*.txt)
+    # shellcheck disable=SC2012
+    ls -1t "$REAL_HOME"/homelab-selftest-[0-9]*.txt 2>/dev/null | tail -n +11 | while IFS= read -r old; do [ -f "$old" ] && [ ! -L "$old" ] && rm -f -- "$old"; done ;;
+esac
 
 N_OK=0; N_INFO=0; N_WARN=0; N_FAIL=0
 ISSUES=()

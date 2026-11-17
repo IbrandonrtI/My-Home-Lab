@@ -36,15 +36,13 @@ def homepage_file_problems():
 
 
 def damaged_state_seen():
-    """True when this run found a state file it could not read (a copy .damaged-<date> sits next to it)."""
-    try:
-        return any(f.startswith(os.path.basename(STATE_FILE) + ".damaged-") for f in os.listdir(os.path.dirname(STATE_FILE)))
-    except OSError:
-        return False
+    """True when this run found a state file it could not read."""
+    return Mode.state_damaged
 
 
 def load_all():
     State.load()
+    Mode.state_damaged = State.damaged
     if State.damaged:
         kept = State.keep_damaged()
         warn("The setup state file %s is damaged and cannot be read. %sAnswers you gave earlier may have to be given again. To build a new one from what is installed: sudo homelab-setup refresh --force-existing." % (
@@ -54,6 +52,8 @@ def load_all():
     apply_adopted_ports()
     Mode.existing = is_existing()
     State.readonly = Mode.existing and not Opt.force_existing
+    if not State.readonly and not Opt.dry:
+        clean_stale_temp_files()
 
 
 def password_warning():
@@ -331,6 +331,32 @@ def added_services():
     return sorted(found.values(), key=lambda x: x[0].lower())
 
 
+def young_containers():
+    """True when a container started less than three minutes ago or Docker still lists one as starting."""
+    rc, txt = docker("ps", "--format", "{{.Status}}", timeout=20)
+    if rc != 0:
+        return False
+    for line in txt.splitlines():
+        if "health: starting" in line or re.match(r"Up (Less than a second|a second|\d+ seconds?|About a minute|[12] minutes?)\b", line):
+            return True
+    return False
+
+
+class PageWait:
+    left = 60.0
+
+
+def page_answers(link):
+    """True when the page answers. A page of a container that only just started gets up to a minute (shared by all pages) to wake up."""
+    while True:
+        if 0 < http("GET", link, timeout=10)[0] < 500:
+            return True
+        if PageWait.left <= 0 or not young_containers():
+            return False
+        time.sleep(5)
+        PageWait.left -= 5
+
+
 def system_check():
     """Check the running system and report whether everything is up. Returns the number of problems found."""
     rule("System check")
@@ -384,8 +410,7 @@ def system_check():
     for key, label in SERVICE_LABELS:
         if key == "adguard" and not adguard_wanted():
             continue
-        st = http("GET", url(key), timeout=10)[0]
-        if 0 < st < 500:
+        if page_answers(url(key)):
             out("  %s%s%s %-18s %s" % (G, S_OK, N, label, mark(url(key))))
         else:
             out("  %s%s%s %-18s %s  (no answer)" % (R, S_BAD, N, label, mark(url(key))))
@@ -396,8 +421,7 @@ def system_check():
         out("  %sOther services%s" % (B, N))
         for label, container, port, _ in extras:
             link = "http://%s:%d" % (svc_host(), port)
-            st = http("GET", link, timeout=10)[0]
-            if 0 < st < 500:
+            if page_answers(link):
                 out("  %s%s%s %-18s %s" % (G, S_OK, N, label, mark(link)))
             elif container in ("navidrome", "audiomuse-flask", "navilist") and (
                     container == "navidrome" or (container == "audiomuse-flask" and audiomuse_wanted()) or (container == "navilist" and navilist_wanted())):
@@ -717,13 +741,22 @@ def storage_notice(res):
 def cmd_refresh():
     """`refresh`: check every step again and do whatever is now possible."""
     load_all()
-    if Mode.existing:
+    if Mode.existing and not Opt.force_existing:
         say("This machine already runs the lab. Its checklist is shown read-only.")
+        if damaged_state_seen():
+            say("The setup state file was damaged. To build a new one from what is installed: sudo homelab-setup refresh --force-existing")
         res = evaluate()
         show_checklist(res)
         write_progress(res)
         return
-    if not State.exists():
+    if Mode.existing:
+        # The owner asked for it: build a new state file from what is installed, then check everything again.
+        if not Opt.dry:
+            State.data["repo"] = Ctx.repo
+            State.mark("install-started")
+            Mode.existing = False
+        say("Building a new setup state file from what is installed.")
+    elif not State.exists():
         raise Abort("The installer has not run on this machine yet. Run `sudo homelab-setup install`.")
     refuse_while_finishing()
     wait_for_apps()

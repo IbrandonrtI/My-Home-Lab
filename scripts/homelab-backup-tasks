@@ -264,7 +264,21 @@ def read_status(tid):
     st = read_json(os.path.join(state_dir(tid), "status.json"), {})
     if tid == NIGHTLY_ID and not st.get("running"):
         st = with_hand_started_run(st)
+    if tid == NIGHTLY_ID:
+        st = dict(st, size_bytes=nightly_size())
     return st
+
+
+def nightly_size():
+    """The size the nightly backup program recorded for its last run (the same number the dashboard and `homelab` show), or None when it is unknown
+    or that backup is on a drive that is not connected now."""
+    try:
+        _stamp, _result, dest, _secs, size = (open(LAST_RUN, encoding="utf-8").readline().rstrip("\n").split("|") + ["", "", "", "", ""])[:5]
+    except OSError:
+        return None
+    if dest and dest != "none" and not os.path.isdir(os.path.join(dest, "main")):
+        return None
+    return int(size) if size.isdigit() else None
 
 
 def with_hand_started_run(st):
@@ -1165,6 +1179,27 @@ def cmd_stream(task_id, version, rel, mode):
         sys.stderr.write("%d items could not be read and are not in the zip.\n" % skipped)
 
 
+def check_restore_path(src_root, into):
+    """A restore runs as root and writes into the original folders, which the lab user owns. A link on the way (for example c06dir -> /etc/cron.d) would lead
+    the copy out of the source folder, so no folder from the source down to the target may be a link."""
+    rel = os.path.relpath(into, src_root)
+    if rel == ".." or rel.startswith("../") or os.path.isabs(rel):
+        raise Bad("That place is outside the folder being restored, so nothing was restored.")
+    cur = src_root
+    for part in rel.split(os.sep):
+        if part in ("", "."):
+            continue
+        cur = os.path.join(cur, part)
+        if os.path.islink(cur):
+            raise Bad("%s is a link, not a folder, so nothing was restored there. Restore to the folder _restored instead, or put the folder back first." % cur)
+        if not os.path.lexists(cur):
+            break
+    root = os.path.realpath(src_root)
+    real = os.path.realpath(cur)
+    if real != root and not real.startswith(root.rstrip("/") + "/"):
+        raise Bad("That place leads outside the folder being restored, so nothing was restored.")
+
+
 def restore(task, version, rel, target):
     """Copy a file or folder of a version back. target 'folder' copies into <source>/_restored/<time>/ (safe). target 'original' copies over the files in the source, after moving what it replaces aside."""
     rel = clean_rel(rel)
@@ -1185,16 +1220,19 @@ def restore(task, version, rel, target):
         parent = os.path.join(src_root, "_restored")
         base = os.path.join(parent, stamp) if target == "folder" else src_root
         replaced = os.path.join(parent, stamp + "-replaced") if target == "original" else None
+        check_restore_path(src_root, replaced or base)
         if place is None:
             remote = folder + ("/" + rel if rel else "")
             is_dir = not rel or any(e["name"] == os.path.basename(rel) and e["type"] == "dir" for e in browse(task, version, os.path.dirname(rel)))
             into = os.path.join(base, rel) if is_dir else os.path.join(base, os.path.dirname(rel))
+            check_restore_path(src_root, into)
             os.makedirs(into, exist_ok=True)
             args = [RCLONE, "copy", remote, into] + (["--backup-dir", replaced] if replaced else [])
         else:
             from_path = os.path.join(folder, rel) if rel else folder
             is_dir = not rel or place.isdir(from_path)
             into = os.path.join(base, rel) if is_dir else os.path.join(base, os.path.dirname(rel))
+            check_restore_path(src_root, into)
             os.makedirs(into, exist_ok=True)
             spec = place.where(from_path).rstrip("/") + ("/" if is_dir else "")
             args = [RSYNC, "-aH", "--numeric-ids"] + rsync_remote_args(task) + (["--backup", "--backup-dir=" + replaced] if replaced else [])
@@ -1328,13 +1366,33 @@ def display_zone():
         return None
 
 
-def shown_time(dt):
-    """A time of the server's clock as (text, zone name) in the zone the dashboard uses, so the panel, `homelab` and the dashboard agree."""
+def shown_datetime(dt):
     aware = dt.astimezone()
     zone = display_zone()
-    if zone is not None:
-        aware = aware.astimezone(zone)
+    return aware.astimezone(zone) if zone is not None else aware
+
+
+def shown_time(dt):
+    """A time of the server's clock as (text, zone name) in the zone the dashboard uses, so the panel, `homelab` and the dashboard agree."""
+    aware = shown_datetime(dt)
     return aware.strftime("%Y-%m-%d %H:%M"), aware.strftime("%Z")
+
+
+def describe_schedule_shown(sch, nxt):
+    """The schedule in words, with its time of day (and day) in the zone the dashboard uses, taken from the next run. None when there is no next run."""
+    if nxt is None or sch["kind"] == "hourly":
+        return None
+    shown = shown_datetime(nxt)
+    clock = "%s %s" % (shown.strftime("%H:%M"), shown.strftime("%Z"))
+    days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+    kind = sch["kind"]
+    if kind == "daily":
+        return "Every day at " + clock
+    if kind == "weekly":
+        return "Every %s at %s" % (days[shown.weekday()], clock)
+    if kind == "days":
+        return "Every %d days at %s" % (int(sch["every"]), clock)
+    return "On day %d of every month at %s" % (shown.day, clock)
 
 
 def task_view(t):
@@ -1344,9 +1402,10 @@ def task_view(t):
     running = bool(st.get("running")) and is_running()
     last = parse_stamp(st.get("last_end") or st.get("last_start") or "")
     next_text, next_zone = shown_time(nxt) if nxt else (None, "")
+    shown_schedule = describe_schedule_shown(t["schedule"], nxt)
     last_text, last_zone = shown_time(last) if last else (None, "")
     return {"id": t["id"], "name": t["name"], "enabled": t.get("enabled", True), "kind": t["kind"], "source": t["source"], "exclude": t["exclude"],
-            "dest": t["dest"], "schedule": t["schedule"], "schedule_text": describe_schedule(t["schedule"]), "schedule_zone": ref.astimezone().strftime("%Z"), "keep": t["keep"],
+            "dest": t["dest"], "schedule": t["schedule"], "schedule_text": shown_schedule or describe_schedule(t["schedule"]), "schedule_zone": "" if shown_schedule else ref.astimezone().strftime("%Z"), "keep": t["keep"],
             "next_run": next_text, "next_zone": next_zone, "running": running,
             "last": {"result": st.get("result"), "message": st.get("message"), "when": last_text, "zone": last_zone,
                      "secs": st.get("secs"), "version": st.get("version"), "bytes_sent": st.get("bytes_sent"), "bytes_total": st.get("bytes_total"),
@@ -1360,7 +1419,8 @@ def state_view():
     remotes = cloud_remotes()
     return {"tasks": [task_view(t) for t in tasks], "drives": mount_choices(), "running": is_running(),
             "ssh": {"key": open(key, encoding="utf-8").read().strip() if os.path.exists(key) else ""},
-            "cloud": {"installed": remotes is not None, "remotes": remotes or []}, "roots": ROOTS}
+            "cloud": {"installed": remotes is not None, "remotes": remotes or []}, "roots": ROOTS,
+            "server_zone": now().astimezone().strftime("%Z")}
 
 
 def out_json(obj):

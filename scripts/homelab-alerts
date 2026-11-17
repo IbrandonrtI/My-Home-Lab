@@ -70,6 +70,26 @@ def load_json(path):
         return {}
 
 
+def shown_stamp(stamp):
+    """A "YYYY-MM-DD HH:MM" time written by the backup program (server time) shown in the zone the dashboard uses, with the zone's name."""
+    try:
+        t = time.strptime(stamp, "%Y-%m-%d %H:%M")
+        secs = time.mktime(t)
+    except (ValueError, OverflowError):
+        return stamp
+    parts = read(os.path.join(STATE_DIR, "display-timezone")).split()
+    zone = None
+    if len(parts) >= 2 and parts[1] != "none":
+        try:
+            import zoneinfo
+            zone = zoneinfo.ZoneInfo(parts[1])
+        except Exception:
+            zone = None
+    import datetime
+    when = datetime.datetime.fromtimestamp(secs).astimezone(zone) if zone else datetime.datetime.fromtimestamp(secs).astimezone()
+    return when.strftime("%Y-%m-%d %H:%M %Z")
+
+
 def item(iid, level, title, detail="", action=""):
     return {"id": iid, "level": level, "title": title, "detail": detail, "action": action}
 
@@ -193,7 +213,7 @@ def stats_items():
     else:
         failed, when = str(last.get("result", "")).startswith("Failed"), last.get("when", "")
     if failed:
-        res.append(item("backup:failed", "bad", "The last backup failed", "%s. Open the Backups section of the Drives tab." % when, "drives"))
+        res.append(item("backup:failed", "bad", "The last backup failed", "%s. Open the Backups section of the Drives tab." % shown_stamp(when), "drives"))
     else:
         try:
             t = time.mktime(time.strptime(run[0], "%Y-%m-%d %H:%M"))
@@ -248,12 +268,30 @@ def page_status(port, timeout=4):
         return 0
 
 
+def fresh_container(status):
+    """True for a container that started less than three minutes ago or that Docker still lists as starting (its page may not be ready yet)."""
+    if "health: starting" in status:
+        return True
+    m = re.match(r"Up (Less than a second|a second|\d+ seconds?|About a minute|\d+ minutes?)", status)
+    if not m:
+        return False
+    word = m.group(1)
+    if "second" in word or word.startswith("About"):
+        return True
+    return int(word.split()[0]) < 3
+
+
 def check_pages():
-    """A container that runs but whose page does not answer (a status of 0 or 500 and above). Only containers that are running are tried."""
-    rc, out = run([DOCKER, "ps", "--format", "{{.Names}}"])
+    """A container that runs but whose page does not answer (a status of 0 or 500 and above). Only containers that are running are tried.
+    One that started a moment ago is shown as still starting, not as broken."""
+    rc, out = run([DOCKER, "ps", "--format", "{{.Names}} {{.Status}}"])
     if rc != 0:
         return []
-    up = [n for n in out.split() if n in SERVICE_PORTS]
+    status = {}
+    for line in out.splitlines():
+        name, _, rest = line.strip().partition(" ")
+        status[name] = rest
+    up = [n for n in status if n in SERVICE_PORTS]
     if not up:
         return []
     with ThreadPoolExecutor(max_workers=8) as pool:
@@ -263,8 +301,15 @@ def check_pages():
             again = list(pool.map(lambda i: page_status(SERVICE_PORTS[up[i]], PAGE_RETRY_SECONDS), slow))
             for i, code in zip(slow, again):
                 codes[i] = code
-    return [item("silent:" + n, "bad", "%s runs but its page does not answer" % nice(n), "Look at what it says: sudo docker logs --tail 30 %s" % n, "")
-            for n, code in zip(up, codes) if not 0 < code < 500]
+    found = []
+    for n, code in zip(up, codes):
+        if 0 < code < 500:
+            continue
+        if fresh_container(status[n]):
+            found.append(item("starting:" + n, "info", "%s is still starting" % nice(n), "It started a moment ago and its page is not ready yet. This goes away by itself; if it is still here in a few minutes: sudo docker logs --tail 30 %s" % n, ""))
+        else:
+            found.append(item("silent:" + n, "bad", "%s runs but its page does not answer" % nice(n), "Look at what it says: sudo docker logs --tail 30 %s" % n, ""))
+    return found
 
 
 def downtify_default_login():
@@ -428,7 +473,8 @@ def main(argv):
         return 1
     if cmd == "silent":  # used by `homelab`: names of containers that run but whose page does not answer, one per line
         for i in check_pages():
-            print(i["id"].split(":", 1)[1])
+            if i["id"].startswith("silent:"):
+                print(i["id"].split(":", 1)[1])
         return 0
     if cmd == "downtify":  # used by `homelab`: prints "default" when Downtify still accepts the public first login
         rc, names = run([DOCKER, "ps", "--format", "{{.Names}}"])

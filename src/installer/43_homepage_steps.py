@@ -92,8 +92,20 @@ class HomepageFiles(Step):
         protect_key_files()
 
 
+def homepage_skeleton_bookmarks(text):
+    """True for the sample bookmarks.yaml that Homepage writes itself (groups Developer, Social and Entertainment with GitHub, Reddit and YouTube)."""
+    return bool(text) and len(text) < 700 and "abbr: GH" in text and "abbr: YT" in text and "reddit" in text.lower()
+
+
 def missing_look_files():
-    return [f for f in LOOK_FILES if not os.path.exists(hp_path(f))]
+    """The look files that are gone, or that hold only what Homepage puts there itself: it writes an empty custom.css and a sample bookmarks.yaml as soon as its
+    page is asked for while the file is missing, so the file being there does not mean it is the user's own."""
+    gone = []
+    for f in LOOK_FILES:
+        text = read_file(hp_path(f)) if os.path.exists(hp_path(f)) else None
+        if text is None or (f == "custom.css" and not text.strip()) or (f == "bookmarks.yaml" and homepage_skeleton_bookmarks(text)):
+            gone.append(f)
+    return gone
 
 
 @step
@@ -111,14 +123,14 @@ class HomepageKeyFiles(Step):
     def detail(self):
         gone = missing_look_files()
         if gone and not key_files_open() and not wrong_owner_files():
-            return "%s missing; `sudo homelab-setup refresh` writes the shipped version (your own look can come back with: sudo homelab-restore-configs)" % " and ".join(gone)
+            return "%s missing or empty; `sudo homelab-setup refresh` writes the shipped version (your own look can come back with: sudo homelab-restore-configs)" % " and ".join(gone)
         return "%d file(s) are readable by other users or belong to the wrong user; `sudo homelab-setup refresh` fixes it" % (len(key_files_open()) + len(wrong_owner_files()))
 
     def open_note(self):
         gone = missing_look_files()
         parts = []
         if gone:
-            parts.append("%s missing. `sudo homelab-setup refresh` writes the shipped version of only that file. Your own copy can come back with: sudo homelab-restore-configs" % " and ".join(gone))
+            parts.append("%s missing or empty (Homepage puts an empty or sample file there when it is gone). `sudo homelab-setup refresh` writes the shipped version of only that file. Your own copy can come back with: sudo homelab-restore-configs" % " and ".join(gone))
         if key_files_open() or wrong_owner_files():
             parts.append("%d file(s) are readable by other users or belong to the wrong user. `sudo homelab-setup refresh` fixes it" % (len(key_files_open()) + len(wrong_owner_files())))
         return ". ".join(parts)
@@ -137,14 +149,27 @@ class HomepageKeyFiles(Step):
                         seen.append(g)
                 State.data["layout_seen"] = seen
                 State.save()
-            log("homepage-key-files: %s was missing, the shipped version was written" % f)
-            warn("%s was missing, so the shipped version was written. Only that file was changed. Your own copy is in the backups and the control panel's Undo history; to bring it back run: sudo homelab-restore-configs" % f)
+            log("homepage-key-files: %s was missing or empty, the shipped version was written" % f)
+            warn("%s was missing or empty, so the shipped version was written. Only that file was changed. Your own copy is in the backups and the control panel's Undo history; to bring it back run: sudo homelab-restore-configs" % f)
         protect_key_files()
+
+
+def panel_script_for_root(check):
+    """The control panel script that root may run. Only the installed copy (root's own) is used for a look at the checklist; the copy in the repository, which the
+    lab user can change, only when a person asked for a refresh and nobody else can change that file either."""
+    installed = installed_copy("homelab-panel", "/usr/local/sbin")
+    if installed:
+        return installed
+    if check:
+        return None
+    return trusted_real_path(repo_file("scripts", "homelab-panel"), Ctx.user) if not FAKE else repo_file("scripts", "homelab-panel")
 
 
 def theme_pictures_run(check):
     """Ask the control panel's own script to store the picture of every theme. Returns True when all are stored."""
-    script = repo_file("scripts", "homelab-panel")
+    script = panel_script_for_root(check)
+    if not script:
+        return False
     env = dict(os.environ, HLP_HOME=P(Ctx.home), HOMELAB_HOMEPAGE_DIR=hp_path(""))
     rc, _ = run([sys.executable, script, "theme-pictures"] + (["--check"] if check else []), env=env, timeout=60 if check else 600)
     return rc == 0

@@ -8,8 +8,8 @@ pool_policy_now() {
 
 # pool_policy_live POOL: the setting the running pool really uses (empty when it cannot be read).
 pool_policy_live() {
-  mountpoint -q "$1" 2>/dev/null && command -v getfattr >/dev/null 2>&1 || return 0
-  getfattr -n user.mergerfs.category.create --only-values "$1/.mergerfs" 2>/dev/null
+  mountpoint -q "$1" 2>/dev/null || return 0
+  xattr_get "$1/.mergerfs" user.mergerfs.category.create
 }
 
 policy_text() {
@@ -23,10 +23,10 @@ policy_text() {
 pool_live_apply() {
   local role=$1 pool
   pool=$(role_pool "$role")
-  mountpoint -q "$pool" && command -v setfattr >/dev/null 2>&1 || return 1
-  setfattr -n user.mergerfs.category.create -v "$(pool_policy "$role")" "$pool/.mergerfs" 2>/dev/null \
-    && setfattr -n user.mergerfs.minfreespace -v "$POOL_MINFREE" "$pool/.mergerfs" 2>/dev/null \
-    && setfattr -n user.mergerfs.branches -v "$(branches_string "$role")" "$pool/.mergerfs" 2>/dev/null
+  mountpoint -q "$pool" && command -v python3 >/dev/null 2>&1 || return 1
+  xattr_set "$pool/.mergerfs" user.mergerfs.category.create "$(pool_policy "$role")" \
+    && xattr_set "$pool/.mergerfs" user.mergerfs.minfreespace "$POOL_MINFREE" \
+    && xattr_set "$pool/.mergerfs" user.mergerfs.branches "$(branches_string "$role")"
 }
 
 # pool_reconfigure main|backup: apply the saved policy, order or limits to the running pool and write them to fstab.
@@ -104,7 +104,8 @@ fillorder_flow() {
   case "$act" in
     0|1)
       local want=ff; [ "$act" = 1 ] && want=mfs
-      if [ "$now" = "$want" ] && pool_has_limits "$pool" && { [ -z "$live" ] || [ "$live" = "$want" ]; }; then
+      # "already works like that" only when the running pool was really read; an unreadable running pool is applied again
+      if [ "$now" = "$want" ] && pool_has_limits "$pool" && { [ "$live" = "$want" ] || { [ -z "$live" ] && ! mountpoint -q "$pool" 2>/dev/null; }; }; then
         settings_discard; say "The $role pool already works like that. Nothing was changed."; return 0
       fi
       dry_gate "Save the setting '$(policy_text "$want")' for the $role pool." \

@@ -150,11 +150,12 @@ MERGE_AFTER = ("Background changed", "Background picture changed")
 
 
 def snap_merge(group, olds):
-    """Add the files of this change to the Undo entry made a moment ago for the background, so saving a look and a background together is one Undo step. Returns False when there is no such entry."""
+    """Add the files of this change to the Undo entry made a moment ago for the background, so saving a look and a background together is one Undo step. Returns None when there is no such entry, otherwise a function that takes the added files out again (used when the save fails)."""
     last = history_last()
     if not last or time.time() - last[1].get("time", 0) > 30 or last[1].get("label") not in MERGE_AFTER:
-        return False
+        return None
     d, meta = last
+    before = json.loads(json.dumps(meta))
     have = {i["path"] for i in meta["files"].values()}
     n = len(meta["files"])
     for path, text in sorted(olds.items()):
@@ -167,7 +168,19 @@ def snap_merge(group, olds):
     meta["label"] = group
     with open(os.path.join(d, "meta.json"), "w", encoding="utf-8", opener=nofollow_open) as f:
         json.dump(meta, f)
-    return True
+
+    def undo_merge():
+        for fn in set(meta["files"]) - set(before["files"]):
+            try:
+                os.unlink(os.path.join(d, fn))
+            except OSError:
+                pass
+        try:
+            with open(os.path.join(d, "meta.json"), "w", encoding="utf-8", opener=nofollow_open) as f:
+                json.dump(before, f)
+        except OSError:
+            pass
+    return undo_merge
 
 
 class Tx:
@@ -204,7 +217,8 @@ class Tx:
         olds = {p: self.old[p] for p in changed}
         group = getattr(LOCAL, "merge", "")
         saved = None
-        if not (group and snap_merge(group, olds)):
+        merged = snap_merge(group, olds) if group else None
+        if merged is None:
             saved = snap(self.label, olds)
         written = []
         try:
@@ -219,6 +233,8 @@ class Tx:
                     pass
             if saved:
                 shutil.rmtree(saved, ignore_errors=True)
+            if merged:
+                merged()
             LOCAL.changed = False
             raise
         return True
