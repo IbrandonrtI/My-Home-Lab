@@ -111,10 +111,11 @@ def write_bytes(path, data, mode=None, owner=None):
     _write_safely(path, data, True, mode, owner)
 
 
-def chmod_nolink(path, mode):
-    """chmod that never follows a link: the folder may belong to a normal user, who could plant a link to a system file while this runs as root."""
+def chmod_nolink(path, mode, dir_fd=None):
+    """chmod that never follows a link: the folder may belong to a normal user, who could plant a link to a system file while this runs as root.
+    With dir_fd the name is looked up inside that open folder."""
     try:
-        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=dir_fd)
     except OSError:
         return
     try:
@@ -131,11 +132,12 @@ def chown(path, uid, gid, recursive=False):
         return
     try:
         if recursive and os.path.isdir(path) and not os.path.islink(path):
-            for dp, _dirs, fn in os.walk(path):
-                os.chown(dp, uid, gid, follow_symlinks=False)
+            # walked through open folders, so a folder swapped for a link while this runs is never entered
+            for _dp, _dirs, fn, dfd in os.fwalk(path):
+                os.fchown(dfd, uid, gid)
                 for n in fn:
                     try:
-                        os.chown(os.path.join(dp, n), uid, gid, follow_symlinks=False)
+                        os.chown(n, uid, gid, dir_fd=dfd, follow_symlinks=False)
                     except OSError:
                         pass
         os.chown(path, uid, gid, follow_symlinks=False)

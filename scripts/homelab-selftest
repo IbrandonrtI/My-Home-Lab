@@ -45,20 +45,40 @@ done
 REAL_USER="${HOMELAB_USER:-${SUDO_USER:-$(getent passwd 1000 | cut -d: -f1)}}"
 REAL_HOME=$(getent passwd "$REAL_USER" | cut -d: -f6)
 REAL_HOME=${REAL_HOME:-/root}
-# The report is created new (never through an existing file or link: the folder belongs to a normal user while this runs as root), readable by its owner only.
+# The report is written in a private file first and put into the home folder at the end, as a new file (never through an existing file, a link or a device: the
+# folder belongs to a normal user while this runs as root), readable by its owner only.
 STAMP=$(date +%Y%m%d-%H%M)
 REPORT=""
-for cand in "$REAL_HOME/homelab-selftest-$STAMP.txt" "$REAL_HOME/homelab-selftest-$STAMP-$$.txt" "/tmp/homelab-selftest-$STAMP-$$.txt"; do
-  if ( set -C; umask 077; : >"$cand" ) 2>/dev/null; then REPORT="$cand"; break; fi
-done
-[ -n "$REPORT" ] || { echo "Could not create a report file."; exit 1; }
-[ "$REAL_HOME" != /root ] && chown -h "$REAL_USER:" "$REPORT" 2>/dev/null
-# Keep only the 10 newest reports so they do not pile up in the home folder.
-case "$REPORT" in
-  "$REAL_HOME"/homelab-selftest-*.txt)
-    # shellcheck disable=SC2012
-    ls -1t "$REAL_HOME"/homelab-selftest-[0-9]*.txt 2>/dev/null | tail -n +11 | while IFS= read -r old; do [ -f "$old" ] && [ ! -L "$old" ] && rm -f -- "$old"; done ;;
-esac
+WORK=$(mktemp /tmp/homelab-selftest.XXXXXX) || { echo "Could not create a report file."; exit 1; }
+publish_report() {
+  [ -n "$WORK" ] && [ -f "$WORK" ] || return 0
+  local cand
+  for cand in "$REAL_HOME/homelab-selftest-$STAMP.txt" "$REAL_HOME/homelab-selftest-$STAMP-$$.txt" "/tmp/homelab-selftest-$STAMP-$$.txt"; do
+    if python3 - "$WORK" "$cand" "$REAL_USER" "$REAL_HOME" <<'PY' 2>/dev/null
+import os, pwd, sys
+src, dest, user, home = sys.argv[1:5]
+fd = os.open(dest, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+with os.fdopen(fd, "wb") as out, open(src, "rb") as f:
+    out.write(f.read())
+    out.flush()
+    if home != "/root":
+        try:
+            pw = pwd.getpwnam(user)
+            os.fchown(out.fileno(), pw.pw_uid, pw.pw_gid)
+        except (KeyError, OSError):
+            pass
+PY
+    then REPORT="$cand"; break; fi
+  done
+  rm -f -- "$WORK"; WORK=""
+  case "$REPORT" in
+    "$REAL_HOME"/homelab-selftest-*.txt)
+      # Keep only the 10 newest reports so they do not pile up in the home folder.
+      # shellcheck disable=SC2012
+      ls -1t "$REAL_HOME"/homelab-selftest-[0-9]*.txt 2>/dev/null | tail -n +11 | while IFS= read -r old; do [ -f "$old" ] && [ ! -L "$old" ] && rm -f -- "$old"; done ;;
+  esac
+}
+trap 'publish_report' EXIT
 
 N_OK=0; N_INFO=0; N_WARN=0; N_FAIL=0
 ISSUES=()
@@ -72,8 +92,8 @@ mask() {
     -e 's/([Pp]assword|PASSWORD|[Tt]oken|TOKEN|[Ss]ecret|SECRET|[Aa]pi[_-]?[Kk]ey|API_KEY|APP_KEY)([A-Za-z_]*)([=:][ ]*)[^ ]+/\1\2\3***/g'
 }
 
-emit() { printf '%s\n' "$*" | tee -a "$REPORT" | cat; }
-to_report() { mask >>"$REPORT"; }
+emit() { printf '%s\n' "$*" | tee -a "$WORK" | cat; }
+to_report() { mask >>"$WORK"; }
 section() { emit ""; emit "== $* =="; }
 ok()   { N_OK=$((N_OK + 1));     emit "  ok    $*"; }
 info() { N_INFO=$((N_INFO + 1)); emit "  info  $*"; }
@@ -604,5 +624,6 @@ if [ ${#ISSUES[@]} -gt 0 ]; then
   for n in "${ISSUES[@]}"; do emit "  $n"; done
 fi
 emit ""
-emit "Full report with the output of every command: $REPORT"
+publish_report
+if [ -n "$REPORT" ]; then echo "Full report with the output of every command: $REPORT"; else echo "The report could not be saved in your home folder."; fi
 [ "$N_FAIL" -eq 0 ]

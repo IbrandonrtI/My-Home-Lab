@@ -168,10 +168,67 @@ sample_widgets() {
   mountpoint -q "${HOMELAB_MAIN_POOL:-/mnt/storage}" 2>/dev/null && main_ok=1
   mountpoint -q "${HOMELAB_BACKUP_POOL:-/mnt/backup}" 2>/dev/null && backup_ok=1
   python3 - "$file" "$main_ok" "$backup_ok" <<'PY' || true
-import re, sys
+import os, re, stat, sys, tempfile
 
 path, main_ok, backup_ok = sys.argv[1], sys.argv[2] == "1", sys.argv[3] == "1"
-text = open(path).read()
+
+
+def pin_folder(folder):
+    """Open a folder one part at a time and return an open handle to it. A link at the last part is refused, and so is a link higher up unless root made it,
+    so a normal user who owns an upper folder cannot swap it for a link. The folder is then used as /proc/self/fd/<handle>, so nothing can be swapped in later."""
+    parts = [p for p in os.path.abspath(folder).split("/") if p]
+    fd = os.open("/", os.O_RDONLY | os.O_DIRECTORY)
+    hops = 0
+    try:
+        while parts:
+            name = parts.pop(0)
+            st = os.stat(name, dir_fd=fd, follow_symlinks=False)
+            if stat.S_ISLNK(st.st_mode):
+                hops += 1
+                if hops > 32 or st.st_uid != 0 or not parts:
+                    raise OSError("%s is a link" % folder)
+                target = os.readlink(name, dir_fd=fd)
+                if target.startswith("/"):
+                    os.close(fd)
+                    fd = os.open("/", os.O_RDONLY | os.O_DIRECTORY)
+                parts = [p for p in target.split("/") if p] + parts
+                continue
+            nxt = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+            os.close(fd)
+            fd = nxt
+        return fd
+    except BaseException:
+        os.close(fd)
+        raise
+
+
+def replace_file(handle, base, st, body):
+    """Swap in the new text through a temporary file that keeps the old owner and mode; a link at the file's name is never followed."""
+    folder = "/proc/self/fd/%d" % handle
+    fd, tmp = tempfile.mkstemp(prefix=".%s." % base, suffix=".tmp", dir=folder)
+    try:
+        with os.fdopen(fd, "w") as f:
+            f.write(body)
+            f.flush()
+            os.fchmod(f.fileno(), st.st_mode & 0o7777)
+            os.fchown(f.fileno(), st.st_uid, st.st_gid)
+        os.replace(tmp, os.path.join(folder, base))
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+handle = pin_folder(os.path.dirname(path))
+base = os.path.basename(path)
+pinned = os.path.join("/proc/self/fd/%d" % handle, base)
+file_stat = os.lstat(pinned)
+if not stat.S_ISREG(file_stat.st_mode):
+    sys.exit(0)
+with os.fdopen(os.open(pinned, os.O_RDONLY | os.O_NOFOLLOW)) as f:
+    text = f.read()
 lines = text.split("\n")
 blocks, cur = [], []          # the file is a list: every top-level "- " starts a new item
 for ln in lines:
@@ -249,7 +306,7 @@ def relabel(txt, path, label):
 new = relabel(new, "/mnt/storage", "Main Pool" if main_ok else "Connect Main Drive")
 new = relabel(new, "/mnt/backup", "Backup Pool" if backup_ok else "Connect Backup Drive")
 if new != text:
-    open(path, "w").write(new)
+    replace_file(handle, base, file_stat, new)
 PY
   return 0
 }

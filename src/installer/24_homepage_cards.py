@@ -189,10 +189,10 @@ def protect_key_files():
         chown(p, Ctx.uid, Ctx.gid)
     for p in key_files_open():
         if os.path.isdir(p) and not os.path.islink(p):
-            for dp, _dirs, files in os.walk(p):
-                chmod_nolink(dp, 0o700)
+            for _dp, _dirs, files, dfd in os.fwalk(p):  # through open folders, so a folder swapped for a link while this runs is never entered
+                chmod_nolink(".", 0o700, dir_fd=dfd)
                 for n in files:
-                    chmod_nolink(os.path.join(dp, n), 0o600)
+                    chmod_nolink(n, 0o600, dir_fd=dfd)
         else:
             chmod_nolink(p, 0o600)
 

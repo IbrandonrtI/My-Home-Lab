@@ -43,7 +43,7 @@ def remember_repo():
 
 # One-time actions of a first install. A lab that already runs has had them; running them again would upgrade every package or put the shipped layout back.
 ONE_TIME_STEPS = ("apt-update", "apt-upgrade", "homepage-tabs", "homepage-stats", "homepage-calendar", "homepage-customize", "homepage-clock", "speedtest-first")
-SALVAGE_ANSWERS = ("admin", "email", "lan", "tz", "tz_found", "adguard", "lvm_grow", "tailscale_token_asked")
+SALVAGE_ANSWERS = ("admin", "email", "lan", "tz", "tz_found", "adguard", "lvm_grow", "ts_token_asked")
 
 
 def salvage_state_text(body):
@@ -101,11 +101,10 @@ def read_back_answers():
     return found
 
 
-def rebuild_state_from_machine():
-    """`refresh --force-existing`: write a new state file for a lab that already runs. Answers come from the damaged copy when it is readable, then from what
-    is installed; only what cannot be found is asked. One-time first-install actions count as done, so the rebuild does not upgrade every package or put
-    the shipped dashboard layout back."""
-    a = State.data["answers"]
+def gather_rebuild_answers():
+    """The answers a rebuilt state file would hold, from the damaged copy when it is readable and then from what is installed, and the finished one-time actions
+    of that copy. Nothing is written."""
+    a = {}
     copy = newest_damaged_copy()
     salvaged = salvage_state_text(read_file(copy)) if copy else {"answers": {}, "ran": {}}
     for k, v in salvaged["answers"].items():
@@ -114,7 +113,23 @@ def rebuild_state_from_machine():
         if not a.get(k):
             a[k] = v
     if "adguard" not in a:
-        a["adguard"] = "yes" if "adguard" in containers_all() else "no"
+        names = containers_all()
+        a["adguard"] = "yes" if any(c in names for c in STACKS["adguard"][1]) else "no"
+    return a, salvaged
+
+
+def has_weather_widget():
+    return bool(re.search(r"openmeteo:", read_file(hp_path("widgets.yaml"))))
+
+
+def rebuild_state_from_machine():
+    """`refresh --force-existing`: write a new state file for a lab that already runs. Answers come from the damaged copy when it is readable, then from what
+    is installed; only what cannot be found is asked. One-time first-install actions count as done, so the rebuild does not upgrade every package or put
+    the shipped dashboard layout back."""
+    a = State.data["answers"]
+    found, salvaged = gather_rebuild_answers()
+    for k, v in found.items():
+        a.setdefault(k, v)
     missing = [k for k in ("admin", "email") if not a.get(k)]
     if missing:
         if not interactive():
@@ -129,15 +144,33 @@ def rebuild_state_from_machine():
             while not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", a["email"]):
                 a["email"] = ask("That is not a valid email address. Enter it again", "")
     Ctx.detect()
+    a.setdefault("lan", Ctx.lan)
+    if Ctx.tz:
+        a.setdefault("tz", Ctx.tz)
     remember_repo()
     stamp = time.strftime("%F %T")
     for k, v in salvaged["ran"].items():
         State.data["ran"].setdefault(k, v)
     for k in ONE_TIME_STEPS:
         State.data["ran"].setdefault(k, stamp)
+    if not State.data.get("weather_set") and has_weather_widget():
+        w = a.get("weather")
+        State.data["weather_set"] = w["name"] if isinstance(w, dict) and w.get("name") else "kept"
     State.mark("install-started")
     kept = [k for k in a if a.get(k)]
     say("Answers kept or read back: %s." % (", ".join(sorted(kept)) or "none"))
+
+
+def preview_rebuild():
+    """The dry run of `refresh --force-existing`: what the rebuild would keep, ask for and mark as done."""
+    found, salvaged = gather_rebuild_answers()
+    out("")
+    say("It would keep or read back these answers: %s." % (", ".join(sorted(k for k in found if found.get(k))) or "none"))
+    still = [("admin name" if k == "admin" else "email address") for k in ("admin", "email") if not found.get(k)]
+    if still:
+        say("It would ask for: %s." % " and ".join(still))
+    say("It would count these first-install actions as done, so they are not repeated: %s." % ", ".join(ONE_TIME_STEPS))
+    say("Then it would check every step again and repair what is missing. Nothing was changed. The step count is only known after a real run.")
 
 
 def damaged_state_seen():
@@ -592,6 +625,24 @@ def cmd_verify():
     return 1 if system_check() else 0
 
 
+def sync_shown_count(res):
+    """Make the count on the login screen and the dashboard equal to the list that was just shown. The login screen's file is written only when the numbers
+    changed (or removed when everything is done), so reading the list again and again changes nothing."""
+    if Opt.dry or State.readonly:
+        return
+    done, total = counts(res)
+    try:
+        if done >= total:
+            if os.path.exists(PROGRESS_FILE):
+                os.remove(PROGRESS_FILE)
+        elif read_file(PROGRESS_FILE).strip().split("|")[:2] != [str(done), str(total)]:
+            os.makedirs(PROGRESS_DIR, exist_ok=True)
+            write_file(PROGRESS_FILE, "%d|%d|%d\n" % (done, total, int(time.time())), 0o644)
+    except OSError:
+        pass
+    sync_dashboard_status(res)
+
+
 def cmd_checklist():
     load_all()
     res = evaluate()
@@ -601,6 +652,7 @@ def cmd_checklist():
         say("The installer's state file was damaged, so it only reads this machine for now and changes nothing. The step counts below can be wrong until a new state file is built from what is installed: sudo homelab-setup refresh --force-existing")
     show_checklist(res, show_all=Opt.all)
     next_step_section(res)
+    sync_shown_count(res)  # so that `homelab` and the dashboard show the same count as this list
 
 
 DURING_INSTALL = ("tailscale-login", "tailscale-https")
@@ -860,9 +912,11 @@ def cmd_refresh():
             raise Abort("The downloaded copy of the lab was not found (looked in %s and in the home folder of %s). Run the command again and name its folder:\n"
                         "  sudo homelab-setup refresh --force-existing --repo ~/My-Home-Lab-" % (Ctx.repo, Ctx.user))
         say("Building a new setup state file from what is installed.")
-        if not Opt.dry:
-            rebuild_state_from_machine()
-            Mode.existing = False
+        if Opt.dry:
+            preview_rebuild()
+            return
+        rebuild_state_from_machine()
+        Mode.existing = False
     elif not State.exists():
         raise Abort("The installer has not run on this machine yet. Run `sudo homelab-setup install`.")
     refuse_while_finishing()

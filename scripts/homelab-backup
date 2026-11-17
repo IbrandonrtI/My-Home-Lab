@@ -99,6 +99,7 @@ VDRIVES=""
 ERRORS=0
 NOTES=""
 DEST=""
+DEST_SHOWN=""
 
 log() { printf '%s %s\n' "$(date '+%F %T')" "$*" >>"$LOGFILE"; }
 fail() { ERRORS=$((ERRORS + 1)); NOTES="$NOTES$*; "; log "ERROR: $*"; }
@@ -122,7 +123,7 @@ finish() {
   fi
   if [ -n "$DEST" ] && [ -d "$DEST" ]; then size=$(timeout 300 du -sb "$DEST" 2>/dev/null | awk '{print $1}'); fi
   mkdir -p "$(dirname "$STATUS_FILE")"
-  printf '%s|%s|%s|%s|%s\n' "$(date '+%F %H:%M')" "$result" "${DEST:-none}" "$secs" "$size" >"$STATUS_FILE"
+  printf '%s|%s|%s|%s|%s\n' "$(date '+%F %H:%M')" "$result" "${DEST_SHOWN:-${DEST:-none}}" "$secs" "$size" >"$STATUS_FILE"
   log "finished: $result in ${secs}s"
   if [ -t 2 ]; then
     if [ "$ERRORS" -eq 0 ]; then echo "Backup finished: OK (${secs}s)." >&2
@@ -370,9 +371,21 @@ trap 'backup_drive_timers 120' EXIT
 if mountpoint -q "$DEST_POOL"; then
   DEST="$DEST_POOL"
 elif [ -n "$DEST_FALLBACK" ]; then
+  # The fallback folder sits inside a folder that belongs to a normal user, who could swap it for a link or a folder of their own while this runs as root.
+  # It is opened once, checked on the open handle (a real folder, owned by root, and the same folder the name leads to), and used only through that handle.
   mkdir -p "$DEST_FALLBACK"
-  DEST="$DEST_FALLBACK"
-  log "backup pool not mounted, using the fallback folder $DEST"
+  if { exec {PIN}<"$DEST_FALLBACK"; } 2>/dev/null \
+     && [ "$(stat -L -c '%u %F' "/proc/self/fd/$PIN" 2>/dev/null)" = "0 directory" ] \
+     && [ "$(stat -c '%d:%i' -- "$DEST_FALLBACK" 2>/dev/null)" = "$(stat -L -c '%d:%i' "/proc/self/fd/$PIN" 2>/dev/null)" ]; then
+    DEST="/proc/self/fd/$PIN"
+    DEST_SHOWN="$DEST_FALLBACK"
+    log "backup pool not mounted, using the fallback folder $DEST_SHOWN"
+  else
+    DEST_SHOWN="$DEST_FALLBACK"
+    DEST=""
+    fail "the fallback folder $DEST_FALLBACK is not a real folder owned by root (a link or another owner), so nothing was copied"
+    finish
+  fi
 else
   fail "backup storage ($DEST_POOL) is not mounted and no fallback is set"
   finish
@@ -398,13 +411,13 @@ floor_gb=$MIN_FREE_GB
 [ "$floor_gb" -ge 1 ] || floor_gb=1
 if [ "$MODE" = backup ] || [ "$REPAIR" = 1 ]; then
   if [ "$free_gb" -lt "$floor_gb" ]; then
-    fail "only ${free_gb} GB free at $DEST (need at least $floor_gb)"
+    fail "only ${free_gb} GB free at ${DEST_SHOWN:-$DEST} (need at least $floor_gb)"
     finish
   fi
   if [ ! -d "$DEST/main" ]; then
     used_gb=$(( $(df -B1 --output=used "$SRC" | tail -1 | tr -d ' ') / 1073741824 ))
     if [ "$free_gb" -lt $(( used_gb + floor_gb )) ]; then
-      fail "first backup needs about ${used_gb} GB plus $floor_gb GB spare, but only ${free_gb} GB are free at $DEST"
+      fail "first backup needs about ${used_gb} GB plus $floor_gb GB spare, but only ${free_gb} GB are free at ${DEST_SHOWN:-$DEST}"
       finish
     fi
   fi

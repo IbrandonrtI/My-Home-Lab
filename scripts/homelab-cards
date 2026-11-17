@@ -31,6 +31,7 @@ import os
 import tempfile
 import pwd
 import re
+import stat
 import shutil
 import subprocess
 import sys
@@ -190,6 +191,35 @@ def drop_old_temp_files(folder, base, older=3600):
         pass
 
 
+def pin_folder(folder):
+    """Open a folder one part at a time and return an open handle to it. A link at the last part is refused, and so is a link higher up unless root made it,
+    so a normal user who owns an upper folder cannot swap it for a link. Use the folder as /proc/self/fd/<handle> afterwards, so nothing can be swapped in later."""
+    parts = [p for p in os.path.abspath(folder).split("/") if p]
+    fd = os.open("/", os.O_RDONLY | os.O_DIRECTORY)
+    hops = 0
+    try:
+        while parts:
+            name = parts.pop(0)
+            st = os.stat(name, dir_fd=fd, follow_symlinks=False)
+            if stat.S_ISLNK(st.st_mode):
+                hops += 1
+                if hops > 32 or st.st_uid != 0 or not parts:
+                    raise OSError("%s is a link, so nothing was written there" % folder)
+                target = os.readlink(name, dir_fd=fd)
+                if target.startswith("/"):
+                    os.close(fd)
+                    fd = os.open("/", os.O_RDONLY | os.O_DIRECTORY)
+                parts = [p for p in target.split("/") if p] + parts
+                continue
+            nxt = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+            os.close(fd)
+            fd = nxt
+        return fd
+    except BaseException:
+        os.close(fd)
+        raise
+
+
 def write_text(path, text, like=None):
     like = like or path
     try:
@@ -200,40 +230,51 @@ def write_text(path, text, like=None):
         owner = st or os.stat(os.path.dirname(path) or ".")
     except OSError:
         owner = None
-    folder = os.path.dirname(path) or "."
-    if os.path.islink(folder):
-        raise OSError("%s is a link, so nothing was written there" % folder)
-    fd, tmp = tempfile.mkstemp(prefix=".%s." % os.path.basename(path), suffix=".tmp", dir=folder)
+    handle = pin_folder(os.path.dirname(path) or ".")
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as f:
-            f.write(text)
-            f.flush()
-            os.fchmod(f.fileno(), (st.st_mode & 0o777) if st else 0o644)
-            if owner:
-                try:
-                    os.fchown(f.fileno(), owner.st_uid, owner.st_gid)
-                except OSError:
-                    pass
-        os.replace(tmp, path)
-        drop_old_temp_files(folder, os.path.basename(path))
-    except BaseException:
+        folder = "/proc/self/fd/%d" % handle
+        fd, tmp = tempfile.mkstemp(prefix=".%s." % os.path.basename(path), suffix=".tmp", dir=folder)
         try:
-            os.unlink(tmp)
-        except OSError:
-            pass
-        raise
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(text)
+                f.flush()
+                os.fchmod(f.fileno(), (st.st_mode & 0o777) if st else 0o644)
+                if owner:
+                    try:
+                        os.fchown(f.fileno(), owner.st_uid, owner.st_gid)
+                    except OSError:
+                        pass
+            os.replace(tmp, os.path.join(folder, os.path.basename(path)))
+            drop_old_temp_files(folder, os.path.basename(path))
+        except BaseException:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+            raise
+    finally:
+        os.close(handle)
 
 
 def backup_once(path, suffix=".before-cards"):
-    if os.path.exists(path) and not os.path.lexists(path + suffix):
-        st = os.stat(path)
-        # new file only (a link planted at the copy's name is never followed); mode and times are set on the open file
-        fd = os.open(path + suffix, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
-        with open(path, "rb") as src, os.fdopen(fd, "wb") as dst:
-            shutil.copyfileobj(src, dst)
+    handle = pin_folder(os.path.dirname(path) or ".")
+    try:
+        src = os.path.join("/proc/self/fd/%d" % handle, os.path.basename(path))
+        try:
+            st = os.lstat(src)
+        except OSError:
+            return
+        if not stat.S_ISREG(st.st_mode) or os.path.lexists(src + suffix):
+            return
+        # new file only (a link planted at either name is never followed); mode and times are set on the open file
+        fd = os.open(src + suffix, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        with os.fdopen(os.open(src, os.O_RDONLY | os.O_NOFOLLOW), "rb") as source, os.fdopen(fd, "wb") as dst:
+            shutil.copyfileobj(source, dst)
             dst.flush()
             os.fchmod(dst.fileno(), st.st_mode & 0o777)
             os.utime(dst.fileno(), ns=(st.st_atime_ns, st.st_mtime_ns))
+    finally:
+        os.close(handle)
 
 
 def keep_damaged_copy(path):

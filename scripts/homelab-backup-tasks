@@ -5,6 +5,7 @@ import fcntl
 import glob
 import json
 import os
+import pwd
 import re
 import shlex
 import shutil
@@ -1202,6 +1203,23 @@ def check_restore_path(src_root, into):
         raise Bad("That place leads outside the folder being restored, so nothing was restored.")
 
 
+def lab_owner():
+    """The user and group of the person who runs the lab: the owner of the dashboard folder, else the first normal user. None when neither is found."""
+    state = os.environ.get("HOMELAB_STATE_DIR", "/var/lib/homelab")
+    try:
+        with open(os.path.join(state, "homepage-dir"), encoding="utf-8") as f:
+            st = os.stat(f.read().strip())
+        if st.st_uid != 0:
+            return st.st_uid, st.st_gid
+    except OSError:
+        pass
+    try:
+        pw = pwd.getpwuid(1000)
+        return pw.pw_uid, pw.pw_gid
+    except KeyError:
+        return None
+
+
 def make_restore_folders(src_root, base, into):
     """Create the folders down to `into` (below src_root) so that they belong to the people who own the originals. A new folder gets the owner and mode of the
     folder at the same place in the original tree when that exists (`base` is where the restored tree starts), else those of the folder above it. Without this
@@ -1215,7 +1233,7 @@ def make_restore_folders(src_root, base, into):
         if os.path.lexists(cur):
             continue
         model = None
-        if base != src_root and (cur == base or cur.startswith(base + "/")):
+        if base != src_root and cur.startswith(base + "/"):
             model = os.path.join(src_root, os.path.relpath(cur, base))
         try:
             st = os.lstat(model) if model else None
@@ -1223,11 +1241,17 @@ def make_restore_folders(src_root, base, into):
                 st = os.stat(os.path.dirname(cur))
         except OSError:
             st = os.stat(os.path.dirname(cur))
+        uid, gid, mode = st.st_uid, st.st_gid, st.st_mode & 0o2777
+        if uid == 0 and not (model and os.path.isdir(model)):
+            # no original here (_restored and its dated folders) and the folder above is root's: these folders are made for the person to look through and tidy up
+            mine = lab_owner()
+            if mine:
+                uid, gid, mode = mine[0], mine[1], 0o755
         os.mkdir(cur)
         fd = os.open(cur, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
         try:
-            os.fchown(fd, st.st_uid, st.st_gid)
-            os.fchmod(fd, st.st_mode & 0o2777)
+            os.fchown(fd, uid, gid)
+            os.fchmod(fd, mode)
         finally:
             os.close(fd)
 

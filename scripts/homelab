@@ -1459,7 +1459,7 @@ last_backup_gone() {
 }
 
 backup_size_line() {
-  local stamp result dest _s bytes m h dom mon dow _e text next=""
+  local stamp result dest _s bytes m h dom mon dow _e text next="" neutral=0
   [ -r "$LAST_RUN_FILE" ] || return 0
   IFS="|" read -r stamp result dest _s bytes <"$LAST_RUN_FILE"
   if [ -r "$STATE_DIR/schedule" ] && [ -s "$STATE_DIR/schedule" ]; then
@@ -1469,14 +1469,14 @@ backup_size_line() {
   if last_backup_gone; then
     text="shows after the next backup run"
   elif [ -n "${result:-}" ] && [ "$(printf '%s' "$result" | tr '[:lower:]' '[:upper:]')" != OK ]; then
-    text="no size (the last run failed)"
+    text="no size (the last run failed)"; neutral=1
   elif [[ "${bytes:-}" =~ ^[0-9]+$ ]]; then
     text="$(human_bytes "$bytes") in the backup"
   else
     text="size shows after the next backup run"
   fi
   [ -n "$next" ] && text="$text, $next"
-  ok "Backup size" "$text"
+  if [ "$neutral" = 1 ]; then row "" "-" "Backup size" "$text" ""; else ok "Backup size" "$text"; fi
 }
 
 drive_shown_name() {
