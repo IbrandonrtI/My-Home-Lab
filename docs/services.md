@@ -1,0 +1,183 @@
+# The services
+
+This is a walk through everything the lab runs, one service at a time: what it's, what I use it for and where to find it. Everything except Tailscale runs in Docker, and the Customize panel sits next to it as a service of its own. Addresses use `pc.your-tailnet.ts.net` in place of your Tailscale name. Tailscale is the only way to reach any of them.
+
+![How devices reach the lab](images/architecture.svg)
+
+## Contents
+
+- [Ports and addresses](#ports-and-addresses)
+- [Network and access](#network-and-access)
+- [Managing and watching the server](#managing-and-watching-the-server)
+- [Files and photos](#files-and-photos)
+- [Music](#music)
+- [Where the data lives](#where-the-data-lives)
+- [What runs by itself](#what-runs-by-itself)
+
+## Ports and addresses
+
+| Service | Port on the machine | Tailscale address |
+| :--- | :--- | :--- |
+| Homepage | 3001 | `https://pc.your-tailnet.ts.net:1000` |
+| Portainer | 9000 and 9443 | `https://pc.your-tailnet.ts.net:1001` |
+| Immich | 2283 | `https://pc.your-tailnet.ts.net:1002` |
+| Beszel | 8090 | `https://pc.your-tailnet.ts.net:1003` |
+| AdGuard Home | 3000 (web) and 53 (DNS) | `https://pc.your-tailnet.ts.net:1004` |
+| Nextcloud | 8082 | `https://pc.your-tailnet.ts.net:1005` |
+| FileBrowser | 8081 | `https://pc.your-tailnet.ts.net:1006` |
+| Speedtest Tracker | 8088 | `https://pc.your-tailnet.ts.net:1007` |
+| Netdata | 19999 | `https://pc.your-tailnet.ts.net:1008` |
+| Customize panel | 8300 | `https://pc.your-tailnet.ts.net:1100` |
+| Navidrome | 4533 | the local network, and Tailscale on its own port |
+| AudioMuse-AI | 8100 | the local network, and Tailscale on its own port |
+| NaviList | 8200 | the local network, and Tailscale on its own port |
+| Downtify | 8000 | the local network, and Tailscale on its own port |
+| MeTube | 8185 | the local network, and Tailscale on its own port |
+
+Each stack's Compose file is in [`stacks/`](../stacks/) and lists its ports and volumes. The dashboard is covered in the [dashboard guide](homepage.md).
+
+**A service you already run.** If one of these services is already running when the installer starts (it looks for the container name or image, for example your own Immich, Nextcloud or Navidrome), the installer leaves it as it's. It deploys no stack for it, creates no login in it and writes no widget key. The service keeps its own port, and its dashboard card and Tailscale address point at it. The card is a plain link without live numbers. AudioMuse-AI and NaviList aren't installed when Navidrome is yours, and the Beszel agent isn't installed when Beszel is yours, because they only work with the copy the installer sets up. The uninstaller keeps these containers, their images and their data.
+
+## Network and access
+
+### Tailscale
+
+A private network between my devices. It's on the server, my PC and my phone, and it's the only way in. The server has no public address and no forwarded ports. Tailscale Serve gives each service its own HTTPS address (ports 1000 to 1008, plus 1100 for the panel), so every address has a valid certificate and the browser never complains. You switch HTTPS on once, in the Tailscale admin page.
+
+Partway through the install you're asked once for a Tailscale access token, after the machine has joined your network. The token lets the Tailscale card on the dashboard fill in. Press Enter to skip it.
+
+![The Tailscale machines page with the server and the other devices](images/Tailscale.png)
+
+### AdGuard Home
+
+DNS filtering for the whole house. Any device that uses the server as its DNS server gets ads, trackers and known bad domains blocked, with nothing installed on the device itself. The dashboard card shows how many queries it has blocked. The web page is on port 3000 and DNS is on port 53. AdGuard Home runs in host networking mode, so the installer frees port 53 from the built-in resolver first.
+
+The installer asks whether you want AdGuard Home. If you said no, `sudo homelab-setup adguard` adds it later.
+
+![The AdGuard Home dashboard with its query and block counts](images/Adguard-home.png)
+
+### Speedtest Tracker
+
+Runs a speed test on a schedule and keeps the history. I use it to see whether the speed drops at certain times of day, and whether the provider gives me what I pay for.
+
+![Speedtest Tracker with its download, upload and ping results](images/Speedtest-Tracker.png)
+
+## Managing and watching the server
+
+### Portainer
+
+The control panel for Docker. I deploy and update every service as a stack from here, and it shows logs, restarts and memory use. The stacks are built from the Compose files in this repository.
+
+![The Portainer home page with the local environment](images/Portainer.png)
+
+### Beszel
+
+Simple server health. A small hub and an agent on the machine draw graphs of CPU, memory, disk and network over time, plus the temperature. It's lighter than Netdata, so it's what I check for a quick look.
+
+![The Beszel hub with the server's CPU, memory and temperature](images/Beszel.png)
+
+### Netdata
+
+Live metrics, second by second. I open it when the server feels slow. It shows CPU, memory, disks, network and each container, so you can see what's keeping the machine busy.
+
+![The Netdata dashboard with CPU, disk and network gauges](images/Netdata.png)
+
+## Files and photos
+
+### Immich
+
+Phone photo backup, a lot like Google Photos. The Immich app on my phone sends every photo and video to the server over Tailscale, and you can browse them on a timeline, in albums and on a map. Photos are stored in the Main pool at `/mnt/storage/immich`. Immich runs four containers: the server, its machine learning, a database and a cache.
+
+I switched off Immich's text recognition (OCR). On a small machine with a spinning drive it kept the drive busy for ages after the first upload. To turn it back on, go to Administration, Settings, Machine Learning in Immich.
+
+Photos can also be sent from the dashboard, using the Upload card in the Customize panel.
+
+![The Immich photo timeline](images/Immich.png)
+
+### Nextcloud
+
+A private cloud, like Google Drive. It keeps documents and files in sync between a PC and a phone. It runs four containers: the app, a database, a cache and one for background jobs. Its files are stored in the Main pool at `/mnt/storage/nextcloud`. Photos and videos from the phone go through Immich, so photo upload is switched off in the Nextcloud app.
+
+![The Nextcloud home screen](images/Nextcloud.png)
+
+**Connecting a device.** Install the Nextcloud app from [nextcloud.com/install](https://nextcloud.com/install/), turn on Tailscale on that device and sign in with the server address `https://pc.your-tailnet.ts.net:1005`. Keep the `https://` and the `:1005`, and add nothing after it. On a computer, choose a folder to sync, such as Documents. If the app can't connect, check first that Tailscale is on and signed in to the same account.
+
+Sync isn't a backup. If a file is deleted on one device, the deletion is copied to the others. The backups are what protect the files.
+
+I've tested the Windows app, plus signing in and browsing in the iPhone app. Other platforms should work the way Nextcloud describes, but I haven't tried them.
+
+![The Nextcloud desktop app with the synced folder](images/nextcloud-sync.png)
+
+### FileBrowser
+
+A web file manager for the backups. It shows one folder, `Backup-Pool`, with a folder inside for each backup drive, so you can browse, download or edit copies from any device. The FileBrowser project was archived in 2026 and gets no more updates, which is why it stays behind Tailscale.
+
+![FileBrowser showing the backup folders](images/Filebrowser.png)
+
+## Music
+
+These services work as a chain. Songs land in one music folder, Navidrome plays them, and NaviList and AudioMuse-AI make it smarter. You can also add songs from the Upload card.
+
+### Navidrome
+
+The music server. It plays everything in the music folder on a phone or in a browser, with a Spotify-like theme by default. Any app that speaks the Subsonic protocol works with it too. The music folder is mounted read-only, so Navidrome can never change or delete a song. It rescans the folder every hour. A song deleted from the folder shows grayed out until it's removed on the Missing Files page in Navidrome's settings.
+
+The dashboard has a Navidrome card with the whole player inside it.
+
+### NaviList
+
+Makes playlists in Navidrome from listening history on ListenBrainz and Last.fm, such as Weekly Jams, Weekly Exploration, Daily Jams and the Last.fm charts. It only adds songs that are already in the library and never downloads anything. It checks for new data on its own.
+
+![NaviList, the playlist manager for Navidrome](images/navilist.png)
+
+### AudioMuse-AI
+
+Analyzes every song once and remembers how it sounds, so Navidrome can suggest songs that sound alike (Instant Mix). It's the one heavy music service. On a small machine the analysis can take hours, so it has memory and CPU limits and can't starve the other apps. It runs three containers: the web page, the worker and a database.
+
+![AudioMuse-AI analyzing songs](images/audiomuse.png)
+
+Last.fm, ListenBrainz, AudioMuse-AI and NaviList are optional. Each has a step-by-step guide in [Music extras](music-extras.md).
+
+### Downtify
+
+Saves songs into the music folder. You paste a link, and the song lands in the same folder Navidrome plays from. The Stats tab on the dashboard counts the songs and lists the newest ones.
+
+Downtify and MeTube are one Portainer stack called `music-downloader` ([`stacks/music-downloader.yaml`](../stacks/music-downloader.yaml)), so Portainer can stop, edit and update them like the other services. If they were started by hand before, Portainer says "created outside of Portainer", and `sudo homelab-setup refresh` moves them into the stack. Songs, videos and Downtify's own data are kept.
+
+Downtify has its own sign-in. A new Downtify starts with one account, `admin` with the password `downtify`. The installer renames that account to the name you chose and gives it the shared admin password, so the default login stops working. Until that's done, `homelab` and the bell show a warning. A Downtify whose password was already changed by hand, or whose sign-in is switched off, is never touched. Names can use letters, digits, dots, dashes and underscores (3 to 32 characters).
+
+![The Downtify page](images/downtify.png)
+
+### MeTube
+
+Downloads videos from a link, and a small web page shows the queue. Everything lands in the `videos` folder on the Main pool. It's the other half of the `music-downloader` stack.
+
+![The MeTube page](images/metube.png)
+
+## Where the data lives
+
+| What | Where |
+| :--- | :--- |
+| Photos, videos, Nextcloud files and music | The Main pool, at `/mnt/storage` |
+| Databases and app settings | The boot drive, in the home folder |
+| The backup | The Backup pool, at `/mnt/backup`, once a backup drive is connected |
+
+![Where the data lives: the boot drive, the Main pool and the Backup pool](images/data-layout.svg)
+
+The Main pool uses mergerfs, so several drives show up as one folder. Drives are mounted by their ID, so they come back the same after a reboot. With no drive in Main, or while its drive is missing, the boot drive is the storage: `/mnt/storage` is a plain folder there and the services keep running. A small start-up check (`sudo drives guard`) makes sure of that before Docker starts. When a drive is in Main, the drive is the storage, and files the services saved on the boot drive in the meantime are copied onto it (see [When the Main drive is missing](maintenance.md#when-the-main-drive-is-missing)).
+
+The nightly backup copies the Main pool and the lab's settings. Deleted or changed files are kept as older versions for 30 days by default, and the Nextcloud database is dumped every night (Immich makes its own database backups). More backups, to another computer or to the cloud, can be set up in the Backups card of the [Customize panel](homepage.md#drives).
+
+`sudo drives status` shows the pools and the health of every drive. `sudo drives` is a menu for connecting, moving and replacing drives, and it asks before it erases anything.
+
+## What runs by itself
+
+| How often | What |
+| :--- | :--- |
+| Every 5 minutes | Makes a card for any new service, checks whether a backup task is due and refreshes the notification bell |
+| Every 15 minutes | Reads the drives and the services to fill the Stats tab |
+| Every hour | Checks whether the weekly look for newer service versions is due |
+| Every night | The backup (at 6:00 server time) and the calendar update |
+
+
+
