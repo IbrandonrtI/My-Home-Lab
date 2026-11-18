@@ -52,7 +52,7 @@ class OsSupported(Step):
         return Ctx.os_name
 
     def help(self):
-        return ("homelab-setup supports Ubuntu 22.04/24.04, Linux Mint 21/22 and Debian 12/13. Detected: %s." % Ctx.os_name)
+        return ("homelab-setup supports Ubuntu 22.04, 24.04 and 26.04, Linux Mint 21, 22 and 23, and Debian 12 and 13. Detected: %s." % Ctx.os_name)
 
 
 @step
