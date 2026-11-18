@@ -2,7 +2,7 @@
 
 [![checks](https://github.com/IbrandonrtI/My-Home-Lab-/actions/workflows/checks.yml/badge.svg)](https://github.com/IbrandonrtI/My-Home-Lab-/actions/workflows/checks.yml)
 
-This is the home server I run, plus the installer and tools I use to build it and look after it. It blocks ads for the whole house, backs up my phone's photos, stores files, plays music and keeps an eye on its own health. It all ends up on one dashboard that works on a phone or a PC. Nothing is open to the internet. I get to everything through Tailscale. This used Claude to implement and testing features. 
+This is the home server I run, plus the installer and tools I use to build it and look after it. It blocks ads for the whole house, backs up my phone's photos, stores files, plays music and keeps an eye on its own health. It all ends up on one dashboard that works on a phone or a PC. Nothing is open to the internet. I get to everything through Tailscale. This Claude in implementing and testing features.
 
 ![The Home tab of the dashboard on a desktop screen](docs/images/homepage-home.png)
 
@@ -82,8 +82,8 @@ A backup runs every night at 6:00 server time. It copies the Main pool and the l
 ```bash
 sudo apt update && sudo apt upgrade && sudo apt install -y git
 git clone https://github.com/IbrandonrtI/My-Home-Lab-.git
-cd My-Home-Lab-     
-sudo bash setup.sh install               
+cd My-Home-Lab-
+sudo bash setup.sh install
 ```
 
 A few things to know:
@@ -154,7 +154,7 @@ The tests aren't in this repository. I run them on my own computer against a sim
 - Each integration has its own key, and the container image versions are pinned.
 - Portainer and Homepage both mount the Docker socket, so anyone who gets into them can control Docker. Both stay behind Tailscale, with strong passwords.
 - Nothing on the boot drive or in the backups is encrypted. For a machine at home I'm fine with that.
-- FileBrowser's project was archived and gets no more security fixes, so it's reachable only over Tailscale. 
+- FileBrowser's project was archived and gets no more security fixes, so it's reachable only over Tailscale.
 
 
 
