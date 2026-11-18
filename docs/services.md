@@ -1,8 +1,6 @@
 # The services
 
-This is a walk through everything the lab runs, one service at a time: what it's, what I use it for and where to find it. Everything except Tailscale runs in Docker, and the Customize panel sits next to it as a service of its own. Addresses use `pc.your-tailnet.ts.net` in place of your Tailscale name. Tailscale is the only way to reach any of them.
-
-![How devices reach the lab](images/architecture.svg)
+This is a walk through everything the lab runs, one service at a time: what it is, what I use it for and where to find it. Everything except Tailscale runs in Docker, and the Customize panel sits next to it as a service of its own. Addresses use `pc.your-tailnet.ts.net` in place of your Tailscale name. Tailscale is the only way to reach any of them.
 
 ## Contents
 
@@ -36,7 +34,7 @@ This is a walk through everything the lab runs, one service at a time: what it's
 
 Each stack's Compose file is in [`stacks/`](../stacks/) and lists its ports and volumes. The dashboard is covered in the [dashboard guide](homepage.md).
 
-**A service you already run.** If one of these services is already running when the installer starts (it looks for the container name or image, for example your own Immich, Nextcloud or Navidrome), the installer leaves it as it's. It deploys no stack for it, creates no login in it and writes no widget key. The service keeps its own port, and its dashboard card and Tailscale address point at it. The card is a plain link without live numbers. AudioMuse-AI and NaviList aren't installed when Navidrome is yours, and the Beszel agent isn't installed when Beszel is yours, because they only work with the copy the installer sets up. The uninstaller keeps these containers, their images and their data.
+**A service you already run.** If one of these services is already running when the installer starts (it looks for the container name or image, for example your own Immich, Nextcloud or Navidrome), the installer leaves it as it is. It deploys no stack for it, creates no login in it and writes no widget key. The service keeps its own port, and its dashboard card and Tailscale address point at it. The card is a plain link without live numbers. AudioMuse-AI and NaviList aren't installed when Navidrome is yours, and the Beszel agent isn't installed when Beszel is yours, because they only work with the copy the installer sets up. The uninstaller keeps these containers, their images and their data.
 
 ## Network and access
 
@@ -162,8 +160,6 @@ Downloads videos from a link, and a small web page shows the queue. Everything l
 | Databases and app settings | The boot drive, in the home folder |
 | The backup | The Backup pool, at `/mnt/backup`, once a backup drive is connected |
 
-![Where the data lives: the boot drive, the Main pool and the Backup pool](images/data-layout.svg)
-
 The Main pool uses mergerfs, so several drives show up as one folder. Drives are mounted by their ID, so they come back the same after a reboot. With no drive in Main, or while its drive is missing, the boot drive is the storage: `/mnt/storage` is a plain folder there and the services keep running. A small start-up check (`sudo drives guard`) makes sure of that before Docker starts. When a drive is in Main, the drive is the storage, and files the services saved on the boot drive in the meantime are copied onto it (see [When the Main drive is missing](maintenance.md#when-the-main-drive-is-missing)).
 
 The nightly backup copies the Main pool and the lab's settings. Deleted or changed files are kept as older versions for 30 days by default, and the Nextcloud database is dumped every night (Immich makes its own database backups). More backups, to another computer or to the cloud, can be set up in the Backups card of the [Customize panel](homepage.md#drives).
@@ -178,6 +174,3 @@ The nightly backup copies the Main pool and the lab's settings. Deleted or chang
 | Every 15 minutes | Reads the drives and the services to fill the Stats tab |
 | Every hour | Checks whether the weekly look for newer service versions is due |
 | Every night | The backup (at 6:00 server time) and the calendar update |
-
-
-

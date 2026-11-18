@@ -35,9 +35,10 @@ Last.fm knows which songs and artists people play together. With a free Last.fm 
 1. Open [last.fm/api/account/create](https://www.last.fm/api/account/create). Enter an application name (for example `Home Lab`) and a short description. The other fields can stay empty.
 1. The next page shows an **API key** and a **Shared secret**. Keep that page open.
 1. On the server, run:
-```bash
+
+   ```bash
    sudo homelab-setup lastfm
-```
+   ```
 
 1. Paste the API key, then the shared secret. Each is 32 letters and digits. The installer checks that they look right, saves them and deploys Navidrome again with them, which takes about a minute.
 1. In Navidrome, open the menu of a song and choose **Instant Mix**.
@@ -71,9 +72,10 @@ Requirements:
 Steps:
 
 1. On the server, run:
-```bash
+
+   ```bash
    sudo homelab-setup audiomuse
-```
+   ```
 
 1. Read what it says it will do (three containers, a small Navidrome login for it, a plugin for Navidrome, and a worker limited in memory and processor cores) and answer `y`. The first download is a few GB, and Navidrome restarts once.
 1. When it says AudioMuse-AI is set up, open its page (`http://SERVER-ADDRESS:8100`) and log in with the admin name. The password is `AUDIOMUSE_PASSWORD` in `sudo homelab-setup secrets`.
@@ -103,9 +105,10 @@ What you need first:
 Steps:
 
 1. On the server, run:
-```bash
+
+   ```bash
    sudo homelab-setup navilist
-```
+   ```
 
 1. Read what it says it will do (one small container and a small Navidrome login for it) and answer `y`.
 1. Type your ListenBrainz user name, then paste the token. Press Enter on a question to keep what is already saved. If a Last.fm key is saved, it also asks for your Last.fm user name, and Enter skips the Last.fm charts.
@@ -134,6 +137,3 @@ Looking after it:
 - Every extra has a `remove` word (for ListenBrainz it's a switch in Navidrome), and removing one never deletes any songs.
 
 More about the music services is in [Services](services.md#music). General problems are in [Troubleshooting](troubleshooting.md).
-
-
-

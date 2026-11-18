@@ -1,6 +1,6 @@
 # The dashboard
 
-The dashboard is the IU of the lab. It's a [Homepage](https://gethomepage.dev) page with my own styling on top: frosted-glass cards, a status dot on every card and live numbers from the services. It fits anything from a phone to a big monitor. The installer sets it all up, and you can change the look and the layout from the Customize panel.
+The dashboard is the UI of the lab. It's a [Homepage](https://gethomepage.dev) page with my own styling on top: frosted-glass cards, a status dot on every card and live numbers from the services. It fits anything from a phone to a big monitor. The installer sets it all up, and you can change the look and the layout from the Customize panel.
 
 ## Contents
 
@@ -121,7 +121,7 @@ Everything about how the dashboard looks.
 - Shape and colors: sliders for rounded corners, glass clarity and blur, with a live preview, and one color for everything or a different color for a single card, tile, bookmark or group label.
 - Names and Logo: your own names for the server and the drives, and a logo at the top left.
 - Time Zone and City: the install finds both from your internet connection. This card changes the clock's time zone and the weather city.
-- Background Picture: pick a picture and set how blurry, bright and colorful it's. The installer stores all eight theme pictures before Homepage starts, so picking a theme doesn't restart the dashboard. If one is missing, its first use downloads it and restarts Homepage for a few seconds. `sudo homelab-setup refresh` stores them all.
+- Background Picture: pick a picture and set how blurry, bright and colorful it is. The installer stores all eight theme pictures before Homepage starts, so picking a theme doesn't restart the dashboard. If one is missing, its first use downloads it and restarts Homepage for a few seconds. `sudo homelab-setup refresh` stores them all.
 
 Nothing is saved until you press Save, so you can try things freely.
 
@@ -151,7 +151,7 @@ The number cards and the calendar that HomeLab fills in (Preview, Music Library,
 
 A picture of the storage, in the style of TrueNAS.
 
-- The Main pool and Backup pool boxes, with a tile for each drive showing its name, size, how full it's, its temperature, its health and whether it's asleep.
+- The Main pool and Backup pool boxes, with a tile for each drive showing its name, size, how full it is, its temperature, its health and whether it's asleep.
 - Drives that are connected but not in a pool wait at the top. Drag one into a pool to add it, or select it to see its details and buttons: the model, serial number, file system and how much of it's used. The panel looks at the drive read-only for a moment to count, and changes nothing on it. A USB stick or memory card has no health report and no motor, so its card says "Not Reported" and "Always On".
 - Configure Drives builds ready-made setups: a plain pool, a mirror, SnapRAID, ZFS and RAID.
 - Taking a drive out copies its files to the other drives first. Every action that could erase something asks for confirmation.
@@ -201,6 +201,3 @@ Below the panel is a terminal in the browser. It's a shell on the server, signed
 | The control panel's web page | [`panel/`](../panel/) |
 | The program behind the panel | [`scripts/homelab-panel`](../scripts/homelab-panel) |
 | The Homepage stack | [`stacks/homepage.yaml`](../stacks/homepage.yaml) |
-
-
-

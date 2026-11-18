@@ -5,10 +5,10 @@ These are problems I ran into while building and running this lab, and how I fix
 **Quick checks that solve a lot of things**
 
 ```bash
-docker ps --format "table {{.Names}}\t{{.Status}}"   
-sudo drives status                                    
-sudo homelab-setup verify                             
-docker logs --tail 50 NAME                            
+docker ps --format "table {{.Names}}\t{{.Status}}"
+sudo drives status
+sudo homelab-setup verify
+docker logs --tail 50 NAME
 ```
 
 ## Contents
@@ -51,7 +51,7 @@ docker logs --tail 50 NAME
 
 **Cause:** the slow last steps (Nextcloud's first start, the Immich admin account, the Beszel and widget keys) run in a background job called `homelab-finish`, so the install doesn't wait for them. The job carries on if you close the terminal.
 
-**Fix:** run `sudo homelab-setup status` to see how far it's, and `journalctl -u homelab-finish` for details. A step that failed is listed there, and `sudo homelab-setup finish` tries it again. If the machine restarted before the job was done, the same command picks it up. `refresh` and `install` wait until the job has ended.
+**Fix:** run `sudo homelab-setup status` to see how far it is, and `journalctl -u homelab-finish` for details. A step that failed is listed there, and `sudo homelab-setup finish` tries it again. If the machine restarted before the job was done, the same command picks it up. `refresh` and `install` wait until the job has ended.
 
 ### `permission denied` on the Docker socket
 
@@ -243,6 +243,3 @@ Use an index number that isn't taken yet.
 **Cause:** Tailscale on the server isn't connected, or HTTPS certificates aren't switched on in the Tailscale account.
 
 **Fix:** the bell shows a Tailscale item when the server is disconnected. Run `sudo tailscale up` and check `tailscale status`. You turn on HTTPS certificates at <https://login.tailscale.com/admin/dns>.
-
-
-

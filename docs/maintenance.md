@@ -135,11 +135,11 @@ This is the plan for the day the drive with Linux on it dies. GitHub has the too
 1. Plug in the data drives first. The installer never formats a drive. When it asks about them, keep the data.
 1. Run the installer and point it at the backup, so the settings are restored:
 
-```bash
+   ```bash
    sudo bash setup.sh install --backup /path/to/backup
-```
+   ```
 
-Photos and files are copied back only if nothing is there yet, and nothing is overwritten. The Nextcloud database restore asks you to type `RESTORE` first.
+   Photos and files are copied back only if nothing is there yet, and nothing is overwritten. The Nextcloud database restore asks you to type `RESTORE` first.
 
 1. Preview the saved settings with `sudo homelab-restore-configs check`, then check everything with `sudo homelab-setup verify`.
 
@@ -176,7 +176,7 @@ If a secret ever leaks, change it in the service first. Deleting it from Git isn
 One command takes the lab off a machine:
 
 ```bash
-sudo homelab-setup uninstall             
+sudo homelab-setup uninstall
 ```
 
 It shows what goes and what stays, then asks two questions. Nothing changes until you answer a final numbered question (1 for yes, 2 for no), and wiping asks "Are you sure?".
@@ -194,6 +194,3 @@ Two things to know before you run it:
 - A real RAID or ZFS array can't be taken apart without erasing it, so the uninstall leaves it as it's and keeps the `drives` tool. To erase an array on purpose, use `sudo drives release`.
 
 You can't run it from the dashboard's web terminal, because it removes the terminal and would close the window halfway. Use an SSH session. For scripts, `--yes` keeps the data and the drives' files, `--wipe-data` wipes the data (and deletes the repository folder) and `--wipe-drives` erases the drives of the pools. With `--yes` nothing is asked. If something can't be removed, it says what, keeps the installer and its record, and you can run it again.
-
-
-
