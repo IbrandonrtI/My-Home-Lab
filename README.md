@@ -81,7 +81,7 @@ A backup runs every night at 6:00 server time. It copies the Main pool and the l
 
 ```bash
 sudo apt update && sudo apt upgrade && sudo apt install -y git
-git clone https://github.com/IbrandonrtI/My-Home-Lab-.git
+git clone https://github.com/IbrandonrtI/My-Home-Lab.git
 cd My-Home-Lab-
 sudo bash setup.sh install
 ```
