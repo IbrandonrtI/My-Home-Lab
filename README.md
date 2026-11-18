@@ -2,7 +2,7 @@
 
 [![checks](https://github.com/IbrandonrtI/My-Home-Lab-/actions/workflows/checks.yml/badge.svg)](https://github.com/IbrandonrtI/My-Home-Lab-/actions/workflows/checks.yml)
 
-This is the home server I run, plus the installer and tools I use to build it and look after it. It blocks ads for the whole house, backs up my phone's photos, stores files, plays music and keeps an eye on its own health. It all ends up on one dashboard that works on a phone or a PC. Nothing is open to the internet. I get to everything through Tailscale.
+This is the home server I run, plus the installer and tools I use to build it and look after it. It blocks ads for the whole house, backs up my phone's photos, stores files, plays music and keeps an eye on its own health. It all ends up on one dashboard that works on a phone or a PC. Nothing is open to the internet. I get to everything through Tailscale. This was built and tested with the help of Claude. 
 
 ![The Home tab of the dashboard on a desktop screen](docs/images/homepage-home.png)
 
