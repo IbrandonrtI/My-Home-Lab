@@ -2675,11 +2675,25 @@ function viewItems(kind) {
     const tsel = h("select", { "aria-label": "Tab for the new group", hidden: true }, tabsList.map(n => h("option", { value: n, selected: n === (isCards ? "Home" : "Links") }, "On the tab: " + n)));
     gsel.addEventListener("change", () => { const nw = gsel.value === "__new"; gnew.hidden = !nw; tsel.hidden = !nw; if (nw) gnew.focus(); });
     if (!names.length) { gsel.value = "__new"; gnew.hidden = false; tsel.hidden = false; }
+    // The key or password a card's widget uses. The panel only says whether one is saved, never what it is, so the box starts empty and an empty box keeps the saved one.
+    const keyBoxes = {};
+    const keysEl = isCards && it && !v.hl && Array.isArray(it.keys) && it.keys.length ? h("div", {}, it.keys.map(k => {
+      const box = h("input", { type: "password", autocomplete: "new-password", spellcheck: "false", maxlength: 400, "aria-label": k.label,
+        placeholder: k.set ? "Saved. Type a new one to replace it." : "Not set yet. Paste it here." });
+      keyBoxes[k.field] = box;
+      const showId = "show-" + k.field;
+      const show = h("input", { type: "checkbox", id: showId, onchange: ev => { box.type = ev.target.checked ? "text" : "password"; } });
+      return h("div", { class: "field" }, h("label", {}, k.label), box,
+        h("label", { for: showId, class: "row" }, show, "Show what I type"),
+        h("div", { class: "hint" }, (k.set ? (k.field === "password" ? "A password is saved. " : "An API key is saved. ") : (k.field === "password" ? "No password is saved yet. " : "No API key is saved yet. "))
+          + "The card uses it to read its live numbers. It is never shown again after you save. Leave the box empty to keep the one that is saved."));
+    })) : null;
     const err = h("div", { class: "err", role: "alert", style: { color: "var(--bad)", minHeight: "20px" } });
     const d = h("dialog", {}, h("h2", {}, adding ? "Add a " + word : "Change “" + v.name + "”"),
       h("div", { class: "field" }, h("label", {}, "Name"), name),
       v.hl ? h("p", { class: "muted small" }, "HomeLab fills in the numbers of this card automatically, so only its name, icon, color, text and group can be changed here.") :
         h("div", { class: "field" }, h("label", {}, "Web address"), href, managed ? h("div", { class: "hint" }, "HomeLab keeps this address up to date (the Tailscale name and ports), so it cannot be changed here.") : null),
+      keysEl,
       ic.el,
       h("div", { class: "field" }, h("label", {}, "Short text"), desc, h("div", { class: "hint" }, isCards ? "Shown under the name." : "Optional.")),
       isCards ? (managed ? null : h("div", { class: "field" }, h("label", { for: "dot", class: "row" }, dot, "Show a green or red dot to indicate whether it is running"))) : h("div", { class: "field" }, h("label", {}, "Short label"), abbr, h("div", { class: "hint" }, "Up to 6 letters, shown when there is no icon.")),
@@ -2689,13 +2703,17 @@ function viewItems(kind) {
         err.textContent = "";
         const target = gsel.value === "__new" ? gnew.value.trim() : gsel.value;
         const body = { name: name.value.trim(), href: href.value.trim(), icon: ic.input.value.trim(), description: desc.value.trim(), dot: dot.checked, abbr: abbr.value.trim() };
+        const secrets = {};
+        for (const f of Object.keys(keyBoxes)) if (keyBoxes[f].value.trim()) secrets[f] = keyBoxes[f].value.trim();
+        const newKey = Object.keys(secrets).length > 0;
+        if (newKey) body.secrets = secrets;
         try {
           if (adding) { await api("POST", path, Object.assign(body, { op: "add", group: target, tab: tsel.value })); }
           else {
             await api("POST", path, Object.assign(body, { op: "edit", group: g.group, old: v.name }));
             if (target !== g.group) await api("POST", path, { op: "move", group: g.group, name: body.name, to: target, tab: tsel.value });
           }
-          d.close(); toast(adding ? "Added." : "Saved."); await afterChange(true);
+          d.close(); toast(adding ? "Added." : (newKey ? "Saved. The card picks up the change the next time it refreshes." : "Saved.")); await afterChange(true);
         } catch (e) { err.textContent = e.message; }
       } }, adding ? "Add" : "Save")));
     d.addEventListener("close", () => d.remove());
