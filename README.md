@@ -18,7 +18,6 @@ This is the home server I run, plus the installer and tools I use to build it an
 - [Guides](#guides)
 - [What is in this repository](#what-is-in-this-repository)
 - [Security](#security)
-- [Built with Claude](#built-with-claude)
 
 ## What it does
 
