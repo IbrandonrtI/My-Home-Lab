@@ -155,7 +155,7 @@ The tests aren't in this repository. I run them on my own computer against a sim
 - Each integration has its own key, and the container image versions are pinned.
 - Portainer and Homepage both mount the Docker socket, so anyone who gets into them can control Docker. Both stay behind Tailscale, with strong passwords.
 - Nothing on the boot drive or in the backups is encrypted. For a machine at home I'm fine with that.
-- FileBrowser's project was archived and gets no more security fixes, so it's reachable only over Tailscale.
+- FileBrowser's project was archived and gets no more security fixes, so it's reachable only over Tailscale. 
 
 
 
