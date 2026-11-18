@@ -77,7 +77,7 @@ A backup runs every night at 6:00 server time. It copies the Main pool and the l
 
 ## Installing it
 
-**You need** a machine running Ubuntu 22.04, 24.04 or 26.04, Linux Mint 21, 22 or 23, or Debian 12 or 13, with an internet connection. The install takes about 30 to 60 minutes and downloads around 10 GB. It asks a few questions along the way.
+**You need** a machine running Ubuntu 22.04, 24.04 or 26.04, Linux Mint 21, 22 or 23, or Debian 12 or 13, with an internet connection. The install takes about 10 to 15 minutes and downloads around 10 GB. It asks a few questions along the way.
 
 ```bash
 sudo apt update && sudo apt upgrade && sudo apt install -y git
