@@ -1,6 +1,6 @@
 # My Home Lab
 
-[![checks](https://github.com/IbrandonrtI/My-Home-Lab-/actions/workflows/checks.yml/badge.svg)](https://github.com/IbrandonrtI/My-Home-Lab-/actions/workflows/checks.yml)
+[![checks](https://github.com/IbrandonrtI/My-Home-Lab/actions/workflows/checks.yml/badge.svg)](https://github.com/IbrandonrtI/My-Home-Lab/actions/workflows/checks.yml)
 
 This is the home server I run, plus the installer and tools I use to build it and look after it. It blocks ads for the whole house, backs up my phone's photos, stores files, plays music and keeps an eye on its own health. It all ends up on one dashboard that works on a phone or a PC. Nothing is open to the internet. I get to everything through Tailscale. This Claude in implementing and testing features.
 
@@ -82,7 +82,7 @@ A backup runs every night at 6:00 server time. It copies the Main pool and the l
 ```bash
 sudo apt update && sudo apt upgrade && sudo apt install -y git
 git clone https://github.com/IbrandonrtI/My-Home-Lab.git
-cd My-Home-Lab-
+cd My-Home-Lab
 sudo bash setup.sh install
 ```
 
