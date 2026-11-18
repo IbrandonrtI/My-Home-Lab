@@ -30,8 +30,6 @@ This is the home server I run, plus the installer and tools I use to build it an
 
 ## How it fits together
 
-![How devices reach the lab: a phone and a PC connect through Tailscale and Tailscale Serve to apps running in Docker, other devices at home use AdGuard Home for DNS, and nothing is open to the public internet.](docs/images/architecture.svg)
-
 My phone and PC reach the server through Tailscale, and Tailscale Serve gives each app its own HTTPS address. Other devices at home just use it for DNS. The apps run in Docker, with Portainer to manage them, and keep their data on the boot drive and the storage pools. The Customize panel sits next to Docker as a small service of its own.
 
 ## Services
@@ -73,8 +71,6 @@ Everything except Tailscale runs in Docker. Each stack has a Compose file in [`s
 ![The Drives screen of the Customize panel](docs/images/drives-tab.png)
 
 ## Data and backups
-
-![Where the data lives: the boot drive holds the system, settings and databases, the Main pool holds photos, files and music, and the Backup pool receives the nightly backup. Extra backups can go to another computer or to the cloud.](docs/images/data-layout.svg)
 
 Photos, files and music live in the Main pool. It uses mergerfs, so a few drives look like one folder. Databases and app settings stay on the boot drive.
 
