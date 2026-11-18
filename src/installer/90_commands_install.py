@@ -927,7 +927,7 @@ def cmd_refresh():
         # The owner asked for it: build a new state file from what is installed, then check everything again.
         if not looks_like_repo(Ctx.repo):
             raise Abort("The downloaded copy of the lab was not found (looked in %s and in the home folder of %s). Run the command again and name its folder:\n"
-                        "  sudo homelab-setup refresh --force-existing --repo ~/My-Home-Lab-" % (Ctx.repo, Ctx.user))
+                        "  sudo homelab-setup refresh --force-existing --repo ~/My-Home-Lab" % (Ctx.repo, Ctx.user))
         say("Building a new setup state file from what is installed.")
         if Opt.dry:
             preview_rebuild()

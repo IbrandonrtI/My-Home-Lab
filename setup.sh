@@ -4,8 +4,8 @@ usage() {
   cat <<'HELP'
 setup.sh - starts the home lab installer from a fresh clone of this repository.
 
-  git clone https://github.com/IbrandonrtI/My-Home-Lab-.git
-  cd My-Home-Lab-
+  git clone https://github.com/IbrandonrtI/My-Home-Lab.git
+  cd My-Home-Lab
   bash setup.sh install --dry-run          # show what would be done, change nothing
   bash setup.sh install                    # set everything up (asks first)
   bash setup.sh                            # show the checklist
@@ -30,7 +30,7 @@ set -euo pipefail
 
 SELF="${BASH_SOURCE[0]:-}"
 if [ -z "$SELF" ] || [ ! -f "$SELF" ]; then
-  echo "setup.sh: run it from a clone of the repository (git clone ... && cd My-Home-Lab- && bash setup.sh)," >&2
+  echo "setup.sh: run it from a clone of the repository (git clone ... && cd My-Home-Lab && bash setup.sh)," >&2
   echo "          not through a pipe or process substitution." >&2
   exit 1
 fi

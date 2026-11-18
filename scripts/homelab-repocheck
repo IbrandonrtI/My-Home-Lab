@@ -3,7 +3,7 @@
 
 It only reads files. It never changes anything and needs no sudo.
 
-  homelab-repocheck [FOLDER]                      check a folder (default: ~/My-Home-Lab-)
+  homelab-repocheck [FOLDER]                      check a folder (default: ~/My-Home-Lab)
   homelab-repocheck --private-words WORDS FOLDER  also fail if any Markdown file contains a line of the file WORDS
                                                   (one word or text per line, for example your real address)
   homelab-repocheck version | help
@@ -442,7 +442,14 @@ def main(argv):
         else:
             print("ERROR: too many arguments. Try: homelab-repocheck help", file=sys.stderr)
             return 2
-    root = os.path.abspath(os.path.expanduser(folder or os.environ.get("HOMELAB_DOCS_DIR", "~/My-Home-Lab-")))
+    if not folder:
+        folder = os.environ.get("HOMELAB_DOCS_DIR", "")
+    if not folder:
+        # a copy downloaded under the old name (with a dash on the end) is still found
+        folder = "~/My-Home-Lab"
+        if not os.path.isdir(os.path.expanduser(folder)) and os.path.isdir(os.path.expanduser("~/My-Home-Lab-")):
+            folder = "~/My-Home-Lab-"
+    root = os.path.abspath(os.path.expanduser(folder))
     if not os.path.isdir(root):
         print("ERROR: %s is not a folder. Give the folder with README.md in it." % root, file=sys.stderr)
         return 2

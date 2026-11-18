@@ -250,7 +250,7 @@ mode_of() { stat -c %a "$1" 2>/dev/null; }
 fstab_lines() { grep -v '^[[:space:]]*#' /etc/fstab 2>/dev/null; }
 repo_dir() {
   local d
-  for d in "$REAL_HOME/My-Home-Lab-" "$REAL_HOME/My-Home-Lab"; do [ -d "$d/scripts" ] && { echo "$d"; return 0; }; done
+  for d in "$REAL_HOME/My-Home-Lab" "$REAL_HOME/My-Home-Lab-"; do [ -d "$d/scripts" ] && { echo "$d"; return 0; }; done
   return 0
 }
 BOOT_SECTIONS=/var/lib/homelab-boot-sections
@@ -531,7 +531,7 @@ part_presets() {
   local id before after repo help_out ids="pool mirror snapraid1 snapraid2 zfs-stripe zfs-mirror zfs-raidz1 zfs-raidz2 zfs-raidz3 md-raid0 md-raid1 md-raid5 md-raid6 md-raid10"
   if ! command -v drives >/dev/null 2>&1; then fail "drives is not installed"; return; fi
   if ! drives help 2>&1 </dev/null | grep -q 'preset'; then
-    fail "the installed drives does not know 'preset': install the new one:  cd ~/My-Home-Lab- && git pull && sudo install -m 755 scripts/drives /usr/local/sbin/drives"
+    fail "the installed drives does not know 'preset': install the new one:  cd ~/My-Home-Lab && git pull && sudo install -m 755 scripts/drives /usr/local/sbin/drives"
     return
   fi
   before=$(fingerprint)

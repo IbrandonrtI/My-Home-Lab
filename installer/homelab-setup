@@ -1063,7 +1063,7 @@ class Ctx:
                 cls.tailnet = cls.fqdn.split(".", 1)[1]
 
 
-REPO_FOLDER_NAMES = ("My-Home-Lab-", "My-Home-Lab", "homelab", "My-Home-Lab-main")
+REPO_FOLDER_NAMES = ("My-Home-Lab", "My-Home-Lab-", "homelab", "My-Home-Lab-main")
 
 
 def looks_like_repo(path):
@@ -7981,7 +7981,7 @@ def cmd_refresh():
         # The owner asked for it: build a new state file from what is installed, then check everything again.
         if not looks_like_repo(Ctx.repo):
             raise Abort("The downloaded copy of the lab was not found (looked in %s and in the home folder of %s). Run the command again and name its folder:\n"
-                        "  sudo homelab-setup refresh --force-existing --repo ~/My-Home-Lab-" % (Ctx.repo, Ctx.user))
+                        "  sudo homelab-setup refresh --force-existing --repo ~/My-Home-Lab" % (Ctx.repo, Ctx.user))
         say("Building a new setup state file from what is installed.")
         if Opt.dry:
             preview_rebuild()
@@ -8520,7 +8520,7 @@ def cmd_upgrade():
     repo = Ctx.repo
     if not os.path.isdir(os.path.join(repo, ".git")):
         raise Abort("%s is not a copy downloaded with git, so it cannot be updated from GitHub.\n"
-                    "Download the lab again:  git clone https://github.com/IbrandonrtI/My-Home-Lab-.git  and run  sudo bash setup.sh refresh  inside it." % repo)
+                    "Download the lab again:  git clone https://github.com/IbrandonrtI/My-Home-Lab.git  and run  sudo bash setup.sh refresh  inside it." % repo)
     prefix = []
     if not FAKE and os.geteuid() == 0 and have("sudo"):
         try:
@@ -9520,7 +9520,7 @@ def cmd_uninstall():
         say("Containers that are not HomeLab's were left alone: %s. To remove them too:  docker rm -f %s  (their images:  docker image prune -a)" % (", ".join(own), " ".join(own)))
     if f["array"]:
         say("The %s array was left as it is. Manage it with `sudo drives`." % {"zfs": "ZFS", "md": "RAID"}[f["array"]])
-    say("To install the lab again later:  git clone https://github.com/IbrandonrtI/My-Home-Lab-.git  and  bash setup.sh install  inside it.")
+    say("To install the lab again later:  git clone https://github.com/IbrandonrtI/My-Home-Lab.git  and  bash setup.sh install  inside it.")
     return 0
 
 

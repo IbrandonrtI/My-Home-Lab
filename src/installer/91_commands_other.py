@@ -512,7 +512,7 @@ def cmd_upgrade():
     repo = Ctx.repo
     if not os.path.isdir(os.path.join(repo, ".git")):
         raise Abort("%s is not a copy downloaded with git, so it cannot be updated from GitHub.\n"
-                    "Download the lab again:  git clone https://github.com/IbrandonrtI/My-Home-Lab-.git  and run  sudo bash setup.sh refresh  inside it." % repo)
+                    "Download the lab again:  git clone https://github.com/IbrandonrtI/My-Home-Lab.git  and run  sudo bash setup.sh refresh  inside it." % repo)
     prefix = []
     if not FAKE and os.geteuid() == 0 and have("sudo"):
         try:

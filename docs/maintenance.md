@@ -153,7 +153,7 @@ The installer keeps a small record of your answers and the one-time steps it has
 sudo homelab-setup refresh --force-existing
 ```
 
-It finds the downloaded copy of the lab in your home folder (or use `--repo ~/My-Home-Lab-`), takes the admin name and e-mail from the damaged copy or the dashboard widgets, reads the address, time zone and weather place back from the machine and asks only for what it can't find. Nothing is upgraded or put back, and no container restarts. `--dry-run` lists what it would keep and ask for, and changes nothing. You can delete the `.damaged-<date>` copy afterwards.
+It finds the downloaded copy of the lab in your home folder (or use `--repo ~/My-Home-Lab`), takes the admin name and e-mail from the damaged copy or the dashboard widgets, reads the address, time zone and weather place back from the machine and asks only for what it can't find. Nothing is upgraded or put back, and no container restarts. `--dry-run` lists what it would keep and ask for, and changes nothing. You can delete the `.damaged-<date>` copy afterwards.
 
 ## Secrets
 

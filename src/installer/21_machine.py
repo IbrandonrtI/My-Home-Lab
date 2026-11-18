@@ -55,7 +55,7 @@ class Ctx:
                 cls.tailnet = cls.fqdn.split(".", 1)[1]
 
 
-REPO_FOLDER_NAMES = ("My-Home-Lab-", "My-Home-Lab", "homelab", "My-Home-Lab-main")
+REPO_FOLDER_NAMES = ("My-Home-Lab", "My-Home-Lab-", "homelab", "My-Home-Lab-main")
 
 
 def looks_like_repo(path):
