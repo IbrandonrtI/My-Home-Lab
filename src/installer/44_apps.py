@@ -16,7 +16,7 @@ class NavidromeStack(StackStep):
     def run(self):
         folder = Ctx.home + "/navidrome"
         if not Opt.dry:
-            os.makedirs(P(folder), exist_ok=True)
+            make_folder(P(folder))
             chown(P(folder), Ctx.uid, Ctx.gid)
         # a changed Compose file or key must be deployed; only an unchanged stack is just started again
         StackStep.run(self, start_first=State.data.get("navidrome_stack") == self.stamp())
@@ -164,7 +164,7 @@ class AudioMuseStack(StackStep):
     def run(self):
         if not Opt.dry:
             for folder in (Ctx.home + "/audiomuse", Ctx.home + "/audiomuse/postgres"):
-                os.makedirs(P(folder), exist_ok=True)
+                make_folder(P(folder))
                 chown(P(folder), Ctx.uid, Ctx.gid)
         StackStep.run(self, start_first=State.data.get("audiomuse_stack") == self.stamp())
         if Opt.dry:
@@ -214,7 +214,7 @@ class AudioMusePlugin(Step):
         if not FAKE and data[:2] != b"PK":
             raise Abort("The file from %s is not a plugin file. Nothing was changed." % AUDIOMUSE_PLUGIN_URL)
         folder = os.path.dirname(audiomuse_plugin_file())
-        os.makedirs(folder, exist_ok=True)
+        make_folder(folder)
         chown(folder, Ctx.uid, Ctx.gid)
         write_bytes(audiomuse_plugin_file(), data, 0o644, (Ctx.uid, Ctx.gid))
         for what, args, extra in (("find the plugin", ("plugin", "rescan"), {}),
@@ -298,7 +298,7 @@ class NaviListStack(StackStep):
     def run(self):
         if not Opt.dry:
             for folder in (Ctx.home + "/navilist", Ctx.home + "/navilist/data"):
-                os.makedirs(P(folder), exist_ok=True)
+                make_folder(P(folder))
                 chown(P(folder), Ctx.uid, Ctx.gid)
         StackStep.run(self, start_first=State.data.get("navilist_stack") == self.stamp())
         if Opt.dry:

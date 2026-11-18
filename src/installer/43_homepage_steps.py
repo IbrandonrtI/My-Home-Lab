@@ -300,10 +300,10 @@ class HomepageTabs(Step):
         State.mark("homepage-clock")
         stats_file = hp_path("images/stats.json")
         if not FAKE and not os.path.exists(stats_file) and os.path.exists(P("/usr/local/sbin/homelab-stats")):
-            os.makedirs(os.path.dirname(stats_file), exist_ok=True)
+            make_folder(os.path.dirname(stats_file))
             run_as_root_stats(stats_file)
         if CAL_BEGIN in svc and os.path.exists(P("/usr/local/bin/homelab-calendar")):
-            os.makedirs(hp_path("images"), exist_ok=True)
+            make_folder(hp_path("images"))
             run_calendar_build()
         if not FAKE and "homepage" in containers_all():
             act(["docker", "restart", "homepage"], timeout=120)
@@ -361,7 +361,7 @@ class HomepageBackground(Step):
             return
         ext = ".png" if data[:4] == b"\x89PNG" else ".webp" if data[:4] == b"RIFF" else ".jpg"
         name = "background" + ext
-        os.makedirs(hp_path("images"), exist_ok=True)
+        make_folder(hp_path("images"))
         path = hp_path("images/" + name)
         write_bytes(path, data, 0o644, (Ctx.uid, Ctx.gid))
         if not os.path.exists(hp_path("settings.yaml") + ".before-background"):

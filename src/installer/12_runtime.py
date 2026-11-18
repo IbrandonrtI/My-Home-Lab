@@ -186,15 +186,30 @@ def chown(path, uid, gid, recursive=False):
         pass
 
 
+def make_folder(path):
+    """Make a folder and any missing folders above it without following a link (see pin_folder). Use this instead of os.makedirs for any folder that
+    is, or sits under, a folder a normal user controls: this program runs as root, and a link planted there would make it create folders somewhere else."""
+    os.close(pin_folder(path, make=True))
+
+
 def mkdirs(path, uid=None, gid=None, mode=0o755):
     if Opt.dry:
         if not os.path.isdir(path):
             out("      would create folder: %s" % path)
         return
-    os.makedirs(path, exist_ok=True)
-    chmod_nolink(path, mode)
-    if uid is not None:
-        chown(path, uid, gid)
+    handle = pin_folder(path, make=True)
+    try:
+        try:
+            os.fchmod(handle, mode)
+        except OSError:
+            pass
+        if uid is not None and not FAKE:
+            try:
+                os.fchown(handle, uid, gid)
+            except OSError:
+                pass
+    finally:
+        os.close(handle)
 
 
 ALNUM = string.ascii_letters + string.digits

@@ -666,15 +666,30 @@ def chown(path, uid, gid, recursive=False):
         pass
 
 
+def make_folder(path):
+    """Make a folder and any missing folders above it without following a link (see pin_folder). Use this instead of os.makedirs for any folder that
+    is, or sits under, a folder a normal user controls: this program runs as root, and a link planted there would make it create folders somewhere else."""
+    os.close(pin_folder(path, make=True))
+
+
 def mkdirs(path, uid=None, gid=None, mode=0o755):
     if Opt.dry:
         if not os.path.isdir(path):
             out("      would create folder: %s" % path)
         return
-    os.makedirs(path, exist_ok=True)
-    chmod_nolink(path, mode)
-    if uid is not None:
-        chown(path, uid, gid)
+    handle = pin_folder(path, make=True)
+    try:
+        try:
+            os.fchmod(handle, mode)
+        except OSError:
+            pass
+        if uid is not None and not FAKE:
+            try:
+                os.fchown(handle, uid, gid)
+            except OSError:
+                pass
+    finally:
+        os.close(handle)
 
 
 ALNUM = string.ascii_letters + string.digits
@@ -4510,10 +4525,10 @@ class HomepageTabs(Step):
         State.mark("homepage-clock")
         stats_file = hp_path("images/stats.json")
         if not FAKE and not os.path.exists(stats_file) and os.path.exists(P("/usr/local/sbin/homelab-stats")):
-            os.makedirs(os.path.dirname(stats_file), exist_ok=True)
+            make_folder(os.path.dirname(stats_file))
             run_as_root_stats(stats_file)
         if CAL_BEGIN in svc and os.path.exists(P("/usr/local/bin/homelab-calendar")):
-            os.makedirs(hp_path("images"), exist_ok=True)
+            make_folder(hp_path("images"))
             run_calendar_build()
         if not FAKE and "homepage" in containers_all():
             act(["docker", "restart", "homepage"], timeout=120)
@@ -4571,7 +4586,7 @@ class HomepageBackground(Step):
             return
         ext = ".png" if data[:4] == b"\x89PNG" else ".webp" if data[:4] == b"RIFF" else ".jpg"
         name = "background" + ext
-        os.makedirs(hp_path("images"), exist_ok=True)
+        make_folder(hp_path("images"))
         path = hp_path("images/" + name)
         write_bytes(path, data, 0o644, (Ctx.uid, Ctx.gid))
         if not os.path.exists(hp_path("settings.yaml") + ".before-background"):
@@ -4608,7 +4623,7 @@ class NavidromeStack(StackStep):
     def run(self):
         folder = Ctx.home + "/navidrome"
         if not Opt.dry:
-            os.makedirs(P(folder), exist_ok=True)
+            make_folder(P(folder))
             chown(P(folder), Ctx.uid, Ctx.gid)
         # a changed Compose file or key must be deployed; only an unchanged stack is just started again
         StackStep.run(self, start_first=State.data.get("navidrome_stack") == self.stamp())
@@ -4756,7 +4771,7 @@ class AudioMuseStack(StackStep):
     def run(self):
         if not Opt.dry:
             for folder in (Ctx.home + "/audiomuse", Ctx.home + "/audiomuse/postgres"):
-                os.makedirs(P(folder), exist_ok=True)
+                make_folder(P(folder))
                 chown(P(folder), Ctx.uid, Ctx.gid)
         StackStep.run(self, start_first=State.data.get("audiomuse_stack") == self.stamp())
         if Opt.dry:
@@ -4806,7 +4821,7 @@ class AudioMusePlugin(Step):
         if not FAKE and data[:2] != b"PK":
             raise Abort("The file from %s is not a plugin file. Nothing was changed." % AUDIOMUSE_PLUGIN_URL)
         folder = os.path.dirname(audiomuse_plugin_file())
-        os.makedirs(folder, exist_ok=True)
+        make_folder(folder)
         chown(folder, Ctx.uid, Ctx.gid)
         write_bytes(audiomuse_plugin_file(), data, 0o644, (Ctx.uid, Ctx.gid))
         for what, args, extra in (("find the plugin", ("plugin", "rescan"), {}),
@@ -4890,7 +4905,7 @@ class NaviListStack(StackStep):
     def run(self):
         if not Opt.dry:
             for folder in (Ctx.home + "/navilist", Ctx.home + "/navilist/data"):
-                os.makedirs(P(folder), exist_ok=True)
+                make_folder(P(folder))
                 chown(P(folder), Ctx.uid, Ctx.gid)
         StackStep.run(self, start_first=State.data.get("navilist_stack") == self.stamp())
         if Opt.dry:
@@ -5389,7 +5404,7 @@ class MusicDownloaderStack(StackStep):
             unlock_storage_folders()
             for p in ("/mnt/storage/music", "/mnt/storage/videos"):
                 if not os.path.isdir(P(p)):
-                    os.makedirs(P(p), exist_ok=True)
+                    make_folder(P(p))
                     chown(P(p), Ctx.uid, Ctx.gid)
         old = {} if Opt.dry else md_old_containers()
         if not old:

@@ -130,7 +130,7 @@ class MusicDownloaderStack(StackStep):
             unlock_storage_folders()
             for p in ("/mnt/storage/music", "/mnt/storage/videos"):
                 if not os.path.isdir(P(p)):
-                    os.makedirs(P(p), exist_ok=True)
+                    make_folder(P(p))
                     chown(P(p), Ctx.uid, Ctx.gid)
         old = {} if Opt.dry else md_old_containers()
         if not old:
