@@ -529,7 +529,8 @@ body { --icon-color: #c9d6f2; }
   row-gap: 0;
 }
 #inner_wrapper .services-group:has(#navidrome-card) .services-list > li { flex: 1 1 230px; min-width: 0; margin: 0 !important; }
-#inner_wrapper .services-group:has(#navidrome-card) .services-list > #navidrome-card { flex: 0 0 100%; }
+#inner_wrapper .services-group:has(#navidrome-card) .services-list > #navidrome-card { flex: 0 0 100%; order: -2; }
+#inner_wrapper .services-group:has(#navidrome-card) .services-list > #jellyfin-card { flex: 0 0 100%; order: -1; }
 #inner_wrapper #navidrome-card .service-card { height: calc(100% - 0.5rem) !important; }
 #inner_wrapper #navidrome-card div:has(> iframe) { overflow: hidden !important; border-radius: 10px; }
 #inner_wrapper #navidrome-card iframe { width: calc(100% + 32px) !important; max-width: none !important; border: 0 !important; height: var(--lk-player-h) !important; }

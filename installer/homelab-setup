@@ -2488,6 +2488,7 @@ HP_CARDS = {
     "filebrowser-card": ("filebrowser", ["username", "password"]),
     "immich-card": ("immich", ["key"]),
     "nextcloud-card": ("nextcloud", ["key"]),
+    "jellyfin-card": ("jellyfin", ["key"]),
 }
 
 
@@ -2592,12 +2593,25 @@ def hp_ranges(lines, card_id):
     return start, end, ws, we
 
 
+# The Jellyfin card is made by homelab-cards, so the repository's services.yaml has no copy of it; its widget is described here instead.
+JELLYFIN_WIDGET = """        widget:
+          type: jellyfin
+          url: http://192.168.X.X:8096
+          key: your-own-key
+          version: 2
+          enableBlocks: true
+          enableNowPlaying: true
+          enableMediaControl: false
+          showEpisodeNumber: true
+          expandOneStreamToTwoRows: false"""
+
+
 def hp_template_widget(card_id):
     text = subst(read_file(repo_file("homepage-config", "services.yaml")))
     lines = text.split("\n")
     r = hp_ranges(lines, card_id)
     if not r or r[2] is None:
-        return []
+        return subst(JELLYFIN_WIDGET).split("\n") if card_id == "jellyfin-card" else []
     return lines[r[2]:r[3]]
 
 
@@ -4722,7 +4736,7 @@ class JellyfinStack(StackStep):
         if not FAKE and os.path.exists(P("/usr/local/sbin/homelab-cards")):
             run([P("/usr/local/sbin/homelab-cards"), "sync"], timeout=120)
         if first:
-            out("      Jellyfin is at %s. Open it once to make its login; it asks for one the first time." % url("jellyfin"))
+            out("      Jellyfin is at %s. Its login is made with your admin name and password when the dashboard widget is set up." % url("jellyfin"))
             out("      Add the libraries there: Movies is the folder /media/movies and TV shows is /media/shows.")
             if jellyfin_graphics() is not None:
                 out("      This machine has a graphics chip and Jellyfin can use it. In Jellyfin open Dashboard, Playback, Transcoding and choose Intel QuickSync (or VAAPI).")
@@ -5697,6 +5711,18 @@ def v_nextcloud(v):
     return judge(st)
 
 
+JELLYFIN_CLIENT = 'MediaBrowser Client="HomeLab", Device="homelab-setup", DeviceId="homelab-setup", Version="1.0"'
+
+
+def jellyfin_headers(token=None):
+    return {"Authorization": JELLYFIN_CLIENT + (', Token="%s"' % token if token else "")}
+
+
+def v_jellyfin(v):
+    st, _, _ = http("GET", url("jellyfin", "/System/Info"), headers=jellyfin_headers(v["key"]), timeout=15)
+    return verdict(st)
+
+
 class WidgetStep(Step):
     """One Homepage widget: obtain the key or login for a service, test it against the service and write it into the card in services.yaml."""
     group = "Homepage"
@@ -5929,6 +5955,78 @@ def auto_nextcloud():
     return {"key": tok}
 
 
+def jellyfin_wizard_done():
+    """True when Jellyfin's first-time setup is finished, False when it is still waiting, None when it did not answer."""
+    st, js, _ = http("GET", url("jellyfin", "/System/Info/Public"), timeout=15)
+    if st == 200 and isinstance(js, dict) and "StartupWizardCompleted" in js:
+        return bool(js["StartupWizardCompleted"])
+    return None
+
+
+def jellyfin_manual_help():
+    return ("Jellyfin has a login that was not made by the installer, so the key has to be created in Jellyfin: open %s, go to Dashboard, API Keys, "
+            "press +, and name it homepage. Then run `sudo homelab-setup fill` and paste the key." % url("jellyfin"))
+
+
+def auto_jellyfin():
+    """Finish Jellyfin's first-time setup with the admin login when it is still waiting, then create an API key for Homepage."""
+    old = Secrets.get("JELLYFIN_HOMEPAGE_KEY")
+    if old and not Opt.dry and v_jellyfin({"key": old}) is True:
+        return {"key": old}
+    pw = need_password("to set the Jellyfin login")
+    if jellyfin_wizard_done() is False:
+        for method, path, body in (("GET", "/Startup/Configuration", None),
+                                   ("POST", "/Startup/Configuration", {"UICulture": "en-US", "MetadataCountryCode": "US", "PreferredMetadataLanguage": "en"}),
+                                   ("GET", "/Startup/User", None),
+                                   ("POST", "/Startup/User", {"Name": Ctx.admin, "Password": pw}),
+                                   ("POST", "/Startup/RemoteAccess", {"EnableRemoteAccess": True, "EnableAutomaticPortMapping": False}),
+                                   ("POST", "/Startup/Complete", {})):
+            st, _, _ = http(method, url("jellyfin", path), body=body, timeout=30)
+            if method == "POST" and st not in (200, 204):
+                raise Abort("Jellyfin did not accept its first-time setup (%s answered HTTP %s). Open %s and finish the setup there, then run `sudo homelab-setup fill`." % (path, st, url("jellyfin")))
+        if jellyfin_wizard_done() is not True:
+            raise Abort("Jellyfin did not finish its first-time setup. Open %s and finish it there, then run `sudo homelab-setup fill`." % url("jellyfin"))
+        out("      Jellyfin now has the login %s (the admin password)." % Ctx.admin)
+    st, js, _ = http("POST", url("jellyfin", "/Users/AuthenticateByName"), headers=jellyfin_headers(), body={"Username": Ctx.admin, "Pw": pw}, timeout=30)
+    token = js.get("AccessToken") if st == 200 and isinstance(js, dict) else None
+    if not token:
+        raise Abort(jellyfin_manual_help())
+
+    def homepage_keys():
+        st, js, _ = http("GET", url("jellyfin", "/Auth/Keys"), headers=jellyfin_headers(token), timeout=30)
+        items = js.get("Items") if st == 200 and isinstance(js, dict) else None
+        return [i for i in (items or []) if isinstance(i, dict) and i.get("AppName") == "homepage" and i.get("AccessToken")]
+    found = homepage_keys()
+    if not found:
+        http("POST", url("jellyfin", "/Auth/Keys?app=homepage"), headers=jellyfin_headers(token), body={}, timeout=30)
+        found = homepage_keys()
+    if not found:
+        raise Abort("Jellyfin did not create the key. %s" % jellyfin_manual_help())
+    key = max(found, key=lambda i: str(i.get("DateCreated") or ""))["AccessToken"]
+    Secrets.set("JELLYFIN_HOMEPAGE_KEY", key)
+    return {"key": key}
+
+
+class JellyfinWidget(WidgetStep):
+    """The Jellyfin card's widget. The card itself is made by homelab-cards, so it is requested first when it is not there yet."""
+
+    def applies(self):
+        return BY_ID["stack-jellyfin"].applies() and (not FAKE or bool(hp_ranges(read_file(hp_path()).split("\n"), self.card)))
+
+    def help(self):
+        return jellyfin_manual_help()
+
+    def fill_help(self):
+        return "Create a key in Jellyfin (Dashboard, API Keys, +, name it homepage) and paste it below."
+
+    def run(self):
+        if not Opt.dry and not FAKE and not hp_ranges(read_file(hp_path()).split("\n"), self.card):
+            run([P("/usr/local/sbin/homelab-cards"), "sync"], timeout=120)
+            if not hp_ranges(read_file(hp_path()).split("\n"), self.card):
+                raise Abort("The Jellyfin card is not on the dashboard yet. It is added within five minutes: run `sudo homelab-setup refresh` again after that.")
+        WidgetStep.run(self)
+
+
 TS_KEY_NAME = "TAILSCALE_API_" + "TOKEN"
 
 
@@ -5977,6 +6075,8 @@ def _register_widgets():
            auto_portainer, [("key", "Portainer access token (ptr_...)", True)], pre={"env": "1"}),
         mk("w-filebrowser", "filebrowser-card", "FileBrowser widget login", ("stack-filebrowser",), ["username", "password"],
            v_filebrowser, auto_filebrowser, [("username", "FileBrowser username", False), ("password", "FileBrowser password", True)]),
+        JellyfinWidget("w-jellyfin", "jellyfin-card", "Jellyfin widget key (API key)", ("stack-jellyfin", "scripts"), ["key"], v_jellyfin,
+                       auto_jellyfin, [("key", "Jellyfin API key", True)]),
         mk("w-immich", "immich-card", "Immich widget key (API key, server.statistics)", ("immich-admin",), ["key"],
            v_immich, auto_immich, [("key", "Immich API key", True)]),
         mk("w-nextcloud", "nextcloud-card", "Nextcloud widget key (serverinfo token)", ("nextcloud-config",), ["key"],

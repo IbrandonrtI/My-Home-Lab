@@ -130,6 +130,7 @@ HP_CARDS = {
     "filebrowser-card": ("filebrowser", ["username", "password"]),
     "immich-card": ("immich", ["key"]),
     "nextcloud-card": ("nextcloud", ["key"]),
+    "jellyfin-card": ("jellyfin", ["key"]),
 }
 
 
@@ -234,12 +235,25 @@ def hp_ranges(lines, card_id):
     return start, end, ws, we
 
 
+# The Jellyfin card is made by homelab-cards, so the repository's services.yaml has no copy of it; its widget is described here instead.
+JELLYFIN_WIDGET = """        widget:
+          type: jellyfin
+          url: http://192.168.X.X:8096
+          key: your-own-key
+          version: 2
+          enableBlocks: true
+          enableNowPlaying: true
+          enableMediaControl: false
+          showEpisodeNumber: true
+          expandOneStreamToTwoRows: false"""
+
+
 def hp_template_widget(card_id):
     text = subst(read_file(repo_file("homepage-config", "services.yaml")))
     lines = text.split("\n")
     r = hp_ranges(lines, card_id)
     if not r or r[2] is None:
-        return []
+        return subst(JELLYFIN_WIDGET).split("\n") if card_id == "jellyfin-card" else []
     return lines[r[2]:r[3]]
 
 

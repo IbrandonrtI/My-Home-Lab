@@ -200,6 +200,14 @@ Use an index number that isn't taken yet.
 
 **Fix:** in Jellyfin open Dashboard, Libraries and check that the folders are `/media/movies` and `/media/shows`. Then name the files like `Movie Name (2019)/Movie Name (2019).mkv` and `Show Name/Season 01/Show Name - S01E01.mkv`, and run Scan All Libraries.
 
+### The Jellyfin widget is missing or shows an error
+
+**Symptom:** the Jellyfin card on the dashboard has no numbers, or `sudo homelab-setup refresh` lists the Jellyfin widget as not done.
+
+**Cause:** the installer could not create the widget's API key. This happens when Jellyfin already had a login that the installer did not make, or when the card was not on the dashboard yet.
+
+**Fix:** wait five minutes after Jellyfin starts and run `sudo homelab-setup refresh` again. If it still fails, open Jellyfin, go to Dashboard, API Keys, press `+` and name the key `homepage`. Then run `sudo homelab-setup fill` and paste the key.
+
 ### A TV or streaming stick cannot find Jellyfin
 
 **Symptom:** the Jellyfin app on a TV finds no server.

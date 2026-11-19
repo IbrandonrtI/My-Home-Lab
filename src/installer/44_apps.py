@@ -61,7 +61,7 @@ class JellyfinStack(StackStep):
         if not FAKE and os.path.exists(P("/usr/local/sbin/homelab-cards")):
             run([P("/usr/local/sbin/homelab-cards"), "sync"], timeout=120)
         if first:
-            out("      Jellyfin is at %s. Open it once to make its login; it asks for one the first time." % url("jellyfin"))
+            out("      Jellyfin is at %s. Its login is made with your admin name and password when the dashboard widget is set up." % url("jellyfin"))
             out("      Add the libraries there: Movies is the folder /media/movies and TV shows is /media/shows.")
             if jellyfin_graphics() is not None:
                 out("      This machine has a graphics chip and Jellyfin can use it. In Jellyfin open Dashboard, Playback, Transcoding and choose Intel QuickSync (or VAAPI).")
