@@ -62,6 +62,7 @@ STACKS = {
     "beszel-agent": ("beszel-agent.yaml", ["beszel-agent"]),
     "music-downloader": ("music-downloader.yaml", ["downtify", "metube"]),
     "navidrome": ("navidrome.yaml", ["navidrome"]),
+    "jellyfin": ("jellyfin.yaml", ["jellyfin"]),
     "audiomuse": ("audiomuse.yaml", ["audiomuse-postgres", "audiomuse-flask", "audiomuse-worker"]),
     "navilist": ("navilist.yaml", ["navilist"]),
 }
@@ -69,7 +70,7 @@ STACK_ORDER = ["homepage", "adguard", "beszel", "netdata", "speedtest-tracker", 
                "immich", "nextcloud", "beszel-agent", "music-downloader"]
 
 PORTS = {"homepage": 3001, "portainer": 9000, "immich": 2283, "beszel": 8090, "adguard": 3000,
-         "nextcloud": 8082, "filebrowser": 8081, "speedtest": 8088, "netdata": 19999, "navidrome": 4533, "audiomuse": 8100, "navilist": 8200, "downtify": 8000}
+         "nextcloud": 8082, "filebrowser": 8081, "speedtest": 8088, "netdata": 19999, "navidrome": 4533, "jellyfin": 8096, "audiomuse": 8100, "navilist": 8200, "downtify": 8000}
 SERVE = [(1000, "homepage"), (1001, "portainer"), (1002, "immich"), (1003, "beszel"), (1004, "adguard"),
          (1005, "nextcloud"), (1006, "filebrowser"), (1007, "speedtest"), (1008, "netdata")]
 
@@ -1241,14 +1242,14 @@ ADOPT_IMAGES = {
     "adguard": ("adguard/adguardhome",), "beszel": ("henrygd/beszel",), "netdata": ("netdata/netdata",),
     "speedtest-tracker": ("linuxserver/speedtest-tracker",), "filebrowser": ("filebrowser/filebrowser",),
     "immich": ("immich-app/immich-server",), "nextcloud": ("nextcloud",),
-    "navidrome": ("navidrome/navidrome", "deluan/navidrome"), "audiomuse": ("neptunehub/audiomuse-ai",), "navilist": ("ofernander/navilist",),
+    "navidrome": ("navidrome/navidrome", "deluan/navidrome"), "jellyfin": ("jellyfin/jellyfin", "linuxserver/jellyfin"), "audiomuse": ("neptunehub/audiomuse-ai",), "navilist": ("ofernander/navilist",),
 }
 ADOPT_PRIMARY = {"audiomuse": "audiomuse-flask"}
 ADOPT_PORT_KEY = {"speedtest-tracker": "speedtest"}
 ADOPT_INNER_PORTS = {"adguard": (3000, 80), "beszel": (8090,), "netdata": (19999,), "speedtest-tracker": (80,), "filebrowser": (80,),
-                     "immich": (2283,), "nextcloud": (80,), "navidrome": (4533,), "audiomuse": (8000,), "navilist": (3000,)}
+                     "immich": (2283,), "nextcloud": (80,), "navidrome": (4533,), "jellyfin": (8096,), "audiomuse": (8000,), "navilist": (3000,)}
 ADOPT_LABELS = {"adguard": "AdGuard Home", "beszel": "Beszel", "netdata": "Netdata", "speedtest-tracker": "Speedtest Tracker",
-                "filebrowser": "FileBrowser", "immich": "Immich", "nextcloud": "Nextcloud", "navidrome": "Navidrome",
+                "filebrowser": "FileBrowser", "immich": "Immich", "nextcloud": "Nextcloud", "navidrome": "Navidrome", "jellyfin": "Jellyfin",
                 "audiomuse": "AudioMuse", "navilist": "NaviList"}
 ADOPT_NEEDED_BY = {"navidrome": ("AudioMuse", "NaviList"), "beszel": ("the Beszel agent",)}
 
@@ -1422,10 +1423,61 @@ def stack_text(name):
     if name == "navidrome":
         text = text.replace("/mnt/storage/music:/music:ro", "%s:/music:ro" % (music_folder() or "/mnt/storage/music"))
         text = text.replace('user: "1000:1000"', 'user: "%d:%d"' % (Ctx.uid, Ctx.gid))
+    if name == "jellyfin":
+        text = jellyfin_text(text)
     if name == "beszel-agent":
         text = re.sub(r"(\n\s*KEY:\s*)'[^']*'", lambda m: "%s'%s'" % (m.group(1), Secrets.get("BESZEL_KEY")), text)
         text = re.sub(r"(\n\s*TOKEN:\s*)\S+", lambda m: "%s%s" % (m.group(1), Secrets.get("BESZEL_TOKEN")), text)
     return text
+
+
+JELLYFIN_MEDIA = ("/mnt/storage/movies", "/mnt/storage/shows")
+
+
+def jellyfin_graphics():
+    """The group ids that let a container use the graphics chip, read from the device files; None when the machine has no /dev/dri."""
+    nodes = sorted(glob.glob(P("/dev/dri/renderD*")))
+    if not nodes:
+        return None
+    gids = []
+    for node in nodes + sorted(glob.glob(P("/dev/dri/card*"))):
+        try:
+            gid = os.stat(node).st_gid
+        except OSError:
+            continue
+        if gid and gid not in gids:
+            gids.append(gid)
+    return gids
+
+
+def jellyfin_text(text):
+    """Fill in this machine's values: the user, the address TVs use to find the server, and the graphics chip when there is one."""
+    text = text.replace('user: "1000:1000"', 'user: "%d:%d"' % (Ctx.uid, Ctx.gid))
+    text = re.sub(r'\n[ ]+JELLYFIN_PublishedServerUrl: "[^"\n]*%s[^"\n]*"' % re.escape(PH_LAN), "", text)
+    gids = jellyfin_graphics()
+    if gids is not None:
+        extra = "    devices:\n      - /dev/dri:/dev/dri\n"
+        if gids:
+            extra += "    group_add:\n" + "".join('      - "%d"\n' % g for g in gids)
+        text = text.replace("    ports:\n", extra + "    ports:\n", 1)
+    return text
+
+
+def jellyfin_foreign():
+    """True when a Jellyfin that was not started by HomeLab's stack already runs here. The installer then leaves it alone."""
+    if not have("docker"):
+        return False
+    rc, txt = docker("ps", "-a", "--format", "{{.Names}}|{{.Image}}", timeout=30)
+    if rc != 0:
+        return False
+    for line in txt.splitlines():
+        f = line.split("|", 1)
+        if len(f) != 2 or not (f[0].strip() == "jellyfin" or image_repo(f[1].strip()) in ADOPT_IMAGES["jellyfin"]):
+            continue
+        rc, info = docker("inspect", "-f", '{{.Config.Image}}|{{index .Config.Labels "com.docker.compose.project"}}', f[0].strip(), timeout=30)
+        if rc != 0 or info.strip().split("|")[-1] != "jellyfin":
+            return True
+    return False
 
 
 MUSIC_FOLDER_NAMES = ("music", "Music", "downtify", "Downtify", "Downtify/music", "downtify/music", "media/music", "Media/Music", "downloads/music")
@@ -1463,6 +1515,8 @@ def stack_env(name):
     if name == "navidrome":
         return [("LASTFM_APIKEY", Secrets.get("LASTFM_APIKEY")), ("LASTFM_SECRET", Secrets.get("LASTFM_SECRET")),
                 ("NAVIDROME_AGENTS", NAVIDROME_AGENTS_WITH if audiomuse_wanted() else "")]
+    if name == "jellyfin":
+        return [("TZ", Ctx.tz)]
     if name == "audiomuse":
         return [("TZ", Ctx.tz), ("AUDIOMUSE_DB_PASSWORD", Secrets.get("AUDIOMUSE_DB_PASSWORD")),
                 ("AUDIOMUSE_NAVIDROME_URL", "http://%s:%d" % (svc_host(), PORTS["navidrome"])),
@@ -3463,7 +3517,7 @@ class DnsStable(Step):
 def folder_plan():
     h = Ctx.home
     u, g = Ctx.uid, Ctx.gid
-    extra = [] if Mode.existing else [("/mnt/storage/music", u, g), ("/mnt/storage/videos", u, g)]
+    extra = [] if Mode.existing else [("/mnt/storage/music", u, g), ("/mnt/storage/videos", u, g), ("/mnt/storage/movies", u, g), ("/mnt/storage/shows", u, g)]
     return [
         ("/mnt/storage", 0, 0), ("/mnt/backup", 0, 0), ("/mnt/storage/immich", u, g),
         ("/mnt/storage/nextcloud", 33, 33),
@@ -3830,7 +3884,7 @@ class Prefetch:
     cv = threading.Condition()
     WORKERS = 5
     PER_REGISTRY = {"docker.io": 3, "ghcr.io": 2, "lscr.io": 2}
-    ORDER = {"homepage": 0, "adguard": 1, "beszel": 2, "netdata": 2, "speedtest-tracker": 2, "filebrowser": 2, "navidrome": 3,
+    ORDER = {"homepage": 0, "adguard": 1, "beszel": 2, "netdata": 2, "speedtest-tracker": 2, "filebrowser": 2, "navidrome": 3, "jellyfin": 3,
              "music-downloader": 3, "beszel-agent": 3, "immich": 8, "nextcloud": 9}
 
     @classmethod
@@ -4633,6 +4687,48 @@ class NavidromeStack(StackStep):
 
 
 register(NavidromeStack("navidrome", ("portainer-env", "folders"), "Navidrome music server (plays the songs in the music folder)"))
+
+
+class JellyfinStack(StackStep):
+    """Jellyfin, the server for movies and TV shows. A Jellyfin that was started by hand is left alone."""
+
+    def applies(self):
+        return not Mode.existing and "jellyfin" not in adopted() and not jellyfin_foreign()
+
+    def detail(self):
+        return "port %d%s" % (PORTS["jellyfin"], ", with the graphics chip" if jellyfin_graphics() is not None else "")
+
+    def stamp(self):
+        env = "".join(v for _, v in stack_env("jellyfin"))
+        return hashlib.md5((stack_text("jellyfin") + env).encode()).hexdigest()
+
+    def probe(self):
+        return "done" if stack_up(self.name) and State.data.get("jellyfin_stack") == self.stamp() else "todo"
+
+    def run(self):
+        if not Opt.dry:
+            unlock_storage_folders()
+            for folder in (Ctx.home + "/jellyfin", Ctx.home + "/jellyfin/config", Ctx.home + "/jellyfin/cache") + JELLYFIN_MEDIA:
+                if not os.path.isdir(P(folder)):
+                    make_folder(P(folder))
+                    chown(P(folder), Ctx.uid, Ctx.gid)
+        # a changed Compose file must be deployed; only an unchanged stack is just started again
+        StackStep.run(self, start_first=State.data.get("jellyfin_stack") == self.stamp())
+        if Opt.dry:
+            return
+        first = State.data.get("jellyfin_stack") is None
+        State.data["jellyfin_stack"] = self.stamp()
+        State.save()
+        if not FAKE and os.path.exists(P("/usr/local/sbin/homelab-cards")):
+            run([P("/usr/local/sbin/homelab-cards"), "sync"], timeout=120)
+        if first:
+            out("      Jellyfin is at %s. Open it once to make its login; it asks for one the first time." % url("jellyfin"))
+            out("      Add the libraries there: Movies is the folder /media/movies and TV shows is /media/shows.")
+            if jellyfin_graphics() is not None:
+                out("      This machine has a graphics chip and Jellyfin can use it. In Jellyfin open Dashboard, Playback, Transcoding and choose Intel QuickSync (or VAAPI).")
+
+
+register(JellyfinStack("jellyfin", ("portainer-env", "folders"), "Jellyfin media server (plays the movies and shows folders)"))
 
 
 @step
@@ -6179,7 +6275,7 @@ class LoginHook(Step):
         write_file(path, new, 0o644, (Ctx.uid, Ctx.gid))
 
 
-EXPECTED_CONTAINERS = 19
+EXPECTED_CONTAINERS = 20
 
 
 def expected_containers():
@@ -7514,6 +7610,10 @@ def navidrome_wanted():
     return BY_ID["stack-navidrome"].applies()
 
 
+def jellyfin_wanted():
+    return BY_ID["stack-jellyfin"].applies()
+
+
 def added_services():
     """List the services added after the install (Navidrome and every card made with `homelab-cards`) as (label, container, local port, Tailscale port or 0), sorted by label."""
     found = {}
@@ -7529,6 +7629,8 @@ def added_services():
         found["navidrome"] = ("Navidrome", "navidrome", PORTS["navidrome"], 0)
     if "navidrome" in found:
         found["navidrome"] = ("Navidrome",) + found["navidrome"][1:]
+    if jellyfin_wanted() and "jellyfin" not in found:
+        found["jellyfin"] = ("Jellyfin", "jellyfin", PORTS["jellyfin"], 0)
     if audiomuse_wanted() and navidrome_wanted() and "audiomuse-flask" not in found:
         found["audiomuse-flask"] = ("AudioMuse-AI", "audiomuse-flask", PORTS["audiomuse"], 0)
     if "audiomuse-flask" in found:
@@ -7574,6 +7676,8 @@ def system_check():
     names = ["portainer"] + [c for n in STACK_ORDER if n not in own for c in STACKS[n][1] if n != "adguard" or adguard_wanted()]
     if navidrome_wanted():
         names.append("navidrome")
+    if jellyfin_wanted():
+        names.append("jellyfin")
     if audiomuse_wanted() and navidrome_wanted():
         names += [c for c in STACKS["audiomuse"][1] if c != "audiomuse-worker" or not State.data.get("audiomuse_paused")]
     if navilist_wanted() and navidrome_wanted():
@@ -7632,8 +7736,8 @@ def system_check():
             link = "http://%s:%d" % (svc_host(), port)
             if page_answers(link):
                 out("  %s%s%s %-18s %s" % (G, S_OK, N, label, mark(link)))
-            elif container in ("navidrome", "audiomuse-flask", "navilist") and (
-                    container == "navidrome" or (container == "audiomuse-flask" and audiomuse_wanted()) or (container == "navilist" and navilist_wanted())):
+            elif container in ("navidrome", "jellyfin", "audiomuse-flask", "navilist") and (
+                    container == "navidrome" or (container == "jellyfin" and jellyfin_wanted()) or (container == "audiomuse-flask" and audiomuse_wanted()) or (container == "navilist" and navilist_wanted())):
                 out("  %s%s%s %-18s %s  (no answer)" % (R, S_BAD, N, label, mark(link)))
                 problems.append(container)
             elif container in up:
@@ -7955,7 +8059,7 @@ def storage_notice(res):
             if n:
                 groups.append("%s (%d)" % (g, n))
         say("%d steps wait for it: %s." % (len(waits), ", ".join(groups)))
-        late = [s for s in waits if s.id in ("terminal", "stack-navidrome", "navidrome-stack", "stack-immich", "stack-nextcloud", "stack-filebrowser")]
+        late = [s for s in waits if s.id in ("terminal", "stack-navidrome", "navidrome-stack", "stack-jellyfin", "stack-immich", "stack-nextcloud", "stack-filebrowser")]
         if late:
             say("That includes: %s." % ", ".join(s.title.split(" (")[0] for s in late))
         out("")
@@ -8965,13 +9069,13 @@ def un_serve_ports():
 def _adopted_dirs():
     h = Ctx.home
     return {"nextcloud": (h + "/nextcloud", "/mnt/storage/nextcloud"), "immich": (h + "/immich", "/mnt/storage/immich"),
-            "speedtest-tracker": (h + "/speedtest-tracker",), "audiomuse": (h + "/audiomuse",), "navidrome": (h + "/navidrome",),
+            "speedtest-tracker": (h + "/speedtest-tracker",), "audiomuse": (h + "/audiomuse",), "navidrome": (h + "/navidrome",), "jellyfin": (h + "/jellyfin",),
             "navilist": (h + "/navilist",), "adguard": ("/opt/adguard-docker",)}
 
 
 def un_data_dirs():
     h = Ctx.home
-    dirs = [h + "/nextcloud", h + "/immich", h + "/speedtest-tracker", h + "/homepage-config", h + "/audiomuse", h + "/navidrome", h + "/navilist",
+    dirs = [h + "/nextcloud", h + "/immich", h + "/speedtest-tracker", h + "/homepage-config", h + "/audiomuse", h + "/navidrome", h + "/jellyfin", h + "/navilist",
             "/opt/adguard-docker", "/mnt/storage/immich", "/mnt/storage/nextcloud", boot_share_dir()]
     kept = [d for n in adopted() for d in _adopted_dirs().get(n, ())]
     return [d for d in dirs if os.path.isdir(P(d)) and d not in kept]
@@ -9115,6 +9219,7 @@ def un_show_plan(f):
         say("  - %s, which you already ran before HomeLab (container%s %s), with its data. Only its dashboard card is removed." % (label, "s" if len(names) > 1 else "", ", ".join(names)))
     say("  - mergerfs, SnapRAID, mdadm, ZFS, smartmontools and the other helper programs")
     say("  - your music files%s" % (" in %s" % f["music"] if f["music"] else ""))
+    say("  - your movies and TV shows (the movies and shows folders on the Main pool)")
     say("  - the downloaded copy of this repository (%s)%s" % (Ctx.repo, "; it is deleted only if you choose to WIPE the data of the apps" if un_repo_path() else ""))
     if f["array"]:
         out("")
@@ -9142,7 +9247,7 @@ def un_ask_choices(f):
             say("The apps keep their own data in these folders (and in Docker volumes):\n" + "\n".join(lines))
             a = un_menu("What should happen to the data of the apps (photos, Nextcloud files, Navidrome playlists, AdGuard settings, Beszel history, dashboard settings, passwords)?",
                         ["KEEP it. The apps are removed, the data stays where it is. Installing again later finds it and goes on where you stopped. (Recommended)",
-                         "WIPE it. Everything the apps stored is deleted for good. Your music files are never deleted by this."])
+                         "WIPE it. Everything the apps stored is deleted for good. Your music, movies and TV shows are never deleted by this."])
             wipe_data = a == "2"
     if f["drives"] or f["boot_sections"] or f["pools"]:
         if Opt.yes:

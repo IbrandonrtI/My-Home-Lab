@@ -2,13 +2,15 @@
 
 These are problems I ran into while building and running this lab, and how I fixed them. Each one has a Symptom, a Cause and a Fix. Names and addresses are stand-ins: `your-username` is the Linux user, `192.168.X.X` is the server's address and `your-tailnet.ts.net` is your Tailscale network.
 
+> **Built with Claude's help, so expect rough edges.** If your problem isn't here, the [bell](homepage.md#the-notification-bell) and `sudo homelab-selftest` are good places to start, and `sudo homelab-setup verify` tells you which service isn't answering.
+
 **Quick checks that solve a lot of things**
 
 ```bash
-docker ps --format "table {{.Names}}\t{{.Status}}"
-sudo drives status
-sudo homelab-setup verify
-docker logs --tail 50 NAME
+docker ps --format "table {{.Names}}\t{{.Status}}"   # is everything running and healthy?
+sudo drives status                                    # are the pools mounted, and are the drives healthy?
+sudo homelab-setup verify                             # does every service answer?
+docker logs --tail 50 NAME                            # what a container last said
 ```
 
 ## Contents
@@ -51,7 +53,7 @@ docker logs --tail 50 NAME
 
 **Cause:** the slow last steps (Nextcloud's first start, the Immich admin account, the Beszel and widget keys) run in a background job called `homelab-finish`, so the install doesn't wait for them. The job carries on if you close the terminal.
 
-**Fix:** run `sudo homelab-setup status` to see how far it is, and `journalctl -u homelab-finish` for details. A step that failed is listed there, and `sudo homelab-setup finish` tries it again. If the machine restarted before the job was done, the same command picks it up. `refresh` and `install` wait until the job has ended.
+**Fix:** run `sudo homelab-setup status` to see how far it's, and `journalctl -u homelab-finish` for details. A step that failed is listed there, and `sudo homelab-setup finish` tries it again. If the machine restarted before the job was done, the same command picks it up. `refresh` and `install` wait until the job has ended.
 
 ### `permission denied` on the Docker socket
 
@@ -121,6 +123,8 @@ docker logs --tail 50 NAME
 
 **Fix:** list every address you use in `HOMEPAGE_ALLOWED_HOSTS` in the Homepage stack, for example `192.168.X.X:3001,pc.your-tailnet.ts.net:1000`, and redeploy.
 
+> **Photo to add:** A screenshot of the `Host validation failed` message. Save it in `docs/images/` as `host-validation-error.png`.
+
 ### The bell is empty, or its list is old
 
 **Symptom:** the bell shows no badge even though something is down, or it says it was updated a long time ago.
@@ -159,6 +163,8 @@ docker logs --tail 50 NAME
 
 **Symptom:** Nextcloud refuses an address.
 
+> **Photo to add:** A screenshot of the "Access through untrusted domain" page. Save it in `docs/images/` as `nextcloud-untrusted-domain.png`.
+
 **Cause:** the address isn't in its list of trusted domains. That setting is only read on the first install.
 
 **Fix:**
@@ -185,6 +191,30 @@ Use an index number that isn't taken yet.
 **Cause:** Navidrome never deletes anything. It sees the music folder as read-only, so all it can do is mark missing files.
 
 **Fix:** in Navidrome, open the settings and the Missing Files page, and remove the grayed entries.
+
+### Jellyfin shows no movies or shows
+
+**Symptom:** a library is empty, or a title shows under the wrong name.
+
+**Cause:** the library points at a folder Jellyfin cannot see, or the files are named in a way Jellyfin does not recognise.
+
+**Fix:** in Jellyfin open Dashboard, Libraries and check that the folders are `/media/movies` and `/media/shows`. Then name the files like `Movie Name (2019)/Movie Name (2019).mkv` and `Show Name/Season 01/Show Name - S01E01.mkv`, and run Scan All Libraries.
+
+### A TV or streaming stick cannot find Jellyfin
+
+**Symptom:** the Jellyfin app on a TV finds no server.
+
+**Cause:** the app searches the network on its own, and some TVs do not manage that.
+
+**Fix:** in the app choose to add a server by hand and type `http://` followed by the machine's address and `:8096`. The address is in the card on the dashboard. The TV has to be on the same network as the server, so Tailscale is not needed.
+
+### Jellyfin stutters or the processor is at 100 percent
+
+**Symptom:** a video stops and starts, and Netdata shows the processor busy while Jellyfin plays.
+
+**Cause:** the video has to be converted for the device, and without the graphics chip the processor does that work alone.
+
+**Fix:** in Jellyfin open Dashboard, Playback, Transcoding and choose Intel QuickSync (or VAAPI). If the choice does nothing, run `ls /dev/dri` on the server. With no `renderD128` in the list, the machine has no usable graphics chip and Jellyfin keeps converting on the processor. Choosing a lower quality in the player, or a file the device plays as it is, also helps.
 
 ### Portainer says "created outside of Portainer" for Downtify and MeTube
 

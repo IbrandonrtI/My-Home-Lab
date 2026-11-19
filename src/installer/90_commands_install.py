@@ -460,6 +460,10 @@ def navidrome_wanted():
     return BY_ID["stack-navidrome"].applies()
 
 
+def jellyfin_wanted():
+    return BY_ID["stack-jellyfin"].applies()
+
+
 def added_services():
     """List the services added after the install (Navidrome and every card made with `homelab-cards`) as (label, container, local port, Tailscale port or 0), sorted by label."""
     found = {}
@@ -475,6 +479,8 @@ def added_services():
         found["navidrome"] = ("Navidrome", "navidrome", PORTS["navidrome"], 0)
     if "navidrome" in found:
         found["navidrome"] = ("Navidrome",) + found["navidrome"][1:]
+    if jellyfin_wanted() and "jellyfin" not in found:
+        found["jellyfin"] = ("Jellyfin", "jellyfin", PORTS["jellyfin"], 0)
     if audiomuse_wanted() and navidrome_wanted() and "audiomuse-flask" not in found:
         found["audiomuse-flask"] = ("AudioMuse-AI", "audiomuse-flask", PORTS["audiomuse"], 0)
     if "audiomuse-flask" in found:
@@ -520,6 +526,8 @@ def system_check():
     names = ["portainer"] + [c for n in STACK_ORDER if n not in own for c in STACKS[n][1] if n != "adguard" or adguard_wanted()]
     if navidrome_wanted():
         names.append("navidrome")
+    if jellyfin_wanted():
+        names.append("jellyfin")
     if audiomuse_wanted() and navidrome_wanted():
         names += [c for c in STACKS["audiomuse"][1] if c != "audiomuse-worker" or not State.data.get("audiomuse_paused")]
     if navilist_wanted() and navidrome_wanted():
@@ -578,8 +586,8 @@ def system_check():
             link = "http://%s:%d" % (svc_host(), port)
             if page_answers(link):
                 out("  %s%s%s %-18s %s" % (G, S_OK, N, label, mark(link)))
-            elif container in ("navidrome", "audiomuse-flask", "navilist") and (
-                    container == "navidrome" or (container == "audiomuse-flask" and audiomuse_wanted()) or (container == "navilist" and navilist_wanted())):
+            elif container in ("navidrome", "jellyfin", "audiomuse-flask", "navilist") and (
+                    container == "navidrome" or (container == "jellyfin" and jellyfin_wanted()) or (container == "audiomuse-flask" and audiomuse_wanted()) or (container == "navilist" and navilist_wanted())):
                 out("  %s%s%s %-18s %s  (no answer)" % (R, S_BAD, N, label, mark(link)))
                 problems.append(container)
             elif container in up:
@@ -901,7 +909,7 @@ def storage_notice(res):
             if n:
                 groups.append("%s (%d)" % (g, n))
         say("%d steps wait for it: %s." % (len(waits), ", ".join(groups)))
-        late = [s for s in waits if s.id in ("terminal", "stack-navidrome", "navidrome-stack", "stack-immich", "stack-nextcloud", "stack-filebrowser")]
+        late = [s for s in waits if s.id in ("terminal", "stack-navidrome", "navidrome-stack", "stack-jellyfin", "stack-immich", "stack-nextcloud", "stack-filebrowser")]
         if late:
             say("That includes: %s." % ", ".join(s.title.split(" (")[0] for s in late))
         out("")

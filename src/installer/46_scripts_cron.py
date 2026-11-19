@@ -286,7 +286,7 @@ class LoginHook(Step):
         write_file(path, new, 0o644, (Ctx.uid, Ctx.gid))
 
 
-EXPECTED_CONTAINERS = 19
+EXPECTED_CONTAINERS = 20
 
 
 def expected_containers():

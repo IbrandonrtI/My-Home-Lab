@@ -1,6 +1,6 @@
 # The dashboard
 
-The dashboard is the UI of the lab. It's a [Homepage](https://gethomepage.dev) page with my own styling on top: frosted-glass cards, a status dot on every card and live numbers from the services. It fits anything from a phone to a big monitor. The installer sets it all up, and you can change the look and the layout from the Customize panel.
+The dashboard is the front door of the lab. It's a [Homepage](https://gethomepage.dev) page with my own styling on top: frosted-glass cards, a status dot on every card and live numbers from the services. It fits anything from a phone to a big monitor. The installer sets it all up, and you can change the look and the layout from the Customize panel.
 
 ## Contents
 
@@ -38,7 +38,7 @@ This is where the services live, in groups:
 | Network and DNS | Tailscale, AdGuard Home, Speedtest Tracker |
 | Monitoring and Management | Portainer, Beszel, Netdata |
 | Files and Photos | Immich, Nextcloud, FileBrowser |
-| Media and Entertainment | Navidrome, MeTube, Downtify |
+| Media and Entertainment | Navidrome, Jellyfin, MeTube, Downtify |
 | Calendar | This Month and Coming Up |
 
 Each card has a dot that shows whether the service is up, and most show live numbers. The AdGuard card shows how many queries it has blocked, the Immich card counts photos and videos, and so on. Click a card to open the service.
@@ -69,6 +69,8 @@ The numbers tab. It refreshes by itself every few minutes:
 ### Links
 
 Bookmarks, in groups, each with its logo. The Edit Links box adds, changes or removes bookmarks without editing a file. Drag a link by its handle to change the order, or drop it on another group to move it. The arrows do the same one step at a time. Nothing changes on the dashboard until you press **Save** in the bar at the top of the box, which stays in view while the list scrolls. One save is one reload of the dashboard, and **Discard Changes** goes back to the saved list. A new link gets the color of the other links in its group, so it matches your theme. From the terminal, use `homelab bookmark add NAME URL`. If an older version gave a bookmark a shared logo link that no longer works, `homelab bookmark icons` lists it and `homelab bookmark icons --apply` switches it to a built-in icon.
+
+> **Photo to add:** A screenshot of the Links tab with its groups and the link editor. Save it in `docs/images/` as `homepage-links.png`.
 
 ### Customize
 
@@ -108,6 +110,8 @@ The ring turns amber when an install step failed, is waiting for something you n
 
 On a phone the cards stack in one column. It's the same dashboard, so the services and the player work the same way.
 
+<img src="images/homepage-phone.png" alt="The dashboard on a phone" width="300">
+
 ## The Customize panel
 
 The Customize tab is a small control panel. It uses the admin password you chose at the start of the install (change it later with `homelab panel password`), and it only runs on the server. You can also open it directly at `https://pc.your-tailnet.ts.net:1100`. It has five screens: Look, Layout, Cards, Drives and Updates.
@@ -121,7 +125,7 @@ Everything about how the dashboard looks.
 - Shape and colors: sliders for rounded corners, glass clarity and blur, with a live preview, and one color for everything or a different color for a single card, tile, bookmark or group label.
 - Names and Logo: your own names for the server and the drives, and a logo at the top left.
 - Time Zone and City: the install finds both from your internet connection. This card changes the clock's time zone and the weather city.
-- Background Picture: pick a picture and set how blurry, bright and colorful it is. The installer stores all eight theme pictures before Homepage starts, so picking a theme doesn't restart the dashboard. If one is missing, its first use downloads it and restarts Homepage for a few seconds. `sudo homelab-setup refresh` stores them all.
+- Background Picture: pick a picture and set how blurry, bright and colorful it's. The installer stores all eight theme pictures before Homepage starts, so picking a theme doesn't restart the dashboard. If one is missing, its first use downloads it and restarts Homepage for a few seconds. `sudo homelab-setup refresh` stores them all.
 
 Nothing is saved until you press Save, so you can try things freely.
 
@@ -130,6 +134,8 @@ Nothing is saved until you press Save, so you can try things freely.
 ### Layout
 
 Each box is a tab of the dashboard. Drag groups to change their order or move them to another tab, and set each group to show its cards in a row.
+
+> **Photo to add:** A screenshot of the Layout screen with its tabs and groups. Save it in `docs/images/` as `panel-layout.png`.
 
 ### Cards
 
@@ -145,13 +151,15 @@ Some cards read live numbers from their service with a key or a password: an API
 
 Cards you add yourself and the number cards that HomeLab fills in have no key box.
 
+> **Photo to add:** Two screenshots: the Cards screen, and the *Change* window of a card with a key box. Leave the key box empty, or take the picture before you paste a key. Save them in `docs/images/` as `panel-cards.png` and `panel-card-change.png`.
+
 The number cards and the calendar that HomeLab fills in (Preview, Music Library, Library Totals, Storage, Backup & Updates, Folder Sizes and Calendar) are listed too, marked *Filled in by HomeLab*. You can rename, restyle, move and hide them. *Add From HomeLab's List* brings back a hidden card and offers extra single-number cards (Photos, Videos, Songs, Updates Waiting, Pool Health and more). *Put HomeLab's Cards Back* resets every default card and keeps your own. The first change marks the block in `services.yaml` as `customized`, so `sudo homelab-setup upgrade` stops rewriting it, and cards added in later versions appear in *Add From HomeLab's List*.
 
 ### Drives
 
 A picture of the storage, in the style of TrueNAS.
 
-- The Main pool and Backup pool boxes, with a tile for each drive showing its name, size, how full it is, its temperature, its health and whether it's asleep.
+- The Main pool and Backup pool boxes, with a tile for each drive showing its name, size, how full it's, its temperature, its health and whether it's asleep.
 - Drives that are connected but not in a pool wait at the top. Drag one into a pool to add it, or select it to see its details and buttons: the model, serial number, file system and how much of it's used. The panel looks at the drive read-only for a moment to count, and changes nothing on it. A USB stick or memory card has no health report and no motor, so its card says "Not Reported" and "Always On".
 - Configure Drives builds ready-made setups: a plain pool, a mirror, SnapRAID, ZFS and RAID.
 - Taking a drive out copies its files to the other drives first. Every action that could erase something asks for confirmation.

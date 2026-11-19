@@ -2,9 +2,11 @@
 
 [![checks](https://github.com/IbrandonrtI/My-Home-Lab/actions/workflows/checks.yml/badge.svg)](https://github.com/IbrandonrtI/My-Home-Lab/actions/workflows/checks.yml)
 
-This is the home server I run, plus the installer and tools I use to build it and look after it. It blocks ads for the whole house, backs up my phone's photos, stores files, plays music and keeps an eye on its own health. It all ends up on one dashboard that works on a phone or a PC. Nothing is open to the internet. I get to everything through Tailscale. 
+This is the home server I run, plus the installer and tools I use to build it and look after it. It blocks ads for the whole house, backs up my phone's photos, stores files, plays music, movies and shows, and keeps an eye on its own health. It all ends up on one dashboard that works on a phone or a PC. Nothing is open to the internet. I get to everything through Tailscale.
 
 ![The Home tab of the dashboard on a desktop screen](docs/images/homepage-home.png)
+
+<img src="docs/images/homepage-phone.png" alt="The dashboard on a phone" width="300">
 
 ## Contents
 
@@ -18,6 +20,7 @@ This is the home server I run, plus the installer and tools I use to build it an
 - [Guides](#guides)
 - [What is in this repository](#what-is-in-this-repository)
 - [Security](#security)
+- [Built with Claude](#built-with-claude)
 
 ## What it does
 
@@ -28,6 +31,8 @@ This is the home server I run, plus the installer and tools I use to build it an
 - `setup.sh` builds the whole lab on a fresh Ubuntu, Mint or Debian machine. It skips what's already done and never formats a drive.
 
 ## How it fits together
+
+![How devices reach the lab: a phone and a PC connect through Tailscale and Tailscale Serve to apps running in Docker, other devices at home use AdGuard Home for DNS, and nothing is open to the public internet.](docs/images/architecture.svg)
 
 My phone and PC reach the server through Tailscale, and Tailscale Serve gives each app its own HTTPS address. Other devices at home just use it for DNS. The apps run in Docker, with Portainer to manage them, and keep their data on the boot drive and the storage pools. The Customize panel sits next to Docker as a small service of its own.
 
@@ -50,10 +55,11 @@ My phone and PC reach the server through Tailscale, and Tailscale Serve gives ea
 | **Navidrome** | Music server for the phone and the browser | [Services](docs/services.md#navidrome) |
 | **NaviList** | Makes Navidrome playlists from listening history | [Services](docs/services.md#navilist) |
 | **AudioMuse-AI** | Analyzes songs so Navidrome can suggest ones that sound alike | [Services](docs/services.md#audiomuse-ai) |
+| **Jellyfin** | Plays movies and TV shows on a phone, a TV or in the browser | [Services](docs/services.md#jellyfin) |
 | **Downtify** | Saves songs into the music folder | [Services](docs/services.md#downtify) |
 | **MeTube** | Downloads videos from a link | [Services](docs/services.md#metube) |
 
-Everything except Tailscale runs in Docker. Each stack has a Compose file in [`stacks/`](stacks/) with the image versions pinned, so nothing changes until I change the version. The one exception is the `music-downloader` stack (Downtify and MeTube). It follows `latest` on purpose, because the sites it downloads from change often and old versions stop working.
+Everything except Tailscale runs in Docker. Each stack has a Compose file in [`stacks/`](stacks/) with the image versions pinned, so nothing changes until I change the version. The one exception is the `music-downloader` stack (Downtify and MeTube). It follows `latest` on purpose, because the sites it downloads from change often and old versions stop working. Jellyfin follows its version 12 line (`jellyfin/jellyfin:12`), so it gets the 12.x fixes when the images are updated but never jumps to a new major version by itself.
 
 ## Hardware
 
@@ -67,24 +73,31 @@ Everything except Tailscale runs in Docker. Each stack has a Compose file in [`s
 | Network | Wired Ethernet, with a fixed address reserved in the router |
 | Operating system | Ubuntu Server on LVM, without disk encryption |
 
+> **Photo to add:** A photo of the server itself, with the data drive and its adapter and cable. Save it in `docs/images/` as `server.jpg`.
+
 ![The Drives screen of the Customize panel](docs/images/drives-tab.png)
 
 ## Data and backups
 
-Photos, files and music live in the Main pool. It uses mergerfs, so a few drives look like one folder. Databases and app settings stay on the boot drive.
+![Where the data lives: the boot drive holds the system, settings and databases, the Main pool holds photos, files and music, and the Backup pool receives the nightly backup. Extra backups can go to another computer or to the cloud.](docs/images/data-layout.svg)
+
+Photos, files, music, movies and shows live in the Main pool. It uses mergerfs, so a few drives look like one folder. Databases and app settings stay on the boot drive.
 
 A backup runs every night at 6:00 server time. It copies the Main pool and the lab's settings to the Backup pool, keeps older versions of changed files for 30 days and dumps the databases. Until a backup drive is connected, the backup goes to a folder on the boot drive, which protects nothing if that drive fails. A backup drive is the next thing I need to add. Restores and rebuilds are in [Maintenance](docs/maintenance.md#backups).
 
 ## Installing it
 
-**You need** a machine running Ubuntu 22.04, 24.04 or 26.04, Linux Mint 21, 22 or 23, or Debian 12 or 13, with an internet connection. The install takes about 10 to 15 minutes and downloads around 10 GB. It asks a few questions along the way.
+**You need** a machine running Ubuntu 22.04, 24.04 or 26.04, Linux Mint 21, 22 or 23, or Debian 12 or 13, with an internet connection. The install takes about 30 to 60 minutes and downloads around 10 GB. It asks a few questions along the way.
 
 ```bash
 sudo apt update && sudo apt upgrade && sudo apt install -y git
 git clone https://github.com/IbrandonrtI/My-Home-Lab.git
 cd My-Home-Lab
-sudo bash setup.sh install
+sudo bash setup.sh install --dry-run     # shows what it would do, changes nothing
+sudo bash setup.sh install               # asks a few questions, then builds the lab
 ```
+
+> **Photo to add:** A screenshot of the terminal when the installer says it's finished. Save it in `docs/images/` as `install-finished.png`.
 
 A few things to know:
 
@@ -155,3 +168,7 @@ The tests aren't in this repository. I run them on my own computer against a sim
 - Portainer and Homepage both mount the Docker socket, so anyone who gets into them can control Docker. Both stay behind Tailscale, with strong passwords.
 - Nothing on the boot drive or in the backups is encrypted. For a machine at home I'm fine with that.
 - FileBrowser's project was archived and gets no more security fixes, so it's reachable only over Tailscale.
+
+## Built with Claude
+
+I built this with a lot of help from Claude, Anthropic's AI assistant. Claude wrote much of the code, the installer and these guides, and I decided what to build, ran it on my own hardware and tested it. It has mostly run on one machine, so expect bugs. Read what a command does before you run it, and keep the installer off any machine that holds data you can't lose. If something breaks, try the [troubleshooting guide](docs/troubleshooting.md) first, then [open an issue](https://github.com/IbrandonrtI/My-Home-Lab/issues).

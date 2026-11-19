@@ -28,6 +28,48 @@ class NavidromeStack(StackStep):
 register(NavidromeStack("navidrome", ("portainer-env", "folders"), "Navidrome music server (plays the songs in the music folder)"))
 
 
+class JellyfinStack(StackStep):
+    """Jellyfin, the server for movies and TV shows. A Jellyfin that was started by hand is left alone."""
+
+    def applies(self):
+        return not Mode.existing and "jellyfin" not in adopted() and not jellyfin_foreign()
+
+    def detail(self):
+        return "port %d%s" % (PORTS["jellyfin"], ", with the graphics chip" if jellyfin_graphics() is not None else "")
+
+    def stamp(self):
+        env = "".join(v for _, v in stack_env("jellyfin"))
+        return hashlib.md5((stack_text("jellyfin") + env).encode()).hexdigest()
+
+    def probe(self):
+        return "done" if stack_up(self.name) and State.data.get("jellyfin_stack") == self.stamp() else "todo"
+
+    def run(self):
+        if not Opt.dry:
+            unlock_storage_folders()
+            for folder in (Ctx.home + "/jellyfin", Ctx.home + "/jellyfin/config", Ctx.home + "/jellyfin/cache") + JELLYFIN_MEDIA:
+                if not os.path.isdir(P(folder)):
+                    make_folder(P(folder))
+                    chown(P(folder), Ctx.uid, Ctx.gid)
+        # a changed Compose file must be deployed; only an unchanged stack is just started again
+        StackStep.run(self, start_first=State.data.get("jellyfin_stack") == self.stamp())
+        if Opt.dry:
+            return
+        first = State.data.get("jellyfin_stack") is None
+        State.data["jellyfin_stack"] = self.stamp()
+        State.save()
+        if not FAKE and os.path.exists(P("/usr/local/sbin/homelab-cards")):
+            run([P("/usr/local/sbin/homelab-cards"), "sync"], timeout=120)
+        if first:
+            out("      Jellyfin is at %s. Open it once to make its login; it asks for one the first time." % url("jellyfin"))
+            out("      Add the libraries there: Movies is the folder /media/movies and TV shows is /media/shows.")
+            if jellyfin_graphics() is not None:
+                out("      This machine has a graphics chip and Jellyfin can use it. In Jellyfin open Dashboard, Playback, Transcoding and choose Intel QuickSync (or VAAPI).")
+
+
+register(JellyfinStack("jellyfin", ("portainer-env", "folders"), "Jellyfin media server (plays the movies and shows folders)"))
+
+
 @step
 class NavidromeCard(Step):
     """Add the Navidrome card, with its built-in player, to the dashboard and create the Navidrome login."""

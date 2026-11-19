@@ -1,6 +1,8 @@
 # The services
 
-This is a walk through everything the lab runs, one service at a time: what it is, what I use it for and where to find it. Everything except Tailscale runs in Docker, and the Customize panel sits next to it as a service of its own. Addresses use `pc.your-tailnet.ts.net` in place of your Tailscale name. Tailscale is the only way to reach any of them.
+This is a walk through everything the lab runs, one service at a time: what it's, what I use it for and where to find it. Everything except Tailscale runs in Docker, and the Customize panel sits next to it as a service of its own. Addresses use `pc.your-tailnet.ts.net` in place of your Tailscale name. Tailscale is the only way to reach any of them.
+
+![How devices reach the lab](images/architecture.svg)
 
 ## Contents
 
@@ -9,6 +11,7 @@ This is a walk through everything the lab runs, one service at a time: what it i
 - [Managing and watching the server](#managing-and-watching-the-server)
 - [Files and photos](#files-and-photos)
 - [Music](#music)
+- [Movies and shows](#movies-and-shows)
 - [Where the data lives](#where-the-data-lives)
 - [What runs by itself](#what-runs-by-itself)
 
@@ -29,12 +32,13 @@ This is a walk through everything the lab runs, one service at a time: what it i
 | Navidrome | 4533 | the local network, and Tailscale on its own port |
 | AudioMuse-AI | 8100 | the local network, and Tailscale on its own port |
 | NaviList | 8200 | the local network, and Tailscale on its own port |
+| Jellyfin | 8096 (web) and 7359 (UDP, app discovery) | the local network, and Tailscale on its own port |
 | Downtify | 8000 | the local network, and Tailscale on its own port |
 | MeTube | 8185 | the local network, and Tailscale on its own port |
 
 Each stack's Compose file is in [`stacks/`](../stacks/) and lists its ports and volumes. The dashboard is covered in the [dashboard guide](homepage.md).
 
-**A service you already run.** If one of these services is already running when the installer starts (it looks for the container name or image, for example your own Immich, Nextcloud or Navidrome), the installer leaves it as it is. It deploys no stack for it, creates no login in it and writes no widget key. The service keeps its own port, and its dashboard card and Tailscale address point at it. The card is a plain link without live numbers. AudioMuse-AI and NaviList aren't installed when Navidrome is yours, and the Beszel agent isn't installed when Beszel is yours, because they only work with the copy the installer sets up. The uninstaller keeps these containers, their images and their data.
+**A service you already run.** If one of these services is already running when the installer starts (it looks for the container name or image, for example your own Immich, Nextcloud, Navidrome or Jellyfin), the installer leaves it as it's. It deploys no stack for it, creates no login in it and writes no widget key. The service keeps its own port, and its dashboard card and Tailscale address point at it. The card is a plain link without live numbers. AudioMuse-AI and NaviList aren't installed when Navidrome is yours, and the Beszel agent isn't installed when Beszel is yours, because they only work with the copy the installer sets up. The uninstaller keeps these containers, their images and their data.
 
 ## Network and access
 
@@ -122,6 +126,8 @@ The music server. It plays everything in the music folder on a phone or in a bro
 
 The dashboard has a Navidrome card with the whole player inside it.
 
+> **Photo to add:** A screenshot of Navidrome's own page with the music library. Save it in `docs/images/` as `navidrome.png`.
+
 ### NaviList
 
 Makes playlists in Navidrome from listening history on ListenBrainz and Last.fm, such as Weekly Jams, Weekly Exploration, Daily Jams and the Last.fm charts. It only adds songs that are already in the library and never downloads anything. It checks for new data on its own.
@@ -152,13 +158,36 @@ Downloads videos from a link, and a small web page shows the queue. Everything l
 
 ![The MeTube page](images/metube.png)
 
+## Movies and shows
+
+### Jellyfin
+
+The server for movies and TV shows. It plays what is in the `movies` and `shows` folders on the Main pool, in a browser, in the Jellyfin app on a phone, and on a TV or streaming stick. Both folders are mounted read-only, so Jellyfin can never change or delete a file. The folders belong to your server login, so you can copy files into them from another computer with `scp` or any SFTP app. Jellyfin finds new files on its next scan.
+
+The installer sets up the service and the folders, but not your login. The first time you open Jellyfin (port 8096) it walks you through making one. When it asks for libraries, add a Movies library at `/media/movies` and a TV Shows library at `/media/shows`. Jellyfin finds titles by file name, so name them the usual way:
+
+- Movies: `Movie Name (2019)/Movie Name (2019).mkv`
+- Shows: `Show Name/Season 01/Show Name - S01E01.mkv`
+
+**TVs and streaming sticks.** Port 8096 is open on the home network, so any device at home reaches the server at `http://` followed by the machine's address and `:8096`. The server also answers the apps' automatic search (UDP port 7359). Away from home, use the Tailscale address on Jellyfin's dashboard card.
+
+**Graphics chip.** If the machine has one (`/dev/dri`), the installer passes it into the container. Jellyfin does not use it until you switch it on: open Dashboard, Playback, Transcoding and choose Intel QuickSync (or VAAPI if QuickSync does not work). It only matters for files a device cannot play as they are, because those have to be converted while they play. Without the chip, Jellyfin converts on the processor. If the chip appears later, the next `sudo homelab-setup refresh` passes it in.
+
+**Settings and backup.** Jellyfin's settings, users and watch history are in the `jellyfin` folder of the home folder. The nightly backup copies `jellyfin/config`. The picture and conversion cache in `jellyfin/cache` is left out because Jellyfin rebuilds it.
+
+**Updates.** The stack uses the `12` image tag, so `sudo homelab-update` installs newer 12.x releases. A new major version is a change to `stacks/jellyfin.yaml`, and Jellyfin recommends a backup before such an upgrade.
+
+If you already run a Jellyfin of your own, the installer leaves it as it is and does not add a second one.
+
 ## Where the data lives
 
 | What | Where |
 | :--- | :--- |
-| Photos, videos, Nextcloud files and music | The Main pool, at `/mnt/storage` |
+| Photos, videos, Nextcloud files, music, movies and shows | The Main pool, at `/mnt/storage` |
 | Databases and app settings | The boot drive, in the home folder |
 | The backup | The Backup pool, at `/mnt/backup`, once a backup drive is connected |
+
+![Where the data lives: the boot drive, the Main pool and the Backup pool](images/data-layout.svg)
 
 The Main pool uses mergerfs, so several drives show up as one folder. Drives are mounted by their ID, so they come back the same after a reboot. With no drive in Main, or while its drive is missing, the boot drive is the storage: `/mnt/storage` is a plain folder there and the services keep running. A small start-up check (`sudo drives guard`) makes sure of that before Docker starts. When a drive is in Main, the drive is the storage, and files the services saved on the boot drive in the meantime are copied onto it (see [When the Main drive is missing](maintenance.md#when-the-main-drive-is-missing)).
 

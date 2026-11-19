@@ -233,14 +233,14 @@ ADOPT_IMAGES = {
     "adguard": ("adguard/adguardhome",), "beszel": ("henrygd/beszel",), "netdata": ("netdata/netdata",),
     "speedtest-tracker": ("linuxserver/speedtest-tracker",), "filebrowser": ("filebrowser/filebrowser",),
     "immich": ("immich-app/immich-server",), "nextcloud": ("nextcloud",),
-    "navidrome": ("navidrome/navidrome", "deluan/navidrome"), "audiomuse": ("neptunehub/audiomuse-ai",), "navilist": ("ofernander/navilist",),
+    "navidrome": ("navidrome/navidrome", "deluan/navidrome"), "jellyfin": ("jellyfin/jellyfin", "linuxserver/jellyfin"), "audiomuse": ("neptunehub/audiomuse-ai",), "navilist": ("ofernander/navilist",),
 }
 ADOPT_PRIMARY = {"audiomuse": "audiomuse-flask"}
 ADOPT_PORT_KEY = {"speedtest-tracker": "speedtest"}
 ADOPT_INNER_PORTS = {"adguard": (3000, 80), "beszel": (8090,), "netdata": (19999,), "speedtest-tracker": (80,), "filebrowser": (80,),
-                     "immich": (2283,), "nextcloud": (80,), "navidrome": (4533,), "audiomuse": (8000,), "navilist": (3000,)}
+                     "immich": (2283,), "nextcloud": (80,), "navidrome": (4533,), "jellyfin": (8096,), "audiomuse": (8000,), "navilist": (3000,)}
 ADOPT_LABELS = {"adguard": "AdGuard Home", "beszel": "Beszel", "netdata": "Netdata", "speedtest-tracker": "Speedtest Tracker",
-                "filebrowser": "FileBrowser", "immich": "Immich", "nextcloud": "Nextcloud", "navidrome": "Navidrome",
+                "filebrowser": "FileBrowser", "immich": "Immich", "nextcloud": "Nextcloud", "navidrome": "Navidrome", "jellyfin": "Jellyfin",
                 "audiomuse": "AudioMuse", "navilist": "NaviList"}
 ADOPT_NEEDED_BY = {"navidrome": ("AudioMuse", "NaviList"), "beszel": ("the Beszel agent",)}
 
@@ -414,10 +414,61 @@ def stack_text(name):
     if name == "navidrome":
         text = text.replace("/mnt/storage/music:/music:ro", "%s:/music:ro" % (music_folder() or "/mnt/storage/music"))
         text = text.replace('user: "1000:1000"', 'user: "%d:%d"' % (Ctx.uid, Ctx.gid))
+    if name == "jellyfin":
+        text = jellyfin_text(text)
     if name == "beszel-agent":
         text = re.sub(r"(\n\s*KEY:\s*)'[^']*'", lambda m: "%s'%s'" % (m.group(1), Secrets.get("BESZEL_KEY")), text)
         text = re.sub(r"(\n\s*TOKEN:\s*)\S+", lambda m: "%s%s" % (m.group(1), Secrets.get("BESZEL_TOKEN")), text)
     return text
+
+
+JELLYFIN_MEDIA = ("/mnt/storage/movies", "/mnt/storage/shows")
+
+
+def jellyfin_graphics():
+    """The group ids that let a container use the graphics chip, read from the device files; None when the machine has no /dev/dri."""
+    nodes = sorted(glob.glob(P("/dev/dri/renderD*")))
+    if not nodes:
+        return None
+    gids = []
+    for node in nodes + sorted(glob.glob(P("/dev/dri/card*"))):
+        try:
+            gid = os.stat(node).st_gid
+        except OSError:
+            continue
+        if gid and gid not in gids:
+            gids.append(gid)
+    return gids
+
+
+def jellyfin_text(text):
+    """Fill in this machine's values: the user, the address TVs use to find the server, and the graphics chip when there is one."""
+    text = text.replace('user: "1000:1000"', 'user: "%d:%d"' % (Ctx.uid, Ctx.gid))
+    text = re.sub(r'\n[ ]+JELLYFIN_PublishedServerUrl: "[^"\n]*%s[^"\n]*"' % re.escape(PH_LAN), "", text)
+    gids = jellyfin_graphics()
+    if gids is not None:
+        extra = "    devices:\n      - /dev/dri:/dev/dri\n"
+        if gids:
+            extra += "    group_add:\n" + "".join('      - "%d"\n' % g for g in gids)
+        text = text.replace("    ports:\n", extra + "    ports:\n", 1)
+    return text
+
+
+def jellyfin_foreign():
+    """True when a Jellyfin that was not started by HomeLab's stack already runs here. The installer then leaves it alone."""
+    if not have("docker"):
+        return False
+    rc, txt = docker("ps", "-a", "--format", "{{.Names}}|{{.Image}}", timeout=30)
+    if rc != 0:
+        return False
+    for line in txt.splitlines():
+        f = line.split("|", 1)
+        if len(f) != 2 or not (f[0].strip() == "jellyfin" or image_repo(f[1].strip()) in ADOPT_IMAGES["jellyfin"]):
+            continue
+        rc, info = docker("inspect", "-f", '{{.Config.Image}}|{{index .Config.Labels "com.docker.compose.project"}}', f[0].strip(), timeout=30)
+        if rc != 0 or info.strip().split("|")[-1] != "jellyfin":
+            return True
+    return False
 
 
 MUSIC_FOLDER_NAMES = ("music", "Music", "downtify", "Downtify", "Downtify/music", "downtify/music", "media/music", "Media/Music", "downloads/music")
@@ -455,6 +506,8 @@ def stack_env(name):
     if name == "navidrome":
         return [("LASTFM_APIKEY", Secrets.get("LASTFM_APIKEY")), ("LASTFM_SECRET", Secrets.get("LASTFM_SECRET")),
                 ("NAVIDROME_AGENTS", NAVIDROME_AGENTS_WITH if audiomuse_wanted() else "")]
+    if name == "jellyfin":
+        return [("TZ", Ctx.tz)]
     if name == "audiomuse":
         return [("TZ", Ctx.tz), ("AUDIOMUSE_DB_PASSWORD", Secrets.get("AUDIOMUSE_DB_PASSWORD")),
                 ("AUDIOMUSE_NAVIDROME_URL", "http://%s:%d" % (svc_host(), PORTS["navidrome"])),

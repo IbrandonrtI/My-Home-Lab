@@ -73,6 +73,7 @@ LAB_HOME="${LAB_HOME:-/home/$LAB_USER}"
 CONFIG_PATHS=(
   "$LAB_HOME/homepage-config"
   "$LAB_HOME/nextcloud/html"
+  "$LAB_HOME/jellyfin/config"
   /opt/adguard-docker
   /var/lib/docker/volumes/portainer_data
   /var/lib/docker/volumes/beszel_beszel_data

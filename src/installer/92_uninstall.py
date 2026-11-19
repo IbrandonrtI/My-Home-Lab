@@ -50,13 +50,13 @@ def un_serve_ports():
 def _adopted_dirs():
     h = Ctx.home
     return {"nextcloud": (h + "/nextcloud", "/mnt/storage/nextcloud"), "immich": (h + "/immich", "/mnt/storage/immich"),
-            "speedtest-tracker": (h + "/speedtest-tracker",), "audiomuse": (h + "/audiomuse",), "navidrome": (h + "/navidrome",),
+            "speedtest-tracker": (h + "/speedtest-tracker",), "audiomuse": (h + "/audiomuse",), "navidrome": (h + "/navidrome",), "jellyfin": (h + "/jellyfin",),
             "navilist": (h + "/navilist",), "adguard": ("/opt/adguard-docker",)}
 
 
 def un_data_dirs():
     h = Ctx.home
-    dirs = [h + "/nextcloud", h + "/immich", h + "/speedtest-tracker", h + "/homepage-config", h + "/audiomuse", h + "/navidrome", h + "/navilist",
+    dirs = [h + "/nextcloud", h + "/immich", h + "/speedtest-tracker", h + "/homepage-config", h + "/audiomuse", h + "/navidrome", h + "/jellyfin", h + "/navilist",
             "/opt/adguard-docker", "/mnt/storage/immich", "/mnt/storage/nextcloud", boot_share_dir()]
     kept = [d for n in adopted() for d in _adopted_dirs().get(n, ())]
     return [d for d in dirs if os.path.isdir(P(d)) and d not in kept]
@@ -200,6 +200,7 @@ def un_show_plan(f):
         say("  - %s, which you already ran before HomeLab (container%s %s), with its data. Only its dashboard card is removed." % (label, "s" if len(names) > 1 else "", ", ".join(names)))
     say("  - mergerfs, SnapRAID, mdadm, ZFS, smartmontools and the other helper programs")
     say("  - your music files%s" % (" in %s" % f["music"] if f["music"] else ""))
+    say("  - your movies and TV shows (the movies and shows folders on the Main pool)")
     say("  - the downloaded copy of this repository (%s)%s" % (Ctx.repo, "; it is deleted only if you choose to WIPE the data of the apps" if un_repo_path() else ""))
     if f["array"]:
         out("")
@@ -227,7 +228,7 @@ def un_ask_choices(f):
             say("The apps keep their own data in these folders (and in Docker volumes):\n" + "\n".join(lines))
             a = un_menu("What should happen to the data of the apps (photos, Nextcloud files, Navidrome playlists, AdGuard settings, Beszel history, dashboard settings, passwords)?",
                         ["KEEP it. The apps are removed, the data stays where it is. Installing again later finds it and goes on where you stopped. (Recommended)",
-                         "WIPE it. Everything the apps stored is deleted for good. Your music files are never deleted by this."])
+                         "WIPE it. Everything the apps stored is deleted for good. Your music, movies and TV shows are never deleted by this."])
             wipe_data = a == "2"
     if f["drives"] or f["boot_sections"] or f["pools"]:
         if Opt.yes:

@@ -250,7 +250,7 @@ class Prefetch:
     cv = threading.Condition()
     WORKERS = 5
     PER_REGISTRY = {"docker.io": 3, "ghcr.io": 2, "lscr.io": 2}
-    ORDER = {"homepage": 0, "adguard": 1, "beszel": 2, "netdata": 2, "speedtest-tracker": 2, "filebrowser": 2, "navidrome": 3,
+    ORDER = {"homepage": 0, "adguard": 1, "beszel": 2, "netdata": 2, "speedtest-tracker": 2, "filebrowser": 2, "navidrome": 3, "jellyfin": 3,
              "music-downloader": 3, "beszel-agent": 3, "immich": 8, "nextcloud": 9}
 
     @classmethod

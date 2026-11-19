@@ -41,7 +41,7 @@ DOWNTIFY_PORT = int(os.environ.get("HOMELAB_DOWNTIFY_PORT", "8000"))
 # The web address of every service the lab installs: container name and the port on this machine. A container that runs but whose page does not answer
 # is a service the person cannot use, and Docker alone does not say so.
 SERVICE_PORTS = {"homepage": 3001, "portainer": 9000, "adguardhome": 3000, "beszel": 8090, "netdata-netdata-1": 19999, "speedtest-tracker": 8088,
-                 "filebrowser-filebrowser-1": 8081, "immich_server": 2283, "nextcloud": 8082, "downtify": 8000, "metube": 8185, "navidrome": 4533}
+                 "filebrowser-filebrowser-1": 8081, "immich_server": 2283, "nextcloud": 8082, "downtify": 8000, "metube": 8185, "navidrome": 4533, "jellyfin": 8096}
 if os.environ.get("HOMELAB_SERVICE_PORTS"):  # tests: replaces the table
     SERVICE_PORTS = json.loads(os.environ["HOMELAB_SERVICE_PORTS"])
 ORDER = {"bad": 0, "warn": 1, "info": 2}

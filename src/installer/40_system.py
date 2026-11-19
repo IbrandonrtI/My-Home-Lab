@@ -461,7 +461,7 @@ class DnsStable(Step):
 def folder_plan():
     h = Ctx.home
     u, g = Ctx.uid, Ctx.gid
-    extra = [] if Mode.existing else [("/mnt/storage/music", u, g), ("/mnt/storage/videos", u, g)]
+    extra = [] if Mode.existing else [("/mnt/storage/music", u, g), ("/mnt/storage/videos", u, g), ("/mnt/storage/movies", u, g), ("/mnt/storage/shows", u, g)]
     return [
         ("/mnt/storage", 0, 0), ("/mnt/backup", 0, 0), ("/mnt/storage/immich", u, g),
         ("/mnt/storage/nextcloud", 33, 33),
