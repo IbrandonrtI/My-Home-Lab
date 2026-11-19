@@ -2289,11 +2289,11 @@ def links_apply(tx, head, old_groups, want, values):
             raise Fail("The list of links is not valid.")
         if not gb["links"]:
             continue
-        gname = check_group_name(gb.get("name"))
+        was = gb.get("was") or ""
+        gname = was if was and gb.get("name") == was and was in old_names else check_group_name(gb.get("name"))
         if gname in seen_groups:
             raise Fail("There is already a group called '%s'." % gname)
         seen_groups.add(gname)
-        was = gb.get("was") or ""
         if was:
             if was not in old_names or was in kept:
                 raise Fail("The group '%s' was not found. Reload the panel and try again." % was)
@@ -2306,16 +2306,26 @@ def links_apply(tx, head, old_groups, want, values):
         for lb in gb["links"]:
             if not isinstance(lb, dict):
                 raise Fail("The list of links is not valid.")
-            e = values(lb)
+            before = lb.get("was") or ""
+            if before and (before not in old_links or before in used):
+                raise Fail("The link '%s' was not found. Reload the panel and try again." % before)
+            if before:
+                used.add(before)
+                e = dict(old_links[before][0])
+                same = all(str(lb.get(k) or "") == str(e.get(k) or "") for k in ("name", "href", "icon", "description", "abbr"))
+            else:
+                same = False
+            if not same:
+                # A link that was not touched is kept as it is, even if an older version let an unusual value in. Only what was changed or added is checked.
+                try:
+                    keep = e["extra"] if before else []
+                    e = values(lb)
+                    e["extra"] = keep
+                except Fail as err:
+                    raise Fail("The link “%s”: %s" % (str(lb.get("name") or "").strip() or "(no name)", err), err.code) from None
             if e["name"] in seen_links:
                 raise Fail("There is already a link called '%s'. Choose another name." % e["name"])
             seen_links.add(e["name"])
-            before = lb.get("was") or ""
-            if before:
-                if before not in old_links or before in used:
-                    raise Fail("The link '%s' was not found. Reload the panel and try again." % before)
-                used.add(before)
-                e["extra"] = old_links[before][0]["extra"]
             g["links"].append(e)
             plan.append((e["name"], before, old_links[before][1] if before else "", was, g))
         new_groups.append(g)
