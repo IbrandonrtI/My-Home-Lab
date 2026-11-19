@@ -16,7 +16,7 @@ const framed = window.parent !== window;
 })();
 let S = null;
 let view = "look";
-let lookW = null, bgW = null, layW = null;
+let lookW = null, bgW = null, layW = null, linkW = null, linkBase = "";
 const root = document.getElementById("app");
 const LOOKVIEWS = ["look"];
 const BLURS = ["none", "sm", "md", "lg", "xl", "2xl", "3xl"];
@@ -114,7 +114,7 @@ function afterChange(reload) {
   return api("GET", "/api/state").then(s => {
     const y = window.scrollY;
     S = s;
-    lookW = bgW = layW = null;
+    lookW = bgW = layW = linkW = null;
     clearDraft();
     render();
     window.scrollTo(0, y);
@@ -2597,7 +2597,9 @@ function viewLinks() { return viewItems("links"); }
 // The Cards and Links screens share this editor: add, edit, move and remove cards, bookmarks and groups.
 function viewItems(kind) {
   const isCards = kind === "cards";
-  const groups = (isCards ? S.services.filter(g => !g.locked) : S.links);
+  if (!isCards && !linkW) startLinks();
+  // The Links screen works on a draft. Nothing is sent until Save, and then the whole list goes at once, so the dashboard reloads once.
+  const groups = (isCards ? S.services.filter(g => !g.locked) : linkW);
   const path = isCards ? "/api/card" : "/api/link";
   const items = g => isCards ? g.cards : g.links;
   const tabsList = S.layout.tabs.map(t => t.name);
@@ -2605,6 +2607,7 @@ function viewItems(kind) {
 
   async function op(body, okMsg) { try { await api("POST", path, body); toast(okMsg); await afterChange(true); } catch (e) { fail(e); } }
   async function reorder(g, i, d) {
+    if (!isCards) { const a = g.links, j = i + d; if (j >= 0 && j < a.length) { [a[i], a[j]] = [a[j], a[i]]; redraw(); } return; }
     const arr = items(g);
     const it = arr[i];
     const before = d < 0 ? arr[i - 1] : arr[i + 2];
@@ -2616,6 +2619,7 @@ function viewItems(kind) {
     await op({ op: "edit", group: g.group, old: it.name, name: it.name, href: it.href, icon: pick, description: it.description, dot: !!it.siteMonitor }, "Icon saved.");
   }
   async function remove(g, it) {
+    if (!isCards) { g.links.splice(g.links.indexOf(it), 1); redraw(); return; }
     if (it.hl) {
       if (!await confirmBox("Hide “" + it.name + "”?", "It is removed from the dashboard. It can be restored at any time with Add From HomeLab's List, or with Undo.", "Hide It", true)) return;
       return op({ op: "remove", group: g.group, name: it.name }, "Hidden.");
@@ -2698,10 +2702,16 @@ function viewItems(kind) {
       h("div", { class: "field" }, h("label", {}, "Short text"), desc, h("div", { class: "hint" }, isCards ? "Shown under the name." : "Optional.")),
       isCards ? (managed ? null : h("div", { class: "field" }, h("label", { for: "dot", class: "row" }, dot, "Show a green or red dot to indicate whether it is running"))) : h("div", { class: "field" }, h("label", {}, "Short label"), abbr, h("div", { class: "hint" }, "Up to 6 letters, shown when there is no icon.")),
       h("div", { class: "field" }, h("label", {}, adding ? "Put it in" : "Group"), gsel, gnew, tsel),
+      isCards ? null : h("p", { class: "muted small" }, "Nothing is saved until you press Save at the top."),
       err,
       h("div", { class: "actions" }, h("button", { onclick: () => d.close() }, "Cancel"), h("button", { class: "primary", onclick: async () => {
         err.textContent = "";
         const target = gsel.value === "__new" ? gnew.value.trim() : gsel.value;
+        if (!isCards) {
+          const bad = draftLink(g, it, { name: name.value.trim(), href: href.value.trim(), icon: ic.input.value.trim(), description: desc.value.trim(), abbr: abbr.value.trim() }, target, tsel.value);
+          if (bad) { err.textContent = bad; return; }
+          d.close(); redraw(); return;
+        }
         const body = { name: name.value.trim(), href: href.value.trim(), icon: ic.input.value.trim(), description: desc.value.trim(), dot: dot.checked, abbr: abbr.value.trim() };
         const secrets = {};
         for (const f of Object.keys(keyBoxes)) if (keyBoxes[f].value.trim()) secrets[f] = keyBoxes[f].value.trim();
@@ -2725,12 +2735,21 @@ function viewItems(kind) {
   async function groupMenu(g) {
     const n = (await askText("Rename the Group", "New name for the group “" + g.group + "”", g.group)) || "";
     if (!n || n === g.group) return;
+    if (!isCards) {
+      if (!NAME_OK.test(n)) return toast("The group name has characters that are not allowed.", true);
+      if (groups.some(x => x.group === n)) return toast("There is already a group called “" + n + "”.", true);
+      g.group = n; redraw(); return;
+    }
     try {
       await api("POST", isCards ? "/api/group" : "/api/link", isCards ? { op: "rename", group: g.group, to: n } : { op: "group-rename", group: g.group, to: n });
       toast("Renamed."); await afterChange(true);
     } catch (e) { fail(e); }
   }
   async function groupRemove(g) {
+    if (!isCards) {
+      if (!await confirmBox("Remove the Whole Group “" + g.group + "”?", "This takes the group and its " + g.links.length + " link" + (g.links.length === 1 ? "" : "s") + " off the list. Nothing is removed from the dashboard until you press Save.", "Remove the Group", true)) return;
+      groups.splice(groups.indexOf(g), 1); redraw(); return;
+    }
     if (!await confirmBox("Remove the Whole Group “" + g.group + "”?", "This removes the group and its " + items(g).length + " " + word + (items(g).length === 1 ? "" : "s") + ". Undo can bring them back.", "Remove the Group", true)) return;
     try {
       await api("POST", isCards ? "/api/group" : "/api/link", isCards ? { op: "remove", group: g.group } : { op: "group-remove", group: g.group });
@@ -2738,29 +2757,112 @@ function viewItems(kind) {
     } catch (e) { fail(e); }
   }
 
-  const cards = groups.map(g => h("div", { class: "card group-card" },
-    h("header", {}, h("h2", {}, g.group), h("span", { class: "badge" }, items(g).length + (items(g).length === 1 ? " " + word : " " + word + "s")),
-      isCards && g.automatic ? h("span", { class: "badge", title: "HomeLab fills in the numbers of these cards" }, "Filled in by HomeLab") : null,
-      isCards && g.automatic ? null : [h("button", { class: "small", onclick: () => groupMenu(g) }, "Rename"), h("button", { class: "small danger", onclick: () => groupRemove(g) }, "Remove Group")]),
-    items(g).map((it, i) => h("div", { class: "item" }, iconEl(it.icon),
+  // Dragging a link: where it comes from, and the group and position it is dropped on.
+  let dragFrom = null, listEl = null, barEl = null;
+  function dropAt(to, at) {
+    const f = dragFrom;
+    dragFrom = null;
+    if (!f) return;
+    const it = f.g.links.splice(f.i, 1)[0];
+    if (f.g === to && f.i < at) at -= 1;
+    to.links.splice(Math.max(0, Math.min(at, to.links.length)), 0, it);
+    redraw();
+  }
+  function itemRow(g, it, i) {
+    const row = h("div", { class: "item" });
+    if (!isCards) {
+      const after = ev => { const r = row.getBoundingClientRect(); return ev.clientY > r.top + r.height / 2; };
+      const clear = () => row.classList.remove("over-t", "over-b");
+      row.draggable = true;
+      row.addEventListener("dragstart", ev => { dragFrom = { g, i }; ev.dataTransfer.effectAllowed = "move"; ev.dataTransfer.setData("text/plain", it.name); setTimeout(() => row.classList.add("drag"), 0); });
+      row.addEventListener("dragend", () => { dragFrom = null; row.classList.remove("drag"); clear(); });
+      row.addEventListener("dragover", ev => { if (!dragFrom) return; ev.preventDefault(); ev.stopPropagation(); const b = after(ev); row.classList.toggle("over-b", b); row.classList.toggle("over-t", !b); });
+      row.addEventListener("dragleave", clear);
+      row.addEventListener("drop", ev => { if (!dragFrom) return; ev.preventDefault(); ev.stopPropagation(); const b = after(ev); clear(); dropAt(g, i + (b ? 1 : 0)); });
+    }
+    add(row, isCards ? null : h("span", { class: "handle", title: "Drag to move", "aria-hidden": "true" }, "⠿"), iconEl(it.icon),
       h("div", { class: "txt" }, h("b", {}, it.name), h("span", {}, [it.description, it.href].filter(Boolean).join("  ·  ") || "No address")),
       isCards && it.managed ? h("span", { class: "badge", title: "Created by HomeLab; it keeps the address up to date" }, "Built-In") : null,
       h("button", { class: "small icon", "aria-label": "Move " + it.name + " up", disabled: i === 0, onclick: () => reorder(g, i, -1) }, "↑"),
       h("button", { class: "small icon", "aria-label": "Move " + it.name + " down", disabled: i === items(g).length - 1, onclick: () => reorder(g, i, 1) }, "↓"),
       isCards && !it.locked ? h("button", { class: "small", onclick: () => quickIcon(g, it) }, "Icon…") : null,
       h("button", { class: "small", onclick: () => editor(g, it) }, "Change"),
-      h("button", { class: "small danger", onclick: () => remove(g, it) }, it.hl ? "Hide" : "Remove"))),
-    h("div", { style: { marginTop: "10px" } }, h("button", { class: "small", onclick: () => editor(g, null) }, "+ Add a " + (word === "card" ? "Card" : "Link") + " here"))));
+      h("button", { class: "small danger", onclick: () => remove(g, it) }, it.hl ? "Hide" : "Remove"));
+    return row;
+  }
+  function groupCards() {
+    if (!groups.length) return [h("p", { class: "muted" }, "There is nothing here yet.")];
+    return groups.map(g => {
+      const box = h("div", { class: "card group-card" },
+        h("header", {}, h("h2", {}, g.group), h("span", { class: "badge" }, items(g).length + (items(g).length === 1 ? " " + word : " " + word + "s")),
+          isCards && g.automatic ? h("span", { class: "badge", title: "HomeLab fills in the numbers of these cards" }, "Filled in by HomeLab") : null,
+          isCards && g.automatic ? null : [h("button", { class: "small", onclick: () => groupMenu(g) }, "Rename"), h("button", { class: "small danger", onclick: () => groupRemove(g) }, "Remove Group")]),
+        items(g).map((it, i) => itemRow(g, it, i)),
+        !isCards && !items(g).length ? h("p", { class: "muted small" }, "Empty. Drag a link here or add one. A group with no links is not kept when you save.") : null,
+        h("div", { style: { marginTop: "10px" } }, h("button", { class: "small", onclick: () => editor(g, null) }, "+ Add a " + (word === "card" ? "Card" : "Link") + " here")));
+      if (!isCards) {
+        box.addEventListener("dragover", ev => { if (!dragFrom) return; ev.preventDefault(); box.classList.add("over"); });
+        box.addEventListener("dragleave", ev => { if (!box.contains(ev.relatedTarget)) box.classList.remove("over"); });
+        box.addEventListener("drop", ev => { if (!dragFrom) return; ev.preventDefault(); box.classList.remove("over"); dropAt(g, g.links.length); });
+      }
+      return box;
+    });
+  }
+  function redraw() { const y = window.scrollY; put(listEl, groupCards()); window.scrollTo(0, y); drawLinkBar(barEl); }
+  listEl = h("div", {}, groupCards());
+  barEl = isCards ? null : h("div", { class: "stickytop linkbar" }, h("div", { class: "hactions" }));
+  drawLinkBar(barEl);
 
   return h("div", {},
+    barEl,
     h("div", { class: "card" }, h("h2", {}, isCards ? "Cards on the Dashboard" : "Links (Bookmarks)"),
       h("p", { class: "muted" }, isCards ? "The cards of the Home tab. Add cards for any web page, change a name or text, change the order or group, or remove cards."
-        : "The bookmarks of the Links tab, in groups. Add your own sites with icons."),
+        : "The bookmarks of the Links tab, in groups. Add your own sites with icons. Drag a link (or use the arrows) to change the order, or drop it on another group to move it. Nothing changes on the dashboard until you press Save."),
       h("div", { class: "row" }, h("button", { class: "primary", onclick: () => editor(groups[0] || null, null) }, "+ Add a " + (word === "card" ? "Card" : "Link")),
         isCards ? [h("button", { onclick: hlList }, "Add From HomeLab's List…"), h("button", { onclick: hlRestore, title: "Restore the cards that HomeLab fills in to their defaults" }, "Put HomeLab's Cards Back…")] : null),
       isCards ? h("p", { class: "muted small" }, "The groups marked “Filled in by HomeLab” hold the numbers and the calendar. Their cards can be renamed, given another icon or color, moved, reordered, hidden and restored like any other card.") : null),
-    cards.length ? cards : h("p", { class: "muted" }, "There is nothing here yet."));
+    listEl);
 }
+
+// The draft of the Links screen. It is the saved list plus the changes made since, and only Save sends it (all at once).
+const NAME_OK = /^[^"'\\{};<>/*:#\[\]|`]+$/;
+function startLinks() {
+  linkW = S.links.map(g => ({ group: g.group, was: g.group, links: g.links.map(l => Object.assign({}, l, { was: l.name })) }));
+  linkBase = JSON.stringify(linkPayload());
+}
+function linkPayload() {
+  return (linkW || []).filter(g => g.links.length).map(g => ({ name: g.group, was: g.was || "", tab: g.tab || "",
+    links: g.links.map(l => ({ name: l.name, was: l.was || "", href: l.href || "", icon: l.icon || "", description: l.description || "", abbr: l.abbr || "" })) }));
+}
+function linkDirty() { return linkW !== null && JSON.stringify(linkPayload()) !== linkBase; }
+// Puts the values of the Add or Change window into the draft. Returns a sentence when something is wrong, and changes nothing then.
+function draftLink(g, it, v, target, tab) {
+  if (!v.name) return "The name cannot be empty.";
+  if (!NAME_OK.test(v.name)) return "The name has characters that are not allowed.";
+  if (linkW.some(x => x.links.some(l => l !== it && l.name === v.name))) return "There is already a link called “" + v.name + "”. Choose another name.";
+  if (!/^https?:\/\/[^\s"'<>]+$/.test(v.href)) return v.href ? "The address must start with http:// or https:// and have no spaces." : "The address cannot be empty.";
+  if (!target) return "Choose a group, or give the new group a name.";
+  if (!NAME_OK.test(target)) return "The group name has characters that are not allowed.";
+  let to = linkW.find(x => x.group === target);
+  if (!to) { to = { group: target, was: "", tab: tab || "Links", links: [] }; linkW.push(to); }
+  if (it) { Object.assign(it, v); if (to !== g) { g.links.splice(g.links.indexOf(it), 1); to.links.push(it); } }
+  else to.links.push(Object.assign({ was: "" }, v));
+  return "";
+}
+async function saveLinks() {
+  try { await api("POST", "/api/link", { op: "save", version: S.linksVersion, groups: linkPayload() }); toast("Saved."); await afterChange(true); } catch (e) { fail(e); }
+}
+// The Save bar of the Edit Links box on the dashboard. It stays in view while the list scrolls.
+function drawLinkBar(own) {
+  if (!own) return;
+  const dirty = linkDirty();
+  const back = () => { linkW = null; render(); };
+  put(own.firstChild,
+    h("div", { class: "state" + (dirty ? " dirty" : ""), title: dirty ? "There are unsaved changes." : "Everything shown is saved." }, dirty ? "Unsaved Changes" : "Saved"),
+    h("button", { disabled: !dirty, onclick: back }, "Discard Changes"),
+    h("button", { class: "primary", disabled: !dirty, onclick: saveLinks }, "Save"));
+}
+window.addEventListener("beforeunload", ev => { if (linkDirty()) { ev.preventDefault(); ev.returnValue = ""; } });
 
 async function start() {
   let s;

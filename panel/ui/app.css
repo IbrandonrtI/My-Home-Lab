@@ -380,3 +380,13 @@ button.link { background: none; border: 0; padding: 2px 4px; min-height: 0; colo
 .upcmd { display: block; padding: 8px 10px; border-radius: 8px; background: rgba(0, 0, 0, 0.3); font-size: 0.85em; word-break: break-all; user-select: all; }
 .updlog { margin: 10px 0 0; padding: 10px 12px; max-height: 260px; overflow: auto; background: rgba(0, 0, 0, 0.3); border-radius: 10px; font-size: 12.5px; white-space: pre-wrap; word-break: break-word; }
 .upd .bkl { display: grid; gap: 10px; margin-top: 14px; }
+
+/* The Links screen: dragging a link, and the bar that keeps Save in view in the Edit Links box. */
+.item .handle { cursor: grab; color: var(--muted); padding: 0 4px; user-select: none; }
+.item[draggable="true"] { cursor: default; }
+.item.drag { opacity: 0.4; }
+.item.over-t { box-shadow: 0 -2px 0 0 rgb(var(--accent)); }
+.item.over-b { box-shadow: 0 2px 0 0 rgb(var(--accent)); }
+.group-card.over { outline: 2px dashed rgba(var(--accent), 0.7); outline-offset: -2px; }
+.linkbar { display: block; padding-top: 6px; padding-bottom: 6px; border-bottom: 1px solid var(--line); margin-bottom: 12px; }
+.linkbar .hactions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; flex-wrap: wrap; }

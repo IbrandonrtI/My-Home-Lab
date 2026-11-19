@@ -2256,16 +2256,119 @@ def marks_state():
             for g in marks_parse(read(BOOKMARKS))[1]]
 
 
+def marks_version():
+    """A short fingerprint of the saved bookmarks. The Links screen sends the one it was loaded with, so a save made from an older copy is refused."""
+    return hashlib.sha1(json.dumps(marks_state(), sort_keys=True).encode("utf-8")).hexdigest()[:12]
+
+
 def abbr_of(name):
     w = re.sub(r"[^A-Za-z0-9 ]", "", name).split()
     return (w[0][:4] if len(w) == 1 else "".join(x[0] for x in w[:4])).upper()
 
 
+def common_color(names, colors):
+    """The color most of these links share, or "" when none of them has one."""
+    seen = [colors[n] for n in names if colors.get(n)]
+    return max(seen, key=seen.count) if seen else ""
+
+
+def links_apply(tx, head, old_groups, want, values):
+    """Replace the bookmarks with the list the Links screen sends: the groups in order, each with its links. Everything is checked first and written as one
+    change. Links keep their extra lines and their color when they are renamed or moved, and a new link takes the color of the others in its group."""
+    if not isinstance(want, list) or len(want) > 60:
+        raise Fail("The list of links is not valid.")
+    old_links = {e["name"]: (e, g["name"]) for g in old_groups for e in g["links"]}
+    old_names = [g["name"] for g in old_groups]
+    custom = look_get(tx.get(CSS))
+    colors = dict(custom.get("links") or {})
+    old_dominant = {g["name"]: common_color([e["name"] for e in g["links"]], colors) for g in old_groups}
+    new_groups, seen_groups, seen_links, kept, used = [], set(), set(), set(), set()
+    renames, new_tabs, plan = {}, {}, []
+    for gb in want:
+        if not isinstance(gb, dict) or not isinstance(gb.get("links"), list):
+            raise Fail("The list of links is not valid.")
+        if not gb["links"]:
+            continue
+        gname = check_group_name(gb.get("name"))
+        if gname in seen_groups:
+            raise Fail("There is already a group called '%s'." % gname)
+        seen_groups.add(gname)
+        was = gb.get("was") or ""
+        if was:
+            if was not in old_names or was in kept:
+                raise Fail("The group '%s' was not found. Reload the panel and try again." % was)
+            kept.add(was)
+            if was != gname:
+                renames[was] = gname
+        else:
+            new_tabs[gname] = gb.get("tab") or "Links"
+        g = {"name": gname, "links": []}
+        for lb in gb["links"]:
+            if not isinstance(lb, dict):
+                raise Fail("The list of links is not valid.")
+            e = values(lb)
+            if e["name"] in seen_links:
+                raise Fail("There is already a link called '%s'. Choose another name." % e["name"])
+            seen_links.add(e["name"])
+            before = lb.get("was") or ""
+            if before:
+                if before not in old_links or before in used:
+                    raise Fail("The link '%s' was not found. Reload the panel and try again." % before)
+                used.add(before)
+                e["extra"] = old_links[before][0]["extra"]
+            g["links"].append(e)
+            plan.append((e["name"], before, old_links[before][1] if before else "", was, g))
+        new_groups.append(g)
+    if sum(len(g["links"]) for g in new_groups) > 400:
+        raise Fail("There are too many links (400 at most).")
+    # Colors. A link that stays in its group keeps its color. A new link, or a link moved to another group (unless it has a color of its own), takes the color that
+    # the links already in that group share, so it matches the theme. A new group with no such links uses the one color all links share, if there is one.
+    stays = {}
+    for name, before, old_group, was, g in plan:
+        if before and old_group == was:
+            stays.setdefault(id(g), []).append(before)
+    everyone = {colors[n] for n in old_links if colors.get(n)}
+    fallback = next(iter(everyone)) if len(everyone) == 1 else ""
+    fresh = {}
+    for name, before, old_group, was, g in plan:
+        col = colors.get(before, "") if before else ""
+        if before and old_group == was:
+            fresh[name] = col
+            continue
+        if before and col and col != old_dominant.get(old_group, ""):
+            fresh[name] = col
+            continue
+        fresh[name] = common_color(stays.get(id(g), []), colors) or fallback
+    for n in old_links:
+        colors.pop(n, None)
+    for n, c in fresh.items():
+        if c:
+            colors[n] = c
+    if colors != (custom.get("links") or {}):
+        if colors:
+            custom["links"] = colors
+        else:
+            custom.pop("links", None)
+        tx.put(CSS, css_with_look(tx.get(CSS), custom))
+    for n in old_names:
+        if n not in kept:
+            drop_layout_group(tx, n)
+    if renames:
+        text = tx.get(SETTINGS)
+        gs = layout_groups(text)
+        for x in gs:
+            x["name"] = renames.get(x["name"], x["name"])
+        tx.put(SETTINGS, layout_write(text, gs))
+    for n, tab in new_tabs.items():
+        ensure_layout_group(tx, n, tab)
+    tx.put(BOOKMARKS, marks_write(head, new_groups))
+
+
 def api_link(body):
-    """Add, edit, remove or move bookmarks and bookmark groups."""
+    """Add, edit, remove or move bookmarks and bookmark groups. The Links screen sends the whole list with op "save", so one Save is one change and one Undo."""
     op = body.get("op")
     tx = Tx({"add": "Link added", "edit": "Link changed", "remove": "Link removed", "move": "Link moved", "group-add": "Link group added",
-             "group-rename": "Link group renamed", "group-remove": "Link group removed"}.get(op, "Links changed"))
+             "group-rename": "Link group renamed", "group-remove": "Link group removed", "save": "Links changed"}.get(op, "Links changed"))
     head, groups = marks_parse(tx.get(BOOKMARKS))
 
     def grp(name):
@@ -2291,7 +2394,11 @@ def api_link(body):
         return {"name": name, "abbr": abbr, "href": href, "icon": clean_icon(b.get("icon", "")),
                 "description": clean_text(b.get("description", ""), "The description", 120, True), "extra": []}
 
-    if op == "add":
+    if op == "save":
+        if body.get("version") != marks_version():
+            raise Fail("The links were changed in another window or tab after this page was opened. Reload the panel to see that change, then make yours again. Nothing was saved.", 409)
+        links_apply(tx, head, groups, body.get("groups"), values)
+    elif op == "add":
         gname = check_group_name(body.get("group"))
         g = next((x for x in groups if x["name"] == gname), None)
         if g is None:
@@ -2642,7 +2749,7 @@ def api_location_save(body):
 def full_state():
     h = history_last()
     return {"version": VERSION, "look": look_state(), "background": bg_state(), "layout": layout_state(), "services": services_state(), "hlcards": hl_state(), "mythemes": mythemes_state(),
-            "links": marks_state(), "location": location_state(), "paint": paint_state(), "undo": (h[1]["label"] if h else ""), "automatic": sorted(AUTOMATIC), "protected": sorted(PROTECTED)}
+            "links": marks_state(), "linksVersion": marks_version(), "location": location_state(), "paint": paint_state(), "undo": (h[1]["label"] if h else ""), "automatic": sorted(AUTOMATIC), "protected": sorted(PROTECTED)}
 
 
 DRIVES_GATE = threading.Condition()
