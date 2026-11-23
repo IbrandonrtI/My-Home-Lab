@@ -83,7 +83,7 @@ Everything except Tailscale runs in Docker. Each stack has a Compose file in [`s
 
 Photos, files, music, movies and shows live in the Main pool. It uses mergerfs, so a few drives look like one folder. Databases and app settings stay on the boot drive.
 
-A backup runs every night at 6:00 server time. It copies the Main pool and the lab's settings to the Backup pool, keeps older versions of changed files for 30 days and dumps the databases. Until a backup drive is connected, the backup goes to a folder on the boot drive, which protects nothing if that drive fails. A backup drive is the next thing I need to add. Restores and rebuilds are in [Maintenance](docs/maintenance.md#backups).
+A backup runs every night at 6:00 server time. It copies the Main pool and the lab's settings to the Backup pool, keeps older versions of changed files for 30 days and dumps the databases. The backup runs only while a drive is connected in the Backup pool, so until I add one nothing is backed up. A backup drive is the next thing I need to add. Restores and rebuilds are in [Maintenance](docs/maintenance.md#backups).
 
 ## Installing it
 
