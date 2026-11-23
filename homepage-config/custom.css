@@ -1226,7 +1226,7 @@ html[data-hl-fit="1440"] #information-widgets { zoom: 0.80; }
   #inner_wrapper #widgets-wrap [class*="information-widget-openmeteo"]::before {
     content: ""; position: absolute; left: 0; top: 14%; bottom: 14%; width: 1px; background: rgba(var(--lk-ink, 255, 255, 255), 0.1);
   }
-  #inner_wrapper #hl-hello.hl-in-panel { order: -4; flex: 1 1 0; min-width: 0; margin: 0; padding: 2px 22px; text-align: left; font-size: 1.2rem; line-height: 1.2; }
+  #inner_wrapper #hl-hello.hl-in-panel { order: -4; flex: 1 1 0; min-width: 0; margin: 0; padding: 2px 22px; text-align: left; font-size: 1.2rem; font-weight: 650; line-height: 1.2; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   #inner_wrapper #widgets-wrap [class*="information-widget-datetime"] { order: -3; flex: 0 0 auto !important; margin-left: auto !important; }
   #inner_wrapper #widgets-wrap [class*="information-widget-openmeteo"] { order: -2 !important; flex: 0 0 auto !important; }
   #inner_wrapper #widgets-wrap .information-widget-search { order: 20 !important; flex: 0 0 auto !important; width: calc(100% - 36px) !important; height: auto !important; min-height: 0 !important; margin: 6px 18px 0 !important; padding: 0 !important; }
@@ -1333,7 +1333,12 @@ html[data-hl-fit="1440"] #information-widgets { zoom: 0.80; }
   #inner_wrapper #widgets-wrap.hl-stats-on > .widget-container { display: none !important; }
   #inner_wrapper #hl-stats { display: flex; order: 0; flex: 0 0 100%; box-sizing: border-box; align-items: center; justify-content: space-between; padding: 2px 6px; }
   #inner_wrapper #hl-stats[hidden] { display: none; }
-  #inner_wrapper #hl-stats .hl-g { --g: var(--lk-accent); position: relative; flex: 1 1 auto; min-width: 0; display: flex; align-items: center; justify-content: center; gap: 11px; padding: 3px 12px; }
+  #inner_wrapper #hl-stats .hl-g { --g: var(--lk-accent); position: relative; flex: 1 1 0; min-width: 0; display: flex; align-items: center; justify-content: flex-start; gap: 11px; padding: 3px 12px 3px 16px; font-variant-numeric: tabular-nums; }
+  #inner_wrapper #hl-stats .hl-g-net { flex-grow: 1.7; }
+  #inner_wrapper #hl-stats .hl-g-net .hl-gt { min-width: 10.5em; }
+  #inner_wrapper #hl-stats .hl-g-up { flex-grow: 0.7; }
+  #inner_wrapper #hl-stats .hl-gt { overflow: hidden; }
+  #inner_wrapper #hl-stats .hl-gn, #inner_wrapper #hl-stats .hl-gv, #inner_wrapper #hl-stats .hl-gs2 { overflow: hidden; text-overflow: ellipsis; }
   #inner_wrapper #hl-stats .hl-g + .hl-g::before { content: ""; position: absolute; left: 0; top: 12%; bottom: 12%; width: 1px; background: rgba(var(--lk-ink, 255, 255, 255), 0.1); }
   #inner_wrapper #hl-stats .hl-g-cpu { --g: 74, 222, 128; }
   #inner_wrapper #hl-stats .hl-g-mem { --g: 34, 211, 238; }
@@ -1352,7 +1357,7 @@ html[data-hl-fit="1440"] #information-widgets { zoom: 0.80; }
   #inner_wrapper #hl-stats .hl-gs2 { font-size: 11px; color: var(--lk-muted); white-space: nowrap; }
   #inner_wrapper #hl-stats .hl-gs2[hidden] { display: none; }
   #inner_wrapper #hl-stats .hl-gs { flex: 0 0 auto; width: 56px; height: 26px; }
-  #inner_wrapper #hl-stats .hl-gt { flex: 0 0 auto; }
+  #inner_wrapper #hl-stats .hl-gt { flex: 0 1 auto; }
   #inner_wrapper #hl-stats .hl-gs .hl-sl { fill: none; stroke-width: 1.4; vector-effect: non-scaling-stroke; stroke-linejoin: round; opacity: 0.85; }
 }
 @media (min-width: 701px) {
@@ -1396,5 +1401,47 @@ html.hl-jf-side #hl-jf-frame .hl-jf-open:hover { color: var(--lk-hi, #fff); }
 @media (min-width: 2200px) {
   html.hl-jf-side #inner_wrapper #layout-groups:has(#navidrome-card) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
+
+/* One slim row on a wide screen: name, gauges and graph, clock, weather. Below that width the header keeps its two rows. */
+@media (min-width: 1760px) {
+  #inner_wrapper #widgets-wrap.hl-stats-on { flex-wrap: nowrap !important; padding: 6px 6px !important; }
+  #inner_wrapper #widgets-wrap.hl-stats-on::before { display: none; }
+  #inner_wrapper #widgets-wrap.hl-stats-on #hl-hello.hl-in-panel { order: -4; flex: 0 1 auto; max-width: 14em; }
+  #inner_wrapper #widgets-wrap.hl-stats-on #hl-stats { order: -3; flex: 1 1 0; min-width: 0; padding: 0; }
+  #inner_wrapper #widgets-wrap.hl-stats-on #hl-stats .hl-ring { width: 32px; height: 32px; }
+  #inner_wrapper #widgets-wrap.hl-stats-on #hl-stats .hl-g { gap: 9px; padding: 2px 8px 2px 14px; }
+  #inner_wrapper #widgets-wrap.hl-stats-on #hl-stats .hl-gv { font-size: 14px; }
+  #inner_wrapper #widgets-wrap.hl-stats-on [class*="information-widget-datetime"] { order: -2; margin-left: 0 !important; padding: 2px 16px !important; }
+  #inner_wrapper #widgets-wrap.hl-stats-on [class*="information-widget-datetime"]::before { content: ""; position: absolute; left: 0; top: 14%; bottom: 14%; width: 1px; background: rgba(var(--lk-ink, 255, 255, 255), 0.1); }
+  #inner_wrapper #widgets-wrap.hl-stats-on [class*="information-widget-openmeteo"] { order: -1 !important; padding: 2px 16px !important; }
+  #inner_wrapper #widgets-wrap.hl-stats-on .information-widget-search { order: 20 !important; }
+}
+
+/* Docker CPU and memory per container on the Stats tab (drawn by custom.js from docker-trends.json). */
+#hl-docker { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: 18px var(--lk-side) 6px; }
+#hl-docker[hidden] { display: none; }
+#hl-docker .hl-dk-empty { grid-column: 1 / -1; margin: 0; padding: 18px; text-align: center; color: var(--lk-muted); font-size: 0.9rem; border-radius: 18px; border: 1px solid var(--lk-line); background: rgba(var(--lk-glass), var(--lk-glass-a)); }
+#hl-docker .hl-dk-card { min-width: 0; padding: 14px 16px 12px; border-radius: 18px; border: 1px solid var(--lk-line); background: rgba(var(--lk-glass), var(--lk-glass-a)); box-shadow: 0 16px 36px -22px rgba(var(--lk-shadow, 0, 0, 0), 0.75), var(--lk-rim, 0 0 0 0 transparent); -webkit-backdrop-filter: blur(var(--lk-blur, 14px)) saturate(var(--lk-sat, 125%)); backdrop-filter: blur(var(--lk-blur, 14px)) saturate(var(--lk-sat, 125%)); font-variant-numeric: tabular-nums; }
+#hl-docker .hl-dk-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; }
+#hl-docker .hl-dk-head b { font-size: 0.95rem; font-weight: 650; color: var(--lk-text); }
+#hl-docker .hl-dk-now { font-size: 1.3rem; font-weight: 650; color: var(--lk-text); }
+#hl-docker .hl-dk-head small { margin-left: auto; font-size: 0.75rem; color: var(--lk-muted); }
+#hl-docker .hl-dk-plot { position: relative; height: 150px; margin: 14px 0 0 46px; cursor: crosshair; }
+#hl-docker .hl-dk-plot svg { display: block; width: 100%; height: 100%; overflow: visible; }
+#hl-docker .hl-dk-grid { stroke: rgba(var(--lk-ink, 255, 255, 255), 0.14); stroke-dasharray: 3 4; }
+#hl-docker .hl-dk-y { position: absolute; left: -46px; width: 40px; text-align: right; transform: translateY(50%); font-size: 11px; line-height: 1; color: var(--lk-muted); pointer-events: none; }
+#hl-docker .hl-dk-line { position: absolute; top: 0; bottom: 0; width: 1px; background: rgba(var(--lk-ink, 255, 255, 255), 0.45); pointer-events: none; }
+#hl-docker .hl-dk-tip { position: absolute; top: 4px; z-index: 3; min-width: 170px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--lk-line); background: rgba(var(--lk-glass), 0.96); box-shadow: 0 10px 28px -10px rgba(0, 0, 0, 0.6); font-size: 12px; color: var(--lk-text); pointer-events: none; }
+#hl-docker .hl-dk-tip b { display: block; margin-bottom: 5px; font-weight: 650; }
+#hl-docker .hl-dk-row { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: center; gap: 8px; line-height: 1.5; }
+#hl-docker .hl-dk-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--lk-muted); }
+#hl-docker .hl-dk-row em, #hl-docker .hl-dk-chip em { font-style: normal; font-weight: 600; }
+#hl-docker .hl-dk-row i, #hl-docker .hl-dk-chip i { display: inline-block; width: 8px; height: 8px; border-radius: 3px; }
+#hl-docker .hl-dk-x { display: flex; justify-content: space-between; margin: 5px 0 0 46px; font-size: 11px; color: var(--lk-muted); }
+#hl-docker .hl-dk-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 10px; }
+#hl-docker .hl-dk-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--lk-muted); white-space: nowrap; }
+#hl-docker .hl-dk-chip em { color: var(--lk-text); }
+@media (max-width: 1000px) { #hl-docker { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 700px) { #hl-docker .hl-dk-plot { height: 120px; } }
 
 /* <<< homelab tabs <<< */

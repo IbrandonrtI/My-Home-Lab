@@ -6859,9 +6859,15 @@ def panel_password_file():
     return P(Ctx.home + "/.config/homelab-panel/password")
 
 
+def panel_admin_name():
+    """The admin name typed in the installer, cleaned for the unit file; the panel greets with it when no name is set."""
+    return re.sub(r"[^A-Za-z0-9 ._-]", "", str(Ctx.admin or "")).strip()[:24]
+
+
 def panel_unit_text():
     hosts = "%s:%d" % (Ctx.fqdn, PANEL_HTTPS)
     frame = ["https://%s:%d" % (Ctx.fqdn, SERVE[0][0])] + (["http://%s:%d" % (Ctx.lan, PORTS["homepage"])] if Ctx.lan else [])
+    admin = panel_admin_name()
     return "\n".join([
         "# Written by homelab-setup. The control panel of the dashboard (the Customize tab). Change nothing here: an upgrade puts it back.",
         "[Unit]",
@@ -6876,6 +6882,7 @@ def panel_unit_text():
         "Environment=HLP_HOSTS=%s" % hosts,
         "Environment=HLP_FRAME=%s" % ",".join(frame),
         "Environment=HLP_HOMEPAGE_URL=https://%s:%d" % (Ctx.fqdn, SERVE[0][0]),
+    ] + (['Environment="HLP_ADMIN=%s"' % admin] if admin else []) + [
         "ExecStart=/usr/bin/python3 /usr/local/sbin/homelab-panel serve",
         "KillMode=process",
         "Restart=on-failure",

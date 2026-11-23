@@ -2295,7 +2295,7 @@ function polishCard() {
           h("span", {}, "Show a Greeting at the Top of the Page")),
         h("input", { type: "text", maxlength: 24, value: L.helloName || "", placeholder: S.look.helloDefault || "Your name", "aria-label": "Name in the greeting",
           oninput: ev => { L.helloName = ev.target.value.replace(/\s+/g, " ").trim(); lookChanged(); } }),
-        h("div", { class: "hint" }, "For example “Good evening, Brandon”, with today’s date under it. Leave the name empty to use the name of the account the panel runs as. The greeting and the quick launch icons appear after Save.")),
+        h("div", { class: "hint" }, "The page shows just this name at the top, with no “Good morning” in front. Leave it empty to use the admin name you typed in the installer (or, if there is none, the name of the account the panel runs as). The name and the quick launch icons appear after Save.")),
       h("div", { class: "field" }, h("div", { class: "lab" }, "Quick Launch"),
         h("div", { class: "chips" }, [["auto", "Most Visited"], ["custom", "Choose Cards"], ["off", "Off"]].map(([k, t]) => chip(mode === k, t, () => { L.dockMode = k; }))),
         h("div", { class: "hint" }, "A row of icons in the bar next to the search icon that opens a service with one click. Most Visited starts with Jellyfin, Immich, Nextcloud, FileBrowser and Portainer, then moves the services you open most often to the front (counted in this browser only). Choose Cards lets you pick up to 12 (the order is the order you tick them). Off hides the row and its three-dot menu. The three-dot menu at the end of the row lets you add your own links and reorder the icons in this browser. It is not shown on a phone.")),

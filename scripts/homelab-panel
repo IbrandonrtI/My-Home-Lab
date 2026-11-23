@@ -598,9 +598,13 @@ def hello_name(val):
 
 
 def hello_default():
-    """The name in the greeting when none is set: the name of the account the panel runs as (not for root)."""
-    name = re.sub(r"[^A-Za-z0-9 ._-]", "", os.path.basename(HOME.rstrip("/")))
-    return "" if name in ("", "root") else name[:24].capitalize()
+    """The name in the greeting when none is set: the admin name typed in the installer, else the name of the account the panel runs as (not root)."""
+    clean = lambda v: re.sub(r"[^A-Za-z0-9 ._-]", "", v or "").strip()[:24]
+    name = clean(os.environ.get("HLP_ADMIN"))
+    if name:
+        return name[:1].upper() + name[1:]
+    name = clean(os.path.basename(HOME.rstrip("/")))
+    return "" if name in ("", "root") else name.capitalize()
 
 
 def dock_ids(val):
@@ -4804,6 +4808,89 @@ def trends_loop():
         time.sleep(TRENDS_SECS)
 
 
+DOCKER_FILE = os.path.join(IMAGES, "docker-trends.json")
+DOCKER_SECS = float(os.environ.get("HLP_DOCKER_SECS") or 60)
+DOCKER_POINTS = 60
+DOCKER_TOP = 6
+_MEM_UNITS = {"b": 1, "kb": 1000, "mb": 1000 ** 2, "gb": 1000 ** 3, "tb": 1000 ** 4,
+              "kib": 1024, "mib": 1024 ** 2, "gib": 1024 ** 3, "tib": 1024 ** 4}
+
+
+def docker_bytes(text):
+    """'1.5GiB' or '312kB' as a number of bytes; 0 when it is not a size."""
+    m = re.fullmatch(r"\s*([0-9]*\.?[0-9]+)\s*([A-Za-z]+)\s*", str(text or ""))
+    if not m or m.group(2).lower() not in _MEM_UNITS:
+        return 0
+    return int(float(m.group(1)) * _MEM_UNITS[m.group(2).lower()])
+
+
+def docker_parse(raw, cores):
+    """The output of `docker stats --no-stream --format '{{json .}}'` as {name: (cpu % of the whole machine, memory bytes)}."""
+    out = {}
+    for line in (raw or "").splitlines():
+        try:
+            d = json.loads(line)
+            name = re.sub(r"[^A-Za-z0-9_.-]", "", str(d.get("Name") or ""))[:40]
+            cpu = float(str(d.get("CPUPerc") or "0").rstrip("% ") or 0) / max(1, cores)
+            mem = docker_bytes(str(d.get("MemUsage") or "").split("/")[0])
+        except (ValueError, TypeError, AttributeError):
+            continue
+        if name:
+            out[name] = (round(max(0.0, cpu), 2), mem)
+    return out
+
+
+def docker_push(full, sample, now):
+    """Add one reading to the full history {t, names, cpu, mem}, in place. A container that was not running counts as 0."""
+    n = len(full["t"])
+    full["t"] = (full["t"] + [int(now)])[-DOCKER_POINTS:]
+    for name in sample:
+        if name not in full["names"]:
+            full["names"].append(name)
+    for name in full["names"]:
+        cur = sample.get(name, (0.0, 0))
+        for series, val in ((full["cpu"], cur[0]), (full["mem"], cur[1])):
+            old = series.get(name) or []
+            series[name] = ([0] * (n - len(old)) + old + [val])[-DOCKER_POINTS:]
+    for name in [x for x in full["names"] if not any(full["cpu"][x]) and not any(full["mem"][x])]:
+        full["names"].remove(name)
+        del full["cpu"][name], full["mem"][name]
+
+
+def docker_summary(full, now, cores=1):
+    """What the charts need: the busiest containers by name, everything else summed into 'other'."""
+    t = full["t"]
+    load = lambda x: sum(full["cpu"][x]) / max(1, len(t)) + sum(full["mem"][x]) / max(1, len(t)) / 1e9 * 10
+    rank = sorted(full["names"], key=lambda x: -load(x))
+    keep, rest = rank[:DOCKER_TOP], rank[DOCKER_TOP:]
+    out = {"version": 1, "step": DOCKER_SECS, "updated": int(now), "cores": cores, "t": t, "names": list(keep),
+           "cpu": {x: full["cpu"][x] for x in keep}, "mem": {x: full["mem"][x] for x in keep}}
+    if rest:
+        out["names"].append("other")
+        out["cpu"]["other"] = [round(sum(full["cpu"][x][i] for x in rest), 2) for i in range(len(t))]
+        out["mem"]["other"] = [sum(full["mem"][x][i] for x in rest) for i in range(len(t))]
+    return out
+
+
+def docker_loop():
+    """Every minute: how much processor and memory each container uses, for the charts on the Stats tab."""
+    cores = os.cpu_count() or 1
+    full = {"t": [], "names": [], "cpu": {}, "mem": {}}
+    while True:
+        try:
+            r = subprocess.run(["docker", "stats", "--no-stream", "--format", "{{json .}}"],
+                               capture_output=True, text=True, timeout=45, stdin=subprocess.DEVNULL)
+            sample = docker_parse(r.stdout, cores) if r.returncode == 0 else {}
+            if sample:
+                now = time.time()
+                docker_push(full, sample, now)
+                if os.path.isdir(IMAGES):
+                    write_atomic(DOCKER_FILE, json.dumps(docker_summary(full, now, cores), separators=(",", ":")), 0o644)
+        except Exception as e:
+            sys.stderr.write("docker stats: %r\n" % (e,))
+        time.sleep(DOCKER_SECS)
+
+
 def cmd_serve():
     ThreadingHTTPServer.request_queue_size = 64
     srv = ThreadingHTTPServer((BIND, PORT), Handler)
@@ -4811,6 +4898,8 @@ def cmd_serve():
     threading.Thread(target=job_status_loop, daemon=True).start()
     threading.Thread(target=look_regen_safe, daemon=True).start()
     threading.Thread(target=trends_loop, daemon=True).start()
+    if not NO_DOCKER:
+        threading.Thread(target=docker_loop, daemon=True).start()
     threading.Thread(target=schedule_loop, daemon=True).start()
     if not NO_DOCKER:
         threading.Thread(target=prefetch_theme_pictures, daemon=True).start()

@@ -835,9 +835,9 @@
     if (inside) { if (box.parentNode !== wrap) wrap.appendChild(box); }
     else if (box.parentNode !== tabs.parentNode || box.nextSibling !== tabs) tabs.parentNode.insertBefore(box, tabs);
     box.classList.toggle("hl-in-panel", inside);
-    var d = new Date(), h = d.getHours();
-    var part = h >= 5 && h < 12 ? "Good morning" : h >= 12 && h < 17 ? "Good afternoon" : "Good evening";
-    var line = part + (raw ? ", " + raw : ""), date = d.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" }), key = line + "|" + (inside ? "" : date);
+    var d = new Date();
+    var line = raw, date = d.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" }), key = line + "|" + (inside ? "" : date);
+    if (!line) { if (!box.hidden) box.hidden = true; return; }
     if (box.getAttribute("data-key") !== key) {
       box.setAttribute("data-key", key);
       box.textContent = line;
@@ -1388,6 +1388,96 @@
     });
     return made ? svg : null;
   }
+  /* Docker charts on the Stats tab: processor and memory of every container, stacked, for the last hour. The control panel samples docker once a minute into docker-trends.json. */
+  var DK = { data: null, at: 0, busy: false }, DK_COLORS = ["#5b8def", "#4fd1b0", "#f2b84b", "#e27d8b", "#9b7bea", "#6ec1e4"], DK_OTHER = "#8892a8";
+  function dockerLoad() {
+    DK.busy = true;
+    fetch("/images/docker-trends.json?t=" + Date.now(), { cache: "no-store" }).then(function (r) { if (!r.ok) throw new Error("no file"); return r.json(); })
+      .then(function (d) { if (d && Array.isArray(d.t) && Array.isArray(d.names) && d.cpu && d.mem) DK.data = d; })
+      .catch(function () { /* keep what is shown */ })
+      .then(function () { DK.busy = false; DK.at = Date.now(); soon(); });
+  }
+  function dkNice(v) { var p = Math.pow(10, Math.floor(Math.log(v) / Math.LN10)), m = v / p; return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 5 ? 5 : 10) * p; }
+  function dkPct(v) { return v === 0 ? "0%" : (v >= 10 ? v.toFixed(0) : v >= 1 ? v.toFixed(1) : v.toFixed(2)) + "%"; }
+  function dkBytes(b) { return b >= 1073741824 ? (b / 1073741824).toFixed(b >= 10737418240 ? 0 : 1) + " GiB" : Math.round(b / 1048576) + " MiB"; }
+  function dkColor(d, name) { var i = d.names.indexOf(name); return name === "other" ? DK_OTHER : DK_COLORS[i % DK_COLORS.length]; }
+  function dkSvg(tag, attrs) { var n = document.createElementNS(SVGNS, tag), k; for (k in attrs) n.setAttribute(k, attrs[k]); return n; }
+  function dkCard(d, title, key, fmt, floor, cap, note) {
+    var card = el("div", "hl-dk-card"), n = d.t.length, names = d.names, i, k;
+    var totals = [];
+    for (i = 0; i < n; i++) totals.push(names.reduce(function (a, nm) { return a + ((d[key][nm] || [])[i] || 0); }, 0));
+    var top = Math.max(floor, Math.max.apply(null, totals) * 1.12), ymax = Math.min(cap || Infinity, dkNice(top));
+    var head = el("div", "hl-dk-head"), now = totals[n - 1] || 0;
+    head.appendChild(el("b", "", title));
+    head.appendChild(el("span", "hl-dk-now", fmt(now)));
+    if (note) head.appendChild(el("small", "", note));
+    card.appendChild(head);
+    var plot = el("div", "hl-dk-plot"), svg = dkSvg("svg", { viewBox: "0 0 1000 100", preserveAspectRatio: "none", "aria-hidden": "true" }), below = [];
+    for (i = 0; i < n; i++) below.push(0);
+    names.forEach(function (nm) {
+      var vals = d[key][nm] || [], up = [], top2 = [], bot = [];
+      for (i = 0; i < n; i++) { up.push(below[i] + (vals[i] || 0)); }
+      for (i = 0; i < n; i++) { var x = (n > 1 ? i / (n - 1) * 1000 : 0).toFixed(1); top2.push(x + " " + (100 - Math.min(up[i], ymax) / ymax * 100).toFixed(2)); bot.push(x + " " + (100 - Math.min(below[i], ymax) / ymax * 100).toFixed(2)); }
+      var path = dkSvg("path", { d: "M" + top2.join(" L") + " L" + bot.reverse().join(" L") + " Z", fill: dkColor(d, nm), "fill-opacity": "0.8", stroke: dkColor(d, nm), "stroke-width": "1.2", "vector-effect": "non-scaling-stroke" });
+      svg.appendChild(path);
+      below = up;
+    });
+    [0, 50, 100].forEach(function (y) { svg.appendChild(dkSvg("line", { x1: 0, x2: 1000, y1: y, y2: y, class: "hl-dk-grid", "vector-effect": "non-scaling-stroke" })); });
+    plot.appendChild(svg);
+    [[0, 0], [50, ymax / 2], [100, ymax]].forEach(function (p) { var l = el("span", "hl-dk-y", fmt(p[1])); l.style.bottom = p[0] + "%"; plot.appendChild(l); });
+    var line = el("div", "hl-dk-line"), tip = el("div", "hl-dk-tip");
+    line.hidden = tip.hidden = true;
+    plot.appendChild(line); plot.appendChild(tip);
+    plot.addEventListener("mousemove", function (e) {
+      var r = plot.getBoundingClientRect(), f = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)), j = Math.round(f * (n - 1)), when = new Date(d.t[j] * 1000);
+      line.style.left = (n > 1 ? j / (n - 1) * 100 : 0) + "%"; line.hidden = tip.hidden = false;
+      tip.textContent = "";
+      tip.appendChild(el("b", "", when.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) + "  ·  " + fmt(totals[j])));
+      names.slice().reverse().forEach(function (nm) {
+        var v = (d[key][nm] || [])[j] || 0, row = el("div", "hl-dk-row"), dot = el("i");
+        dot.style.background = dkColor(d, nm);
+        row.appendChild(dot); row.appendChild(el("span", "", nm)); row.appendChild(el("em", "", fmt(v)));
+        tip.appendChild(row);
+      });
+      tip.style.left = (f > 0.6 ? "auto" : "calc(" + f * 100 + "% + 14px)"); tip.style.right = (f > 0.6 ? "calc(" + (100 - f * 100) + "% + 14px)" : "auto");
+    });
+    plot.addEventListener("mouseleave", function () { line.hidden = tip.hidden = true; });
+    card.appendChild(plot);
+    var ax = el("div", "hl-dk-x"), span = Math.round((d.t[n - 1] - d.t[0]) / 60);
+    ax.appendChild(el("span", "", span > 0 ? span + " min ago" : "")); ax.appendChild(el("span", "", "now"));
+    card.appendChild(ax);
+    var leg = el("div", "hl-dk-legend");
+    names.slice().reverse().forEach(function (nm) {
+      var chip = el("span", "hl-dk-chip"), dot = el("i");
+      dot.style.background = dkColor(d, nm);
+      chip.appendChild(dot); chip.appendChild(document.createTextNode(nm + " "));
+      chip.appendChild(el("em", "", fmt((d[key][nm] || [])[n - 1] || 0)));
+      leg.appendChild(chip);
+    });
+    card.appendChild(leg);
+    return card;
+  }
+  function dkDraw(box, d) {
+    box.textContent = "";
+    if (!d || d.t.length < 2) {
+      box.appendChild(el("p", "hl-dk-empty", d ? "Collecting data. The Docker charts fill in over the next hour." : DK.at ? "No Docker data yet. The control panel writes it once a minute, a minute after it starts." : "Loading Docker usage…"));
+      return;
+    }
+    var cores = d.cores || 1, ageMin = Math.round((Date.now() / 1000 - d.updated) / 60);
+    box.appendChild(dkCard(d, "Docker CPU", "cpu", dkPct, 5, 100, "of all " + cores + " cores" + (ageMin > 5 ? " · last sample " + ageMin + " min ago" : "")));
+    box.appendChild(dkCard(d, "Docker memory", "mem", dkBytes, 268435456, 0, ""));
+  }
+  function dockerCharts() {
+    var lg = document.getElementById("layout-groups"), box = document.getElementById("hl-docker");
+    var on = lg && lg.parentNode && lg.querySelector("li[id^='stat-']");
+    if (!on) { if (box && !box.hidden) box.hidden = true; return; }
+    if (!box) { box = el("section"); box.id = "hl-docker"; box.setAttribute("aria-label", "Docker usage"); }
+    if (box.parentNode !== lg.parentNode || box.nextSibling !== lg) lg.parentNode.insertBefore(box, lg);
+    if (box.hidden) box.hidden = false;
+    if (!DK.busy && Date.now() - DK.at > 60000) dockerLoad();
+    var key = DK.data ? DK.data.updated + ":" + DK.data.t.length : DK.at ? "none" : "wait";
+    if (box.getAttribute("data-key") !== key) { box.setAttribute("data-key", key); dkDraw(box, DK.data); }
+  }
   function stats() {
     var wrap = document.getElementById("widgets-wrap");
     if (!wrap) return;
@@ -1482,7 +1572,7 @@
 
   function run() {
     queued = false;
-    dots(); waiting(); hello(); dock(); find(); jellyfin(); stats(); counting();
+    dots(); waiting(); hello(); dock(); find(); jellyfin(); stats(); dockerCharts(); counting();
     if (!TR.busy && Date.now() - TR.at > 30000) trendsLoad();
   }
   function soon() { if (!queued) { queued = true; window.requestAnimationFrame(run); } }

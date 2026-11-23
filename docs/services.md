@@ -2,8 +2,6 @@
 
 This is a walk through everything the lab runs, one service at a time: what it's, what I use it for and where to find it. Everything except Tailscale runs in Docker, and the Customize panel sits next to it as a service of its own. Addresses use `pc.your-tailnet.ts.net` in place of your Tailscale name. Tailscale is the only way to reach any of them.
 
-![How devices reach the lab](images/architecture.svg)
-
 ## Contents
 
 - [Ports and addresses](#ports-and-addresses)
@@ -197,8 +195,6 @@ If you already run a Jellyfin of your own, the installer leaves it as it is and 
 | Photos, videos, Nextcloud files, music, movies and shows | The Main pool, at `/mnt/storage` |
 | Databases and app settings | The boot drive, in the home folder |
 | The backup | The Backup pool, at `/mnt/backup`, once a backup drive is connected |
-
-![Where the data lives: the boot drive, the Main pool and the Backup pool](images/data-layout.svg)
 
 The Main pool uses mergerfs, so several drives show up as one folder. Drives are mounted by their ID, so they come back the same after a reboot. With no drive in Main, or while its drive is missing, the boot drive is the storage: `/mnt/storage` is a plain folder there and the services keep running. A small start-up check (`sudo drives guard`) makes sure of that before Docker starts. When a drive is in Main, the drive is the storage, and files the services saved on the boot drive in the meantime are copied onto it (see [When the Main drive is missing](maintenance.md#when-the-main-drive-is-missing)).
 
