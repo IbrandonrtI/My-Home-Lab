@@ -861,18 +861,21 @@
 
   /* Greeting above the tabs. */
   function hello() {
-    var tabs = document.getElementById("tabs"), box = document.getElementById("hl-hello"), raw = quoted("--hl-hello");
+    var tabs = document.getElementById("tabs"), wrap = document.getElementById("widgets-wrap"), box = document.getElementById("hl-hello"), raw = quoted("--hl-hello");
     if (!tabs || !tabs.parentNode) return;
     if (raw === "off") { if (box && !box.hidden) box.hidden = true; return; }
     if (!box) { box = el("div"); box.id = "hl-hello"; }
-    if (box.parentNode !== tabs.parentNode || box.nextSibling !== tabs) tabs.parentNode.insertBefore(box, tabs);
+    var inside = !!wrap;
+    if (inside) { if (box.parentNode !== wrap || wrap.lastElementChild !== box) wrap.appendChild(box); }
+    else if (box.parentNode !== tabs.parentNode || box.nextSibling !== tabs) tabs.parentNode.insertBefore(box, tabs);
+    box.classList.toggle("hl-in-panel", inside);
     var d = new Date(), h = d.getHours();
     var part = h >= 5 && h < 12 ? "Good morning" : h >= 12 && h < 17 ? "Good afternoon" : "Good evening";
-    var line = part + (raw ? ", " + raw : ""), date = d.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" }), key = line + "|" + date;
+    var line = part + (raw ? ", " + raw : ""), date = d.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" }), key = line + "|" + (inside ? "" : date);
     if (box.getAttribute("data-key") !== key) {
       box.setAttribute("data-key", key);
       box.textContent = line;
-      box.appendChild(el("small", "", date));
+      if (!inside) box.appendChild(el("small", "", date));
     }
     if (box.hidden) box.hidden = false;
   }
@@ -1031,18 +1034,6 @@
       if (PAL.box && !PAL.box.hidden) palClose(); else palOpen();
     }
   }, true);
-  function find() {
-    var tabs = document.getElementById("tabs"), box = document.getElementById("hl-find");
-    if (!tabs || !document.getElementById("myTab")) return;
-    if (!box) {
-      box = el("div"); box.id = "hl-find";
-      var b = el("button"); b.type = "button"; b.title = "Search (Ctrl+K)"; b.setAttribute("aria-label", "Search services, links and tabs"); b.innerHTML = ICON_PAL;
-      b.onclick = function () { palOpen(); };
-      box.appendChild(b);
-    }
-    if (box.parentNode !== tabs) tabs.appendChild(box);
-  }
-
   /* Short graphs of the last hour behind the numbers in the header (the control panel keeps the history in trends.json). */
   var TR = { data: null, at: 0, busy: false, stamp: 0 };
   function trendsLoad() {
@@ -1153,7 +1144,7 @@
 
   function run() {
     queued = false;
-    dots(); waiting(); hello(); dock(); find(); sparks(); counting();
+    dots(); waiting(); hello(); dock(); sparks(); counting();
     if (!TR.busy && Date.now() - TR.at > 30000) trendsLoad();
   }
   function soon() { if (!queued) { queued = true; window.requestAnimationFrame(run); } }

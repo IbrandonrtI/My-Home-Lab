@@ -117,10 +117,10 @@ A few touches make the page feel alive. All of them follow the theme and can be 
 - Numbers count up to their value when they first show, and glide to a new value when it changes.
 - Behind CPU, memory, temperature and network in the top bar is a small graph of the last hour. The control panel keeps the history in `homepage-config/images/trends.json` (about 3 KB, a new point every 30 seconds).
 - While the page is new, or Homepage has just restarted, a tile that cannot reach its service yet shows a moving placeholder instead of a red "API Error". If the error is still there after about 25 seconds, it shows as before.
-- Above the tabs is a greeting such as "Good evening, Brandon" with today's date. A row of small icons next to the tabs opens your favorite services with one click.
-- Press `Ctrl+K` (or the magnifier next to the tabs) to search every card, bookmark and tab, then `Enter` to open it. This is in addition to the Quick Launch that starts when you type.
+- The top of the page is one panel. It holds a greeting such as "Good evening, Brandon", the clock and weather, the system numbers and the search bar. A row of small icons next to the tabs opens your favorite services with one click.
+- Press `Ctrl+K` to search every card, bookmark and tab, then `Enter` to open it. This is in addition to the Quick Launch that starts when you type.
 
-Motion is Subtle by default. A device that is set to reduce motion always gets none of the movement. The greeting, the quick launch row and the magnifier are hidden on a phone.
+Motion is Subtle by default. A device that is set to reduce motion always gets none of the movement. The greeting and the quick launch row are hidden on a phone.
 
 ## On a phone
 
