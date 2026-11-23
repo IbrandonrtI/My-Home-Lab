@@ -33,6 +33,7 @@ ROOT_PATH = os.environ.get("HOMELAB_ROOT_PATH", "/")
 BACKUP_STATUS = os.environ.get("HOMELAB_BACKUP_STATUS", "/var/lib/homelab-backup/last-run")
 APT_GET = os.environ.get("HOMELAB_APT_GET", "apt-get")
 FSTAB = os.environ.get("HOMELAB_FSTAB", "/etc/fstab")
+BACKUP_CONF = os.environ.get("HOMELAB_BACKUP_CONF", "/etc/homelab-backup.conf")
 BACKUP_POOL = os.environ.get("HOMELAB_BACKUP_POOL", "/mnt/backup")
 VERIFY_STATUS = os.environ.get("HOMELAB_VERIFY_STATUS", os.path.join(os.path.dirname(BACKUP_STATUS), "last-verify"))
 PAGE_HOST = os.environ.get("HOMELAB_PAGE_HOST", "127.0.0.1")
@@ -201,7 +202,8 @@ def stats_items():
             if not req and backup_drive_configured():
                 continue
             res.append(item(key + ":missing", "bad" if req else "info", "%s is not connected" % label,
-                            "No drive is connected there." if req else "Connect a drive in the Drives tab to get backups on a second drive.", "drives"))
+                            "No drive is connected there." if req else ("Connect a drive in the Drives tab to get backups on a second drive." if backup_fallback_set()
+                            else "Backups run only while a drive is connected there. Connect one in the Drives tab."), "drives"))
             continue
         if health.startswith("PROBLEM"):
             res.append(item(key + ":health", "bad", "%s has a drive with a problem" % label, "Open the Drives tab and check the drives.", "drives"))
@@ -219,11 +221,21 @@ def stats_items():
     else:
         try:
             t = time.mktime(time.strptime(run[0], "%Y-%m-%d %H:%M"))
-            if time.time() - t > 36 * 3600:
+            if time.time() - t > 36 * 3600 and not backup_waiting():
                 res.append(item("backup:late", "warn", "No backup for more than a day", "The last one was %s." % (last.get("when") or run[0]), "drives"))
         except (IndexError, ValueError, OverflowError):
             pass
     return res
+
+
+def backup_fallback_set():
+    """True when /etc/homelab-backup.conf names a folder on the boot drive that takes the backup while no backup drive is mounted."""
+    return bool(re.search(r'^\s*DEST_FALLBACK="?[^"#\s]', read(BACKUP_CONF), re.M))
+
+
+def backup_waiting():
+    """True when the backup has nowhere to go: no drive is mounted in the Backup pool and no fallback folder is set."""
+    return not os.path.ismount(BACKUP_POOL) and not backup_fallback_set()
 
 
 def backup_drives_configured():
@@ -246,7 +258,8 @@ def check_backup_drive():
         gone = [os.path.basename(m) for m in backup_drives_configured() if not os.path.ismount(m)]
         name = " " + ", ".join(gone) if gone else ""
         return [item("backup:drive-missing", "warn", "The backup drive%s is not connected" % name,
-                     "Backups go to the boot drive until it is back. Check the cable, then run: sudo drives remount. If the drive has failed: sudo drives replace", "drives")]
+                     ("Backups go to the boot drive until it is back. " if backup_fallback_set() else "Backups wait until it is back. ")
+                     + "Check the cable, then run: sudo drives remount. If the drive has failed: sudo drives replace", "drives")]
     return []
 
 

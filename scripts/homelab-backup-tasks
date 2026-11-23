@@ -190,6 +190,11 @@ def legacy_setting(key, default):
     return default
 
 
+def nightly_waiting():
+    """True when the nightly backup has nowhere to go: no drive is mounted in the Backup pool and no folder on the boot drive is set to take the copy."""
+    return not os.path.ismount(legacy_setting("DEST_POOL", "/mnt/backup")) and not legacy_setting("DEST_FALLBACK", "")
+
+
 def set_legacy_setting(key, value):
     """Keep a setting of the older nightly backup in step with the task. The older script reads /etc/homelab-backup.conf itself when it runs, also when started by hand."""
     try:
@@ -900,7 +905,7 @@ def cloud_prune(task):
 
 
 class Skipped(Exception):
-    """The run did not start because another backup holds the lock. It is not a result: the task keeps its last real one."""
+    """The run did not start (another backup holds the lock, or there is no backup drive). It is not a result: the task keeps its last real one."""
 
 
 def run_nightly(task, dry):
@@ -909,6 +914,8 @@ def run_nightly(task, dry):
             task["source"], task["dest"]["path"], task["keep"]["days"]), {}
     if not os.access(LEGACY, os.X_OK):
         return False, "The nightly backup program (%s) is not installed." % LEGACY, {}
+    if nightly_waiting():
+        raise Skipped("There is no drive in the Backup pool, so nothing was copied. Add a backup drive in the Drives tab, then run the backup again.")
     say("Running the nightly backup ...")
     rc, text = stream([LEGACY], show=False)
     if rc == 3:
@@ -1016,6 +1023,8 @@ def due_tasks(tasks, ref=None):
             continue
         st = read_status(t["id"])
         if st.get("running") and is_running():
+            continue
+        if t["kind"] == "nightly" and nightly_waiting():
             continue
         started = parse_stamp(st.get("last_start", "")) or parse_stamp(t.get("created", "")) or ref
         if started < last_scheduled(t["schedule"], ref):
@@ -1481,7 +1490,7 @@ def task_view(t):
     last_text, last_zone = shown_time(last) if last else (None, "")
     return {"id": t["id"], "name": t["name"], "enabled": t.get("enabled", True), "kind": t["kind"], "source": t["source"], "exclude": t["exclude"],
             "dest": t["dest"], "schedule": t["schedule"], "schedule_text": shown_schedule or describe_schedule(t["schedule"]), "schedule_zone": "" if shown_schedule else ref.astimezone().strftime("%Z"), "keep": t["keep"],
-            "next_run": next_text, "next_zone": next_zone, "running": running,
+            "next_run": next_text, "next_zone": next_zone, "running": running, "waiting": t["kind"] == "nightly" and nightly_waiting(),
             "last": {"result": st.get("result"), "message": st.get("message"), "when": last_text, "zone": last_zone,
                      "secs": st.get("secs"), "version": st.get("version"), "bytes_sent": st.get("bytes_sent"), "bytes_total": st.get("bytes_total"),
                      "size_bytes": st.get("size_bytes")} if st.get("result") else None,
