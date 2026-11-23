@@ -1849,11 +1849,16 @@ function lookOut() {
   for (const [n, c] of Object.entries(lookW.tabs)) if (c !== S.look.defaults.tabs[n]) out.tabs[n] = c;
   return out;
 }
-function rimShadow(level) {
-  const r = Math.max(0, Math.min(100, Number(level) || 0)) / 100;
-  if (r <= 0) return "0 0 0 0 transparent";
-  const n = x => String(Math.round(x * 1000) / 1000);
-  return "inset 1px 1px 0 rgba(255,255,255," + n(0.7 * r) + "), inset -1px -1px 0 rgba(255,255,255," + n(0.32 * r) + "), inset 0 0 " + Math.round(10 + 14 * r) + "px rgba(255,255,255," + n(0.12 * r) + "), inset 0 12px 18px -14px rgba(255,255,255," + n(0.3 * r) + ")";
+function rimShadow(level, bevel, tone) {
+  const r = Math.max(0, Math.min(100, Number(level) || 0)) / 100, bv = Math.max(0, Math.min(100, Number(bevel) || 0)) / 100;
+  const n = x => String(Math.round(x * 1000) / 1000), parts = [];
+  if (r > 0) parts.push("inset 1px 1px 0 rgba(255,255,255," + n(0.7 * r) + ")", "inset -1px -1px 0 rgba(255,255,255," + n(0.32 * r) + ")", "inset 0 0 " + Math.round(10 + 14 * r) + "px rgba(255,255,255," + n(0.12 * r) + ")", "inset 0 12px 18px -14px rgba(255,255,255," + n(0.3 * r) + ")");
+  if (bv > 0) {
+    const light = tone === "light", shade = light ? "70,92,126" : "0,0,0";
+    parts.push("inset 2px 2px 2px rgba(255,255,255," + n((light ? 0.95 : 0.4) * bv) + ")", "inset -2px -3px 4px rgba(" + shade + "," + n((light ? 0.2 : 0.45) * bv) + ")",
+      "inset 0 0 14px rgba(255,255,255," + n((light ? 0.35 : 0.08) * bv) + ")", "0 8px 18px -8px rgba(" + shade + "," + n(0.38 * bv) + ")");
+  }
+  return parts.length ? parts.join(", ") : "0 0 0 0 transparent";
 }
 function glassAlpha(v) { if (v.glassTint === false) return 0; return v.glassClear ? 0.4 * (1 - v.glassLevel / 100) : v.glassOpacity / 100; }
 function lookPreview(quiet) {
@@ -1865,7 +1870,7 @@ function lookPreview(quiet) {
     p.style.setProperty("--pr", Math.min(lookW.radius, 30) + "px");
     p.style.setProperty("--pe", lookW.edge / 100);
     p.style.setProperty("--pbl", Math.round(lookW.glassBlur * 0.6) + "px");
-    p.style.setProperty("--prm", rimShadow(lookW.glassRim));
+    p.style.setProperty("--prm", rimShadow(lookW.glassRim, lookW.glassBevel, lookW.tone));
   }
   applyAccent();
   if (quiet) return;
@@ -2244,7 +2249,7 @@ function themeTile(t, now, onpick) {
   shot.style.setProperty("--pr", Math.round(Math.min(lk.radius, 30) * 0.5) + "px");
   shot.style.setProperty("--pe", lk.edge / 100);
   shot.style.setProperty("--bl", Math.round(lk.glassBlur * 0.5) + "px");
-  shot.style.setProperty("--prm", rimShadow(lk.glassRim));
+  shot.style.setProperty("--prm", rimShadow(lk.glassRim, lk.glassBevel, lk.tone));
   return h("button", { class: "theme", "aria-pressed": String(now === t.id), onclick: onpick || (() => chooseTheme(t)) }, shot, h("b", {}, t.name), h("span", { class: "small muted" }, t.blurb));
 }
 function themesCard() {
@@ -2283,7 +2288,15 @@ function viewLook() {
            h("div", { class: "chips", style: { marginBottom: "12px" } }, [["A Little", 30], ["Medium", 55], ["Very", 80], ["Clear", 100]].map(([t, n]) =>
              h("button", { class: "chip", onclick: () => { L.glassLevel = n; lookChanged(); render(); } }, t)))]
         : lookSlider("How Solid the Glass Is", "glassOpacity", 0, 100, 1, "%", "A low value shows the picture through the cards. A high value makes them solid.")] : null,
-      lookSlider("Shine on the Glass Edge", "glassRim", 0, 100, 1, "%", "A thin bright line around the glass and a soft glow just inside it. 0% turns it off."));
+      lookSlider("Shine on the Glass Edge", "glassRim", 0, 100, 1, "%", "A thin bright line around the glass and a soft glow just inside it. 0% turns it off."),
+      lookSlider("Raised Glass Edge", "glassBevel", 0, 100, 1, "%", "A rounded, raised edge with a soft shadow, like thick glass. It looks best on light glass. 0% turns it off."),
+      lookSlider("Glow Around Cards", "glow", 0, 100, 1, "%", "A soft glow in the color of each card. 0% turns it off."),
+      h("div", { class: "field" }, h("div", { class: "lab" }, "Light or Dark Look"),
+        h("div", { class: "chips" }, chip(L.tone !== "light", "Dark", () => { L.tone = "dark"; }), chip(L.tone === "light", "Light", () => { L.tone = "light"; })),
+        h("div", { class: "hint" }, "Light changes the shadows, the lines and the layer over the picture to suit light glass. Also set the text colors below to dark colors.")),
+      h("div", { class: "field" }, h("div", { class: "lab" }, "Text Style"),
+        h("div", { class: "chips" }, [["default", "Dashboard Default"], ["apple", "Apple"], ["windows", "Windows"], ["mono", "Monospace"], ["rounded", "Rounded"]].map(([k, t]) => chip((L.font || "default") === k, t, () => { L.font = k; }))),
+        h("div", { class: "hint" }, "Uses a font that is already on the device that shows the dashboard, so it can look different on another device.")));
   }
   drawGlass();
   const tabRows = S.look.tabNames.map(name => {
@@ -2303,8 +2316,9 @@ h("div", { class: "card" }, h("h2", {}, "Preview and Shape"),
         h("div", {}, h("p", { class: "muted" }, framed ? "The dashboard around this panel changes while the sliders are moved, so the actual result is visible." : "A small sample of how cards and tabs look."), mock),
         h("div", {},
           lookSlider("How Round the Corners Are", "radius", 0, 40, 1, " px"),
-          lookSlider("Brightness of the Card Edge", "edge", 0, 40, 0.5, "%"),
+          lookSlider("Brightness of the Card Edge", "edge", 0, 60, 0.5, "%"),
           lookSlider("Space at the Left and Right", "side", 0, 120, 2, " px"),
+          lookSlider("Darkness Over the Picture", "veil", 0, 100, 1, "%", "A dark layer between the picture and the cards that keeps the text readable. 0% shows the picture as it is."),
           h("p", { class: "muted small" }, "The height of the music player is changed on the dashboard itself, with the small arrows button next to the shrink button on the player."))));
   const colorsCard =
 h("div", { class: "card" }, h("h2", {}, "Colors and Glass"),

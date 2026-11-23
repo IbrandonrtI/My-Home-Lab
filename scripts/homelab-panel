@@ -403,53 +403,85 @@ def number(v, what, lo, hi):
 
 SHIPPED_TAB_COLORS = {"Stats": "#5ed6a4", "Links": "#bea0ff"}
 LOOK_DEFAULT = {"accent": "#8ab4ff", "glass": "#0d121e", "glassOpacity": 56, "glassClear": False, "glassLevel": 70, "radius": 16, "edge": 7.5,
-                "side": 70, "glassBlur": 14, "glassSat": 125, "glassRim": 0, "glassTint": True, "cardDepth": 0, "text": "#eef2f9", "muted": "#a9b4c7", "theme": "calm", "playerHeight": 600, "paintStrength": 10, "paintStyle": "gradient", "labelIcon": "plain", "tabs": {}, "paintAll": "", "cards": {}, "links": {}, "labels": {}, "names": {}, "logo": {}}
+                "side": 70, "glassBlur": 14, "glassSat": 125, "glassRim": 0, "glassBevel": 0, "glow": 0, "veil": 100, "tone": "dark", "font": "default", "glassTint": True, "cardDepth": 0, "text": "#eef2f9", "muted": "#a9b4c7", "theme": "calm", "playerHeight": 600, "paintStrength": 10, "paintStyle": "gradient", "labelIcon": "plain", "tabs": {}, "paintAll": "", "cards": {}, "links": {}, "labels": {}, "names": {}, "logo": {}}
 LABEL_ICONS = ("plain", "circle", "square", "ring")
+TONES = ("dark", "light")
+FONTS = {"default": "inherit",
+         "apple": '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif',
+         "windows": '"Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif',
+         "mono": 'ui-monospace, "JetBrains Mono", "Fira Code", "Cascadia Code", Menlo, Consolas, monospace',
+         "rounded": 'ui-rounded, "SF Pro Rounded", Nunito, system-ui, sans-serif'}
+# Theme names from older versions stay valid, so a look saved with one of them still loads.
+LEGACY_THEME_IDS = ("calm", "frost", "ocean", "sunset", "rose", "graphite", "neon")
 PAINT_STYLES = ("gradient", "solid")
 NO_PAINT = ("customize-card", "linkedit-card", "terminal-card")
+# Bump the number when the pictures change, so a picture stored by an older version is fetched again.
+THEME_PIC_REV = "-v2"
+THEME_PICTURES = "https://raw.githubusercontent.com/IbrandonrtI/My-Home-Lab/main/theme-pictures/"
+
+
+def theme_bg(name, blur="none", saturate=100, brightness=100, opacity=100):
+    """The picture of a theme: one of the files in the theme-pictures folder of the repository."""
+    return {"url": THEME_PICTURES + name + ".jpg", "blur": blur, "saturate": saturate, "brightness": brightness, "opacity": opacity}
+
+
 LOOK_THEMES = [
-    {"id": "calm", "name": "Calm Night", "blurb": "The default look: deep blue glass.", "look": {}, "palette": [],
-     "background": {"url": "https://images.unsplash.com/photo-1778049005316-10cd95096f69?q=80&w=1740&auto=format&fit=crop", "blur": "md", "saturate": 60, "brightness": 42, "opacity": 80}},
-    {"id": "frost", "name": "Frosted Glass", "blurb": "Clear, bright glass with soft edges and system colors.",
-     "look": {"glassTint": False, "accent": "#5ac8fa", "glass": "#d6e2f7", "glassClear": True, "glassLevel": 62, "radius": 24, "edge": 14, "glassBlur": 30, "glassSat": 190, "cardDepth": 50, "paintStrength": 26, "text": "#ffffff", "muted": "#dde8f8",
-              "tabs": {"Stats": "#7fe0e8", "Links": "#a9b8ff"}},
-     "paintAll": "#5ac8fa", "paintLinks": "#8fb6f5",
-     "background": {"url": "https://images.unsplash.com/photo-1756909688538-2fc0fe8e757f?q=80&w=1740&auto=format&fit=crop", "blur": "md", "saturate": 100, "brightness": 62, "opacity": 88},
-     "ui": {"bg": "linear-gradient(135deg,#1b2a4a,#2f2150 55%,#173a46)", "panel": "rgba(255,255,255,0.08)", "panel2": "rgba(255,255,255,0.14)",
-            "line": "rgba(255,255,255,0.22)", "field": "rgba(255,255,255,0.09)", "dialog": "#1d2a47", "blur": "24px"}},
-    {"id": "liquid", "name": "Liquid Glass", "blurb": "Almost clear glass with a bright edge.",
-     "look": {"glassTint": False, "accent": "#8ea2ff", "glass": "#e8f0ff", "glassClear": True, "glassLevel": 88, "radius": 28, "edge": 14, "glassBlur": 22, "glassSat": 220, "glassRim": 35, "cardDepth": 40,
-              "paintStrength": 28, "text": "#ffffff", "muted": "#e0ebff", "tabs": {"Stats": "#8fb8ff", "Links": "#d3b0ff"}},
-     "paintAll": "#8ea2ff", "paintLinks": "#b39bff",
-     "background": {"url": "https://images.unsplash.com/photo-1603847734015-17ac936a0036?q=80&w=1740&auto=format&fit=crop", "blur": "sm", "saturate": 100, "brightness": 52, "opacity": 92},
-     "ui": {"bg": "linear-gradient(135deg,#243a66,#4a2f6a 50%,#1f4a5c)", "panel": "rgba(255,255,255,0.07)", "panel2": "rgba(255,255,255,0.13)",
-            "line": "rgba(255,255,255,0.16)", "field": "rgba(255,255,255,0.08)", "dialog": "#26365e", "blur": "28px", "rim": 70}},
-    {"id": "ocean", "name": "Ocean", "blurb": "Blue and sea-green tones.",
-     "look": {"glassTint": False, "accent": "#5ec8ff", "glass": "#06141f", "glassOpacity": 58, "cardDepth": 60, "paintStrength": 26, "text": "#f2fcff", "muted": "#bcdbe8", "tabs": {"Stats": "#4fd6c4", "Links": "#7fb0ff"}},
-     "paintAll": "#3fb7c9", "paintLinks": "#4f9fd0",
-     "background": {"url": "https://images.unsplash.com/photo-1565733293285-77aa342b22dd?q=80&w=1740&auto=format&fit=crop", "blur": "md", "saturate": 85, "brightness": 68, "opacity": 85},
-     "ui": {"bg": "#071420", "panel": "#0d1f2e", "panel2": "#122a3d", "field": "#08121c"}},
-    {"id": "sunset", "name": "Sunset", "blurb": "Warm orange, gold and pink.",
-     "look": {"glassTint": False, "accent": "#ff9a7a", "glass": "#1c0f12", "glassOpacity": 58, "cardDepth": 50, "paintStrength": 34, "text": "#fff6ee", "muted": "#ecd0bf", "tabs": {"Stats": "#ffc27a", "Links": "#d9a0ff"}},
-     "paintAll": "#ff9a6b", "paintLinks": "#e07bd0",
-     "background": {"url": "https://images.unsplash.com/photo-1750560813794-6c33decf299c?q=80&w=1740&auto=format&fit=crop", "blur": "md", "saturate": 90, "brightness": 68, "opacity": 85},
-     "ui": {"bg": "#160c0f", "panel": "#21141a", "panel2": "#2c1b22", "field": "#150b0e"}},
-    {"id": "rose", "name": "Rose", "blurb": "Soft pink and lilac with rounded corners.",
-     "look": {"glassTint": False, "accent": "#ff8fb5", "glass": "#1a0c16", "glassOpacity": 60, "radius": 22, "cardDepth": 50, "paintStrength": 32, "text": "#fff2f7", "muted": "#efcadb", "tabs": {"Stats": "#ffa8c0", "Links": "#c9a0ff"}},
-     "paintAll": "#f08fb4", "paintLinks": "#c79cf0",
-     "background": {"url": "https://images.unsplash.com/photo-1764513168327-309c566fbc36?q=80&w=1740&auto=format&fit=crop", "blur": "md", "saturate": 85, "brightness": 58, "opacity": 85},
-     "ui": {"bg": "#150b13", "panel": "#1f1220", "panel2": "#2a1829", "field": "#140a12"}},
-    {"id": "graphite", "name": "Graphite", "blurb": "A single neutral gray with no accent colors.",
-     "look": {"glassTint": False, "accent": "#a9b8c8", "glass": "#111214", "glassOpacity": 64, "radius": 10, "cardDepth": 55, "paintStrength": 20, "text": "#f4f5f7", "muted": "#bdc2cb", "tabs": {"Stats": "#a9b8c8", "Links": "#a9b8c8"}},
-     "paintAll": "#a9b8c8",
-     "background": {"url": "https://images.unsplash.com/photo-1768684160371-566aadb7785e?q=80&w=1740&auto=format&fit=crop", "blur": "md", "saturate": 15, "brightness": 60, "opacity": 85},
-     "ui": {"bg": "#0e0f11", "panel": "#17181b", "panel2": "#202226", "field": "#0c0d0f"}},
-    {"id": "neon", "name": "Neon Night", "blurb": "Sharp corners with bright cyan and magenta accents on a dark background.",
-     "look": {"glassTint": False, "accent": "#00e5ff", "glass": "#05060d", "glassOpacity": 80, "radius": 6, "edge": 12, "glassBlur": 8, "cardDepth": 65, "paintStrength": 30, "text": "#f2feff", "muted": "#a8dbe4",
-              "tabs": {"Stats": "#ff3df2", "Links": "#3d8bff"}},
-     "paintAll": "#8a5cff", "paintLinks": "#00cfe8",
-     "background": {"url": "https://images.unsplash.com/photo-1695249747530-57460a88ad80?q=80&w=1740&auto=format&fit=crop", "blur": "lg", "saturate": 100, "brightness": 68, "opacity": 88},
-     "ui": {"bg": "#05060d", "panel": "#0b0d1a", "panel2": "#131627", "line": "rgba(0,229,255,0.22)", "field": "#04050b"}},
+    {"id": "mocha", "name": "Catppuccin Mocha", "blurb": "Soft pastel colors on a warm dark blue. A popular dark scheme.",
+     "look": {"veil": 70, "glass": "#313244", "glassOpacity": 62, "accent": "#cba6f7", "radius": 16, "edge": 9, "glassBlur": 18, "glassSat": 130, "paintStrength": 22,
+              "text": "#cdd6f4", "muted": "#a6adc8", "tabs": {"Stats": "#a6e3a1", "Links": "#f5c2e7"}},
+     "palette": ["#cba6f7", "#89b4fa", "#a6e3a1", "#fab387", "#f5c2e7", "#94e2d5", "#f9e2af", "#f38ba8"], "paintLinks": "#f5c2e7",
+     "background": theme_bg("mocha"),
+     "ui": {"bg": "#11111b", "panel": "#1e1e2e", "panel2": "#313244", "line": "rgba(205,214,244,0.12)", "field": "#181825", "dialog": "#1e1e2e"}},
+    {"id": "dracula", "name": "Dracula", "blurb": "Purple and pink with a soft glow on a dark gray-violet.",
+     "look": {"veil": 70, "glass": "#282a36", "glassOpacity": 72, "accent": "#bd93f9", "radius": 10, "edge": 10, "glassBlur": 12, "glassSat": 125, "glow": 35, "paintStrength": 24,
+              "text": "#f8f8f2", "muted": "#b9bdd6", "tabs": {"Stats": "#50fa7b", "Links": "#ff79c6"}},
+     "palette": ["#bd93f9", "#ff79c6", "#8be9fd", "#50fa7b", "#ffb86c", "#f1fa8c"], "paintLinks": "#ff79c6",
+     "background": theme_bg("dracula"),
+     "ui": {"bg": "#191a21", "panel": "#21222c", "panel2": "#343746", "line": "rgba(189,147,249,0.18)", "field": "#191a21", "dialog": "#21222c"}},
+    {"id": "nord", "name": "Nord", "blurb": "Calm arctic blue-gray with flat, quiet cards.",
+     "look": {"veil": 85, "glass": "#3b4252", "glassOpacity": 82, "accent": "#88c0d0", "radius": 6, "edge": 7, "glassBlur": 6, "glassSat": 100, "paintStrength": 12,
+              "text": "#eceff4", "muted": "#a7b2c5", "tabs": {"Stats": "#a3be8c", "Links": "#b48ead"}},
+     "palette": ["#88c0d0", "#81a1c1", "#a3be8c", "#ebcb8b", "#b48ead", "#d08770"], "paintLinks": "#81a1c1",
+     "background": theme_bg("nord"),
+     "ui": {"bg": "#242933", "panel": "#2e3440", "panel2": "#3b4252", "line": "rgba(216,222,233,0.12)", "field": "#272c36", "dialog": "#2e3440"}},
+    {"id": "tokyo", "name": "Tokyo Night", "blurb": "Deep navy with blue and violet lights, like a city at night.",
+     "look": {"veil": 65, "glass": "#1a1b26", "glassOpacity": 68, "accent": "#7aa2f7", "radius": 12, "edge": 9, "glassBlur": 16, "glassSat": 135, "glow": 28, "paintStrength": 24,
+              "text": "#c0caf5", "muted": "#9aa5ce", "tabs": {"Stats": "#9ece6a", "Links": "#bb9af7"}},
+     "palette": ["#7aa2f7", "#bb9af7", "#7dcfff", "#9ece6a", "#e0af68", "#f7768e", "#ff9e64"], "paintLinks": "#bb9af7",
+     "background": theme_bg("tokyo"),
+     "ui": {"bg": "#16161e", "panel": "#1a1b26", "panel2": "#24283b", "line": "rgba(122,162,247,0.16)", "field": "#13131a", "dialog": "#1a1b26"}},
+    {"id": "gruvbox", "name": "Gruvbox", "blurb": "Warm retro browns, yellow and orange. Solid cards and a monospace font.",
+     "look": {"veil": 80, "glass": "#3c3836", "glassOpacity": 88, "accent": "#fabd2f", "radius": 4, "edge": 12, "glassBlur": 0, "glassSat": 100, "paintStrength": 14, "font": "mono",
+              "text": "#ebdbb2", "muted": "#bdae93", "tabs": {"Stats": "#b8bb26", "Links": "#d3869b"}},
+     "palette": ["#fabd2f", "#fe8019", "#b8bb26", "#83a598", "#d3869b", "#8ec07c", "#fb4934"], "paintLinks": "#83a598",
+     "background": theme_bg("gruvbox"),
+     "ui": {"bg": "#1d2021", "panel": "#282828", "panel2": "#3c3836", "line": "rgba(235,219,178,0.14)", "field": "#1d2021", "dialog": "#282828"}},
+    {"id": "solarized", "name": "Solarized Dark", "blurb": "The classic teal and yellow scheme, with flat cards.",
+     "look": {"veil": 80, "glass": "#073642", "glassOpacity": 88, "accent": "#268bd2", "radius": 6, "edge": 10, "glassBlur": 0, "glassSat": 100, "paintStrength": 14,
+              "text": "#eee8d5", "muted": "#93a1a1", "tabs": {"Stats": "#859900", "Links": "#6c71c4"}},
+     "palette": ["#268bd2", "#2aa198", "#859900", "#b58900", "#cb4b16", "#d33682", "#6c71c4"], "paintLinks": "#2aa198",
+     "background": theme_bg("solarized"),
+     "ui": {"bg": "#00212b", "panel": "#002b36", "panel2": "#073642", "line": "rgba(147,161,161,0.18)", "field": "#001f27", "dialog": "#002b36"}},
+    {"id": "macos", "name": "macOS", "blurb": "Dark frosted glass over a colorful wave wallpaper, with the system blue and font.",
+     "look": {"veil": 25, "glass": "#1e1e24", "glassOpacity": 46, "accent": "#0a84ff", "radius": 14, "edge": 16, "glassBlur": 40, "glassSat": 180, "glassRim": 22, "paintStrength": 16, "font": "apple",
+              "text": "#ffffff", "muted": "#cfcfd8", "tabs": {"Stats": "#30d158", "Links": "#bf5af2"}},
+     "palette": ["#0a84ff", "#bf5af2", "#30d158", "#ff9f0a", "#ff375f", "#64d2ff", "#ffd60a"], "paintLinks": "#64d2ff",
+     "background": theme_bg("macos"),
+     "ui": {"bg": "linear-gradient(135deg,#1b1747,#3a1c63 55%,#12254d)", "panel": "rgba(255,255,255,0.08)", "panel2": "rgba(255,255,255,0.14)",
+            "line": "rgba(255,255,255,0.20)", "field": "rgba(255,255,255,0.09)", "dialog": "#2a2240", "blur": "24px", "rim": 25}},
+    {"id": "windows", "name": "Windows 11", "blurb": "Mica gray panels with small corners, a light-blue accent and the Windows font.",
+     "look": {"veil": 35, "glass": "#202020", "glassOpacity": 74, "accent": "#4cc2ff", "radius": 8, "edge": 9, "glassBlur": 30, "glassSat": 125, "paintStrength": 12, "font": "windows",
+              "text": "#ffffff", "muted": "#cbcbcb", "tabs": {"Stats": "#6ccb5f", "Links": "#c4a0ff"}},
+     "palette": ["#4cc2ff", "#6ccb5f", "#ffb900", "#ff99a4", "#c4a0ff", "#00cc6a", "#ff8c00"], "paintLinks": "#4cc2ff",
+     "background": theme_bg("windows"),
+     "ui": {"bg": "#101010", "panel": "#202020", "panel2": "#2b2b2b", "line": "rgba(255,255,255,0.10)", "field": "#181818", "dialog": "#2b2b2b"}},
+    {"id": "liquid", "name": "Liquid Glass", "blurb": "Light, clear glass with raised rounded edges and dark text, on a soft blue-gray background.",
+     "look": {"tone": "light", "glass": "#ffffff", "glassClear": True, "glassLevel": 20, "accent": "#3f6fe0", "radius": 28, "edge": 60, "glassBlur": 22, "glassSat": 160,
+              "glassBevel": 70, "paintStrength": 12, "text": "#17243b", "muted": "#33445c", "tabs": {"Stats": "#1f9d8a", "Links": "#8559d6"}},
+     "palette": ["#3f6fe0", "#7c5cd6", "#1f9d8a", "#d9822b", "#d1457a", "#2a8fc7"], "paintLinks": "#3f6fe0",
+     "background": theme_bg("liquid"),
+     "ui": {"bg": "linear-gradient(135deg,#2b3b4e,#3f5167 50%,#2a3c4d)", "panel": "rgba(255,255,255,0.08)", "panel2": "rgba(255,255,255,0.14)",
+            "line": "rgba(255,255,255,0.18)", "field": "rgba(255,255,255,0.08)", "dialog": "#2f4156", "blur": "28px", "rim": 55}},
 ]
 THEME_IDS = [t["id"] for t in LOOK_THEMES]
 
@@ -558,7 +590,7 @@ def look_clean(raw):
     if "radius" in raw:
         out["radius"] = number(raw["radius"], "How round the corners are", 0, 40)
     if "edge" in raw:
-        out["edge"] = number(raw["edge"], "The edge brightness", 0, 40)
+        out["edge"] = number(raw["edge"], "The edge brightness", 0, 60)
     if "side" in raw:
         out["side"] = number(raw["side"], "The space at the sides", 0, 120)
     if "glassBlur" in raw:
@@ -575,8 +607,22 @@ def look_clean(raw):
         out["cardDepth"] = number(raw["cardDepth"], "How deep the color behind the words is", 0, 100)
     if "glassRim" in raw:
         out["glassRim"] = number(raw["glassRim"], "How bright the shine on the glass edge is", 0, 100)
+    if "glassBevel" in raw:
+        out["glassBevel"] = number(raw["glassBevel"], "How raised the glass edge is", 0, 100)
+    if "glow" in raw:
+        out["glow"] = number(raw["glow"], "How much the cards glow", 0, 100)
+    if "veil" in raw:
+        out["veil"] = number(raw["veil"], "How dark the layer over the picture is", 0, 100)
+    if "tone" in raw:
+        if raw["tone"] not in TONES:
+            raise Fail("The light or dark setting is not valid.")
+        out["tone"] = raw["tone"]
+    if "font" in raw:
+        if raw["font"] not in FONTS:
+            raise Fail("The text style is not valid.")
+        out["font"] = raw["font"]
     if "theme" in raw:
-        if raw["theme"] not in THEME_IDS and not MYTHEME_ID.match(str(raw["theme"])):
+        if raw["theme"] not in THEME_IDS and raw["theme"] not in LEGACY_THEME_IDS and not MYTHEME_ID.match(str(raw["theme"])):
             raise Fail("The theme is not understood.")
         out["theme"] = raw["theme"]
     if "playerHeight" in raw:
@@ -647,12 +693,28 @@ def num(x, places=3):
 NO_RIM = "0 0 0 0 transparent"
 
 
-def rim_shadow(level):
+def rim_shadow(level, bevel=0, tone="dark"):
+    """The shine on the glass edge (level) and the raised, rounded edge (bevel). On light glass the shade under the edge is a soft blue-gray, not black."""
     r = max(0.0, min(100.0, float(level))) / 100.0
-    if r <= 0:
-        return NO_RIM
-    return ("inset 1px 1px 0 rgba(255, 255, 255, %s), inset -1px -1px 0 rgba(255, 255, 255, %s), inset 0 0 %dpx rgba(255, 255, 255, %s), inset 0 12px 18px -14px rgba(255, 255, 255, %s)"
-            % (num(0.7 * r), num(0.32 * r), round(10 + 14 * r), num(0.12 * r), num(0.30 * r)))
+    b = max(0.0, min(100.0, float(bevel))) / 100.0
+    parts = []
+    if r > 0:
+        parts += ["inset 1px 1px 0 rgba(255, 255, 255, %s)" % num(0.7 * r), "inset -1px -1px 0 rgba(255, 255, 255, %s)" % num(0.32 * r),
+                  "inset 0 0 %dpx rgba(255, 255, 255, %s)" % (round(10 + 14 * r), num(0.12 * r)), "inset 0 12px 18px -14px rgba(255, 255, 255, %s)" % num(0.30 * r)]
+    if b > 0:
+        shade = "70, 92, 126" if tone == "light" else "0, 0, 0"
+        hi = 0.95 if tone == "light" else 0.4
+        lo = 0.2 if tone == "light" else 0.45
+        parts += ["inset 2px 2px 2px rgba(255, 255, 255, %s)" % num(hi * b), "inset -2px -3px 4px rgba(%s, %s)" % (shade, num(lo * b)),
+                  "inset 0 0 14px rgba(255, 255, 255, %s)" % num((0.35 if tone == "light" else 0.08) * b),
+                  "0 8px 18px -8px rgba(%s, %s)" % (shade, num(0.38 * b))]
+    return ", ".join(parts) if parts else NO_RIM
+
+
+TONE_TOKENS = {"dark": {"--lk-ink": "255, 255, 255", "--lk-hi": "#fff", "--lk-shadow": "0, 0, 0", "--lk-deepbase": "#070a12", "--lk-popbase": "#0b101c",
+                        "--lk-popmuted": "#bcc6d6", "color-scheme": "dark"},
+               "light": {"--lk-ink": "22, 38, 64", "--lk-hi": "#0f1a2e", "--lk-shadow": "52, 74, 112", "--lk-deepbase": "#eaf1fb", "--lk-popbase": "#f4f8ff",
+                         "--lk-popmuted": "#52627c", "color-scheme": "light"}}
 
 
 def glass_alpha(v):
@@ -702,11 +764,11 @@ RESET_VARS = "--hl-a1:initial;--hl-a2:initial;"
 
 def paint_decl(rgbs, t):
     return ("border-color:rgba(%s,%s)!important;"
-            "box-shadow:0 0 0 1px rgba(%s,%s),0 0 18px -8px rgba(%s,%s),0 14px 30px -20px rgba(0,0,0,.75),var(--lk-rim,0 0 0 0 transparent)!important;" % (
+            "box-shadow:0 0 0 1px rgba(%s,%s),0 0 18px -8px rgba(%s,%s),0 14px 30px -20px rgba(var(--lk-shadow,0,0,0),.75),var(--lk-rim,0 0 0 0 transparent),0 0 var(--lk-glowr,0px) rgba(var(--accent,var(--lk-accent)),var(--lk-glowa,0))!important;" % (
                 rgbs, num(0.16 + 0.34 * t), rgbs, num(0.05 + 0.14 * t), rgbs, num(0.05 + 0.3 * t)))
 
 
-PLAIN_DECL = "border-color:var(--lk-line)!important;box-shadow:0 14px 30px -20px rgba(0,0,0,.75),var(--lk-rim,0 0 0 0 transparent)!important;"
+PLAIN_DECL = "border-color:var(--lk-line)!important;box-shadow:0 14px 30px -20px rgba(var(--lk-shadow,0,0,0),.75),var(--lk-rim,0 0 0 0 transparent),0 0 var(--lk-glowr,0px) rgba(var(--accent,var(--lk-accent)),var(--lk-glowa,0))!important;"
 
 
 def paint_rules(v, saved, css):
@@ -789,6 +851,14 @@ def label_rules(v, saved):
     return rules
 
 
+def light_rules():
+    """Extra rules for a light look: dark text on the widgets, a lighter picture and no dark veil over it."""
+    return [WRAP + " #information-widgets *:not(svg):not(svg *){color:var(--lk-text)!important}",
+            "html body #inner_wrapper .service-block-value{color:var(--lk-text)}",
+            "html body #background{filter:blur(3px) saturate(1.05)}",
+            "html body #background::after{background:none!important}"]
+
+
 def look_css(custom, full=False, saved=None, css=""):
     """Build the rules of the look block for a look (only what differs from the default). `full` writes every value, for a preview in front of a saved look."""
     if not custom and not full and saved is None:
@@ -816,8 +886,15 @@ def look_css(custom, full=False, saved=None, css=""):
         tok.append("--lk-sat: %s%%;" % num(v["glassSat"]))
     if full or "cardDepth" in custom:
         tok.append("--lk-deep: %s%%;" % num(round(v["cardDepth"] * 0.85, 1)))
-    if full or "glassRim" in custom:
-        tok.append("--lk-rim: %s;" % rim_shadow(v["glassRim"]))
+    if full or "glassRim" in custom or "glassBevel" in custom or "tone" in custom:
+        tok.append("--lk-rim: %s;" % rim_shadow(v["glassRim"], v["glassBevel"], v["tone"]))
+    if full or "tone" in custom:
+        tok += ["%s: %s;" % kv for kv in TONE_TOKENS[v["tone"]].items()]
+    if full or "glow" in custom:
+        g = v["glow"] / 100.0
+        tok.append("--lk-glowr: %dpx; --lk-glowa: %s;" % (round(6 + 22 * g) if g else 0, num(0.6 * g)))
+    if full or "font" in custom:
+        tok.append("--lk-font: %s;" % FONTS[v["font"]])
     if full or "text" in custom:
         tok.append("--lk-text: %s;" % v["text"])
     if full or "muted" in custom:
@@ -835,12 +912,16 @@ def look_css(custom, full=False, saved=None, css=""):
             tok.append("--hl-logo-size: %spx;" % num(lg.get("size", 48)))
     if tok:
         rules.append("html body #inner_wrapper { %s }" % " ".join(tok))
+    if full or "veil" in custom:
+        rules.append("html body { --lk-veilk: %s; }" % num(v["veil"] / 100.0))
     tabs = v["tabs"] if full else (custom.get("tabs") or {})
     for name in sorted(tabs):
         rules.append('html[data-tab="%s"] body #inner_wrapper { --lk-accent: %d, %d, %d; }' % ((name,) + hex_rgb(tabs[name])))
     if full or "playerHeight" in custom:
         ph = max(240, v["playerHeight"] - 40)
         rules.append("@media (max-width: 700px) { html body #inner_wrapper { --lk-player-h: %dpx; } }" % ph)
+    if v["tone"] == "light":
+        rules += light_rules()
     rules += paint_rules(v, saved, css) + label_rules(v, saved)
     return "\n".join(rules)
 
@@ -1190,7 +1271,7 @@ def api_bg_upload(data):
 def theme_file(theme_id):
     """The stored picture of a theme (name in the images folder), or None."""
     for f in (sorted(os.listdir(IMAGES)) if os.path.isdir(IMAGES) else []):
-        if re.fullmatch(r"theme-%s\.\w+" % re.escape(theme_id), f):
+        if re.fullmatch(r"theme-%s%s\.\w+" % (re.escape(theme_id), THEME_PIC_REV), f):
             return f
     return None
 
@@ -1223,7 +1304,7 @@ def theme_picture(body):
     data = theme_download(t)
     with LOCK:
         if data:
-            return dict(bg_store(data, body, "theme-" + t["id"]), stored=True)
+            return dict(bg_store(data, body, "theme-" + t["id"] + THEME_PIC_REV), stored=True)
         tx = Tx("Background picture changed")
         tx.put(SETTINGS, bg_numbers(body, bg_set(tx.get(SETTINGS), "image", url)))
         tx.commit()
@@ -4396,7 +4477,7 @@ def cmd_theme_pictures(args):
         if not ext:
             missing += 1
             continue
-        path = os.path.join(IMAGES, "theme-%s%s" % (t["id"], ext))
+        path = os.path.join(IMAGES, "theme-%s%s%s" % (t["id"], THEME_PIC_REV, ext))
         with open(path, "wb") as f:
             f.write(data)
         os.chmod(path, 0o644)

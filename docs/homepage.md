@@ -120,12 +120,12 @@ The Customize tab is a small control panel. It uses the admin password you chose
 
 Everything about how the dashboard looks.
 
-- Themes: there are eight ready-made looks, Calm Night (the default), Frosted Glass, Liquid Glass, Ocean, Sunset, Rose, Graphite and Neon Night. A theme sets the colors, the glass, the shapes, the background picture and the panel itself.
+- Themes: there are nine ready-made looks: Catppuccin Mocha, Dracula, Nord, Tokyo Night, Gruvbox, Solarized Dark, macOS, Windows 11 and Liquid Glass (light, clear glass with raised edges and dark text). A theme sets the colors, the glass, the shapes, the text style, the background picture and the panel itself. A look saved with an older theme keeps working until another theme is chosen.
 - Your own themes: *Make a Theme from These Settings* saves the current look under *Your Themes*, optionally with the background, the layout and the list of cards. Choosing one asks first, and Undo reverts the layout and cards in one step. A theme never overwrites a card's address or widget settings. Custom themes live in `homepage-config/.panel-themes.json`, so a backup of that folder keeps them.
-- Shape and colors: sliders for rounded corners, glass clarity and blur, with a live preview, and one color for everything or a different color for a single card, tile, bookmark or group label.
+- Shape and colors: sliders for rounded corners, glass clarity and blur, the shine and the raised edge of the glass, a glow around the cards, and how dark the layer over the picture is, with a live preview. A Light or Dark choice and a text style (Apple, Windows, monospace or rounded, using fonts already on the device) are there too. You can set one color for everything or a different color for a single card, tile, bookmark or group label.
 - Names and Logo: your own names for the server and the drives, and a logo at the top left.
 - Time Zone and City: the install finds both from your internet connection. This card changes the clock's time zone and the weather city.
-- Background Picture: pick a picture and set how blurry, bright and colorful it's. The installer stores all eight theme pictures before Homepage starts, so picking a theme doesn't restart the dashboard. If one is missing, its first use downloads it and restarts Homepage for a few seconds. `sudo homelab-setup refresh` stores them all.
+- Background Picture: pick a picture and set how blurry, bright and colorful it's. The installer stores all nine theme pictures (kept in the `theme-pictures` folder of the repository) before Homepage starts, so picking a theme doesn't restart the dashboard. If one is missing, its first use downloads it and restarts Homepage for a few seconds. `sudo homelab-setup refresh` stores them all.
 
 Nothing is saved until you press Save, so you can try things freely.
 
