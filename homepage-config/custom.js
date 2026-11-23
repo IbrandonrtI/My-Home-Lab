@@ -866,7 +866,7 @@
     if (raw === "off") { if (box && !box.hidden) box.hidden = true; return; }
     if (!box) { box = el("div"); box.id = "hl-hello"; }
     var inside = !!wrap;
-    if (inside) { if (box.parentNode !== wrap || wrap.lastElementChild !== box) wrap.appendChild(box); }
+    if (inside) { if (box.parentNode !== wrap) wrap.appendChild(box); }
     else if (box.parentNode !== tabs.parentNode || box.nextSibling !== tabs) tabs.parentNode.insertBefore(box, tabs);
     box.classList.toggle("hl-in-panel", inside);
     var d = new Date(), h = d.getHours();
@@ -1047,7 +1047,7 @@
     if (box.parentNode !== tabs || box.nextSibling) tabs.appendChild(box);
   }
 
-  /* Short graphs of the last hour behind the numbers in the header (the control panel keeps the history in trends.json). */
+  /* History for the small network graph (the control panel keeps the last hour in trends.json). */
   var TR = { data: null, at: 0, busy: false, stamp: 0 };
   function trendsLoad() {
     TR.busy = true;
@@ -1066,46 +1066,113 @@
     var line = pts.map(function (p, k) { return (k ? "L" : "M") + p[0].toFixed(1) + " " + p[1].toFixed(1); }).join(" ");
     return { line: line, area: line + " L" + pts[pts.length - 1][0].toFixed(1) + " 40 L" + pts[0][0].toFixed(1) + " 40 Z" };
   }
-  function spark(item, series) {
-    if (!item || item.__hlStamp === TR.stamp && item.querySelector(".hl-spark")) return;
-    var svg = item.querySelector(":scope > .hl-spark");
-    if (svg) item.removeChild(svg);
-    var made = 0;
-    svg = document.createElementNS(SVGNS, "svg");
-    svg.setAttribute("class", "hl-spark"); svg.setAttribute("viewBox", "0 0 100 40"); svg.setAttribute("preserveAspectRatio", "none"); svg.setAttribute("aria-hidden", "true");
-    series.forEach(function (s) {
-      var v = s.vals.filter(function (x) { return typeof x === "number"; });
-      if (v.length < 3) return;
-      var mn = Math.min.apply(null, v), mx = Math.max.apply(null, v), lo, hi;
-      if (s.rate) { lo = 0; hi = Math.max(mx * 1.2, 1024); } else { var span = Math.max(mx - mn, s.span); lo = Math.max(0, (mn + mx) / 2 - span * 0.75); hi = lo + span * 1.5; if (s.cap && hi > s.cap) { hi = s.cap; lo = Math.max(0, hi - span * 1.5); } }
-      var p = sparkPaths(s.vals, lo, hi);
-      if (!p) return;
-      var g = document.createElementNS(SVGNS, "g");
-      g.style.color = s.color;
-      var a = document.createElementNS(SVGNS, "path"), l = document.createElementNS(SVGNS, "path");
-      a.setAttribute("class", "hl-sa"); a.setAttribute("d", p.area);
-      l.setAttribute("class", "hl-sl"); l.setAttribute("d", p.line);
-      g.appendChild(a); g.appendChild(l); svg.appendChild(g); made++;
-    });
-    if (!made) return;
-    item.classList.add("hl-has-spark");
-    item.appendChild(svg);
-    item.__hlStamp = TR.stamp;
-  }
-  function sparks() {
-    var D = TR.data;
-    if (!D || !D.cpu || D.cpu.length < 3) return;
-    var widgets = all("#information-widgets .widget-container").filter(function (w) { return !!w.querySelector(".information-widget-resource"); });
-    widgets.forEach(function (w, wi) {
-      var items = all(".information-widget-resource", w);
-      if (/network/i.test(w.textContent) && wi > 0) {
-        if (items.length >= 2) { spark(items[0], [{ vals: D.rx, color: "#22d3ee", rate: true }]); spark(items[1], [{ vals: D.tx, color: "#a78bfa", rate: true }]); }
-      } else if (wi === 0) {
-        if (items[0]) spark(items[0], [{ vals: D.cpu, color: "#4ade80", span: 8, cap: 100 }]);
-        if (items[1]) spark(items[1], [{ vals: D.mem, color: "#22d3ee", span: 3, cap: 100 }]);
-        if (items[2] && /°|temp/i.test(items[2].textContent)) spark(items[2], [{ vals: D.temp, color: "#ef4444", span: 4 }]);
+  /* The system numbers in the header, drawn as gauges. The original widgets stay in the page (hidden) and are the source of the values. */
+  var RING = 113.1, GT = {};
+  function clean(s) { return s.replace(/\s+/g, " ").trim(); }
+  function num(s) { var m = /(-?\d+(?:[.,]\d+)?)/.exec(s); return m ? parseFloat(m[1].replace(",", ".")) : NaN; }
+  function barPct(item) { var b = item.querySelector('div[style*="width"]'), v = b ? parseFloat(b.style.width) : NaN; return isNaN(v) ? NaN : Math.max(0, Math.min(100, v)); }
+  function size(s, word) { var m = new RegExp("([\\d.,]+\\s*[KMGTP]i?B)\\s*" + word, "i").exec(s); return m ? m[1].replace(/\s+/, " ") : ""; }
+  function rate(s, arrow) { var m = new RegExp("([\\d.,]+)\\s*([KMGT]?i?B/s)\\s*" + arrow, "i").exec(s); return m ? m[1] + " " + m[2] : ""; }
+  function readStats() {
+    var wrap = document.getElementById("widgets-wrap"), out = [];
+    if (!wrap) return out;
+    var kids = Array.prototype.filter.call(wrap.children, function (c) { return c.classList.contains("widget-container"); });
+    kids.forEach(function (c) {
+      var items = all(".information-widget-resource", c);
+      if (!items.length) return;
+      var last = c.lastElementChild, label = last && !last.querySelector(".information-widget-resource") && !last.classList.contains("information-widget-resource") ? clean(last.textContent) : "";
+      var whole = clean(c.textContent);
+      if (/network/i.test(label) || /B\/s/i.test(whole)) {
+        var dn = rate(whole, "↓"), up = rate(whole, "↑");
+        if (dn || up) out.push({ key: "net", kind: "net", name: "Network", down: dn, up: up });
+        return;
       }
+      if (/CPU|°|uptime/i.test(whole)) {
+        items.forEach(function (it) {
+          var tx = clean(it.textContent), p = barPct(it), v;
+          if (/CPU/i.test(tx)) { v = num(tx); out.push({ key: "cpu", kind: "ring", name: "CPU", value: isNaN(v) ? "" : Math.round(v) + "%", pct: isNaN(p) ? v : p }); }
+          else if (/°|temp/i.test(tx)) {
+            v = num(tx); var f = /°\s*F/i.test(tx), lv = f ? (v - 32) * 5 / 9 : v;
+            out.push({ key: "temp", kind: "ring", name: "Temperature", value: isNaN(v) ? "" : Math.round(v) + (f ? "°F" : "°C"), pct: isNaN(p) ? lv : p, warn: lv >= 75, bad: lv >= 90 });
+          } else if (/uptime/i.test(tx)) out.push({ key: "up", kind: "text", name: "Uptime", value: clean(tx.replace(/uptime/i, "")).replace(/(\d+[dhm])(?=\d)/g, "$1 ") });
+          else { var fr = size(tx, "free") || size(tx, ""); out.push({ key: "mem", kind: "ring", name: "Memory", value: fr ? fr + " free" : clean(tx), pct: p }); }
+        });
+        return;
+      }
+      if (/no drive|not mounted|not connected/i.test(whole)) return;
+      var free = size(whole, "free"), total = size(whole, "total"), pp = barPct(items[0]), bak = /backup/i.test(label);
+      if (free) out.push({ key: bak ? "bak" : "pool", kind: "ring", name: bak ? "Backup" : (label || "Storage"), value: free + " free", sub: total ? "of " + total : "", pct: pp, warn: pp >= 85, bad: pp >= 95 });
     });
+    var order = { cpu: 1, mem: 2, temp: 3, pool: 4, bak: 5, net: 6, up: 7 };
+    out.sort(function (x, y) { return (order[x.key] || 9) - (order[y.key] || 9); });
+    return out;
+  }
+  function ringSvg() {
+    var s = document.createElementNS(SVGNS, "svg"), t = document.createElementNS(SVGNS, "circle"), a = document.createElementNS(SVGNS, "circle");
+    s.setAttribute("class", "hl-ring"); s.setAttribute("viewBox", "0 0 44 44"); s.setAttribute("aria-hidden", "true");
+    [t, a].forEach(function (c, i) { c.setAttribute("cx", "22"); c.setAttribute("cy", "22"); c.setAttribute("r", "18"); c.setAttribute("class", i ? "a" : "t"); s.appendChild(c); });
+    a.setAttribute("transform", "rotate(-90 22 22)"); a.setAttribute("stroke-dasharray", String(RING)); a.setAttribute("stroke-dashoffset", String(RING));
+    return s;
+  }
+  function netSpark() {
+    var D = TR.data;
+    if (!D || !D.rx || D.rx.length < 3) return null;
+    var svg = document.createElementNS(SVGNS, "svg");
+    svg.setAttribute("class", "hl-gs"); svg.setAttribute("viewBox", "0 0 100 40"); svg.setAttribute("preserveAspectRatio", "none"); svg.setAttribute("aria-hidden", "true");
+    var made = 0;
+    [[D.rx, "34,211,238"], [D.tx, "167,139,250"]].forEach(function (s) {
+      var v = (s[0] || []).filter(function (x) { return typeof x === "number"; });
+      if (v.length < 3) return;
+      var p = sparkPaths(s[0], 0, Math.max(Math.max.apply(null, v) * 1.2, 1024));
+      if (!p) return;
+      var l = document.createElementNS(SVGNS, "path");
+      l.setAttribute("d", p.line); l.setAttribute("class", "hl-sl"); l.style.stroke = "rgb(" + s[1] + ")";
+      svg.appendChild(l); made++;
+    });
+    return made ? svg : null;
+  }
+  function stats() {
+    var wrap = document.getElementById("widgets-wrap");
+    if (!wrap) return;
+    var model = readStats(), box = document.getElementById("hl-stats");
+    if (!model.length) { wrap.classList.remove("hl-stats-on"); if (box) box.hidden = true; return; }
+    if (!box) { box = el("div"); box.id = "hl-stats"; }
+    if (box.parentNode !== wrap) wrap.appendChild(box);
+    box.hidden = false;
+    wrap.classList.add("hl-stats-on");
+    var seen = {};
+    model.forEach(function (m, i) {
+      seen[m.key] = true;
+      var t = GT[m.key];
+      if (!t || !t.node.parentNode) {
+        var n = el("div", "hl-g hl-g-" + m.key), tx = el("div", "hl-gt"), nm = el("span", "hl-gn"), vl = el("span", "hl-gv"), sb = el("span", "hl-gs2");
+        t = GT[m.key] = { node: n, nm: nm, vl: vl, sb: sb, ring: null, sig: "" };
+        if (m.kind === "ring") { t.ring = ringSvg(); n.appendChild(t.ring); }
+        tx.appendChild(nm); tx.appendChild(vl); tx.appendChild(sb); n.appendChild(tx);
+        if (m.kind === "net") { t.spark = null; t.tx = tx; }
+      }
+      var sig = JSON.stringify(m) + "|" + (m.kind === "net" ? TR.stamp : "");
+      if (t.sig !== sig) {
+        t.sig = sig;
+        t.nm.textContent = m.name;
+        if (m.kind === "net") {
+          t.vl.textContent = "";
+          t.vl.appendChild(el("i", "", "↓")); t.vl.appendChild(document.createTextNode(" " + (m.down || "0") + "  "));
+          var up = el("i", "u", "↑"); t.vl.appendChild(up); t.vl.appendChild(document.createTextNode(" " + (m.up || "0")));
+          if (t.spark && t.spark.parentNode) t.spark.parentNode.removeChild(t.spark);
+          t.spark = netSpark();
+          if (t.spark) t.node.appendChild(t.spark);
+        } else { t.vl.textContent = m.value || ""; }
+        t.sb.textContent = m.sub || ""; t.sb.hidden = !m.sub;
+        t.node.classList.toggle("hl-warn", !!m.warn && !m.bad); t.node.classList.toggle("hl-bad", !!m.bad);
+        if (t.ring) {
+          var p = typeof m.pct === "number" && !isNaN(m.pct) ? Math.max(0, Math.min(100, m.pct)) : 0;
+          t.ring.querySelector(".a").setAttribute("stroke-dashoffset", String((RING * (1 - p / 100)).toFixed(1)));
+        }
+      }
+      if (box.children[i] !== t.node) box.insertBefore(t.node, box.children[i] || null);
+    });
+    Object.keys(GT).forEach(function (k) { if (!seen[k]) { if (GT[k].node.parentNode) GT[k].node.parentNode.removeChild(GT[k].node); delete GT[k]; } });
   }
 
   /* Numbers count up to their value when they first show, and glide to a new value when it changes. */
@@ -1157,7 +1224,7 @@
 
   function run() {
     queued = false;
-    dots(); waiting(); hello(); dock(); find(); sparks(); counting();
+    dots(); waiting(); hello(); dock(); find(); stats(); counting();
     if (!TR.busy && Date.now() - TR.at > 30000) trendsLoad();
   }
   function soon() { if (!queued) { queued = true; window.requestAnimationFrame(run); } }

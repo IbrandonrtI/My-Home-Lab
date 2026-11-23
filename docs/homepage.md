@@ -115,7 +115,7 @@ A few touches make the page feel alive. All of them follow the theme and can be 
 - A slow glow drifts behind the cards, tinted with the colors of the theme.
 - The small status dot on a card pulses green while the service is up and red when it is down.
 - Numbers count up to their value when they first show, and glide to a new value when it changes.
-- Behind CPU, memory, temperature and network in the top bar is a small graph of the last hour. The control panel keeps the history in `homepage-config/images/trends.json` (about 3 KB, a new point every 30 seconds).
+- The system numbers in the top panel are drawn as round gauges for CPU, memory, temperature and storage, with the network speeds (and a small graph of the last hour) and the uptime beside them. The backup drive shows only while it is connected. The original widgets stay in the page, hidden, and supply the values. The control panel keeps the history in `homepage-config/images/trends.json` (about 3 KB, a new point every 30 seconds).
 - While the page is new, or Homepage has just restarted, a tile that cannot reach its service yet shows a moving placeholder instead of a red "API Error". If the error is still there after about 25 seconds, it shows as before.
 - The top of the page is one panel. It holds a greeting such as "Good evening, Brandon", the clock and weather, and the system numbers. Below it is one bar with the tabs, the notification bell, a row of small icons that opens your favorite services with one click, and a magnifier, each part separated by a thin line.
 - Press `Ctrl+K` (or select the magnifier in the bar) to search every card, bookmark and tab, then `Enter` to open it. This is in addition to the Quick Launch that starts when you type.
