@@ -1402,19 +1402,25 @@ html.hl-jf-side #hl-jf-frame .hl-jf-open:hover { color: var(--lk-hi, #fff); }
   html.hl-jf-side #inner_wrapper #layout-groups:has(#navidrome-card) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
-/* One slim row on a wide screen: name, gauges and graph, clock, weather. Below that width the header keeps its two rows. */
-@media (min-width: 1760px) {
-  #inner_wrapper #widgets-wrap.hl-stats-on { flex-wrap: nowrap !important; padding: 6px 6px !important; }
+/* One slim strip on a wide screen: the name on the left, the gauges and graph in the middle, the clock over the weather on the right. Below 1480 pixels the header keeps its two rows. */
+@media (min-width: 1480px) {
+  #inner_wrapper #widgets-wrap.hl-stats-on { display: grid !important; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; column-gap: 0; padding: 8px 10px !important; }
   #inner_wrapper #widgets-wrap.hl-stats-on::before { display: none; }
-  #inner_wrapper #widgets-wrap.hl-stats-on #hl-hello.hl-in-panel { order: -4; flex: 0 1 auto; max-width: 14em; }
-  #inner_wrapper #widgets-wrap.hl-stats-on #hl-stats { order: -3; flex: 1 1 0; min-width: 0; padding: 0; }
+  #inner_wrapper #widgets-wrap.hl-stats-on #hl-hello.hl-in-panel { grid-column: 1; grid-row: 1; flex: none; max-width: 12em; padding: 2px 18px 2px 12px; }
+  #inner_wrapper #widgets-wrap.hl-stats-on #hl-stats { grid-column: 2; grid-row: 1; min-width: 0; padding: 0; }
+  #inner_wrapper #widgets-wrap.hl-stats-on #information-widgets-right { grid-column: 3; grid-row: 1; display: flex !important; flex-direction: column !important; flex-wrap: nowrap !important; align-items: flex-end !important; justify-content: center; gap: 1px; margin: 0 !important; padding: 0 8px 0 0 !important; width: auto !important; }
+  #inner_wrapper #widgets-wrap.hl-stats-on #information-widgets-right > * { margin: 0 !important; padding: 0 12px !important; min-height: 0 !important; height: auto !important; }
+  #inner_wrapper #widgets-wrap.hl-stats-on [class*="information-widget-datetime"] { order: 0 !important; margin-left: 0 !important; font-size: 13px; line-height: 1.25; }
+  #inner_wrapper #widgets-wrap.hl-stats-on [class*="information-widget-openmeteo"] { order: 1 !important; font-size: 12px; line-height: 1.2; }
+  #inner_wrapper #widgets-wrap.hl-stats-on [class*="information-widget-openmeteo"] svg { width: 22px; height: 22px; }
+  #inner_wrapper #widgets-wrap.hl-stats-on [class*="information-widget-datetime"]::before, #inner_wrapper #widgets-wrap.hl-stats-on [class*="information-widget-openmeteo"]::before { display: none; }
   #inner_wrapper #widgets-wrap.hl-stats-on #hl-stats .hl-ring { width: 32px; height: 32px; }
-  #inner_wrapper #widgets-wrap.hl-stats-on #hl-stats .hl-g { gap: 9px; padding: 2px 8px 2px 14px; }
+  #inner_wrapper #widgets-wrap.hl-stats-on #hl-stats .hl-g { gap: 9px; padding: 2px 6px 2px 14px; }
   #inner_wrapper #widgets-wrap.hl-stats-on #hl-stats .hl-gv { font-size: 14px; }
-  #inner_wrapper #widgets-wrap.hl-stats-on [class*="information-widget-datetime"] { order: -2; margin-left: 0 !important; padding: 2px 16px !important; }
-  #inner_wrapper #widgets-wrap.hl-stats-on [class*="information-widget-datetime"]::before { content: ""; position: absolute; left: 0; top: 14%; bottom: 14%; width: 1px; background: rgba(var(--lk-ink, 255, 255, 255), 0.1); }
-  #inner_wrapper #widgets-wrap.hl-stats-on [class*="information-widget-openmeteo"] { order: -1 !important; padding: 2px 16px !important; }
-  #inner_wrapper #widgets-wrap.hl-stats-on .information-widget-search { order: 20 !important; }
+  #inner_wrapper #widgets-wrap.hl-stats-on #hl-stats .hl-gs { width: 48px; }
+  #inner_wrapper #widgets-wrap.hl-stats-on #hl-stats .hl-g-net { flex-grow: 1.35; }
+  #inner_wrapper #widgets-wrap.hl-stats-on #hl-stats .hl-g-net .hl-gt { min-width: 9.5em; }
+  #inner_wrapper #widgets-wrap.hl-stats-on #hl-stats .hl-g-up { flex-grow: 0.55; }
 }
 
 /* Docker CPU and memory per container on the Stats tab (drawn by custom.js from docker-trends.json). */
