@@ -1073,6 +1073,17 @@
   function barPct(item) { var b = item.querySelector('div[style*="width"]'), v = b ? parseFloat(b.style.width) : NaN; return isNaN(v) ? NaN : Math.max(0, Math.min(100, v)); }
   function size(s, word) { var m = new RegExp("([\\d.,]+\\s*[KMGTP]i?B)\\s*" + word, "i").exec(s); return m ? m[1].replace(/\s+/, " ") : ""; }
   function rate(s, arrow) { var m = new RegExp("([\\d.,]+)\\s*([KMGT]?i?B/s)\\s*" + arrow, "i").exec(s); return m ? m[1] + " " + m[2] : ""; }
+  function tempColor(c) {
+    var stops = [[45, 74, 222, 128], [70, 250, 204, 21], [90, 248, 90, 90]], i, a, b, k;
+    if (isNaN(c) || c <= stops[0][0]) return stops[0].slice(1).join(",");
+    for (i = 1; i < stops.length; i++) {
+      if (c <= stops[i][0]) {
+        a = stops[i - 1]; b = stops[i]; k = (c - a[0]) / (b[0] - a[0]);
+        return [1, 2, 3].map(function (n) { return Math.round(a[n] + (b[n] - a[n]) * k); }).join(",");
+      }
+    }
+    return stops[stops.length - 1].slice(1).join(",");
+  }
   function readStats() {
     var wrap = document.getElementById("widgets-wrap"), out = [];
     if (!wrap) return out;
@@ -1093,7 +1104,7 @@
           if (/CPU/i.test(tx)) { v = num(tx); out.push({ key: "cpu", kind: "ring", name: "CPU", value: isNaN(v) ? "" : Math.round(v) + "%", pct: isNaN(p) ? v : p }); }
           else if (/°|temp/i.test(tx)) {
             v = num(tx); var f = /°\s*F/i.test(tx), lv = f ? (v - 32) * 5 / 9 : v;
-            out.push({ key: "temp", kind: "ring", name: "Temperature", value: isNaN(v) ? "" : Math.round(v) + (f ? "°F" : "°C"), pct: isNaN(p) ? lv : p, warn: lv >= 75, bad: lv >= 90 });
+            out.push({ key: "temp", kind: "ring", name: "Temperature", value: isNaN(v) ? "" : Math.round(v) + (f ? "°F" : "°C"), pct: lv, col: tempColor(lv) });
           } else if (/uptime/i.test(tx)) out.push({ key: "up", kind: "text", name: "Uptime", value: clean(tx.replace(/uptime/i, "")).replace(/(\d+[dhm])(?=\d)/g, "$1 ") });
           else { var fr = size(tx, "free") || size(tx, ""); out.push({ key: "mem", kind: "ring", name: "Memory", value: fr ? fr + " free" : clean(tx), pct: p }); }
         });
@@ -1165,6 +1176,7 @@
         } else { t.vl.textContent = m.value || ""; }
         t.sb.textContent = m.sub || ""; t.sb.hidden = !m.sub;
         t.node.classList.toggle("hl-warn", !!m.warn && !m.bad); t.node.classList.toggle("hl-bad", !!m.bad);
+        if (m.col) t.node.style.setProperty("--g", m.col); else t.node.style.removeProperty("--g");
         if (t.ring) {
           var p = typeof m.pct === "number" && !isNaN(m.pct) ? Math.max(0, Math.min(100, m.pct)) : 0;
           t.ring.querySelector(".a").setAttribute("stroke-dashoffset", String((RING * (1 - p / 100)).toFixed(1)));
