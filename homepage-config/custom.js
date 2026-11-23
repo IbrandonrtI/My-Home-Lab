@@ -1159,19 +1159,19 @@
     if (fr.parentNode !== sc) sc.appendChild(fr);
     jfFit();
   }
-  /* The card is narrower than a desktop window, which makes Jellyfin switch to its small-screen layout (and its slideshow does not show there). So Jellyfin is drawn at desktop width and scaled down to fit the card. */
-  var JF_WIDE = 1100;
+  /* The card is narrower than a desktop window, which makes Jellyfin switch to its small-screen layout. So Jellyfin is drawn at exactly JF_WIDE pixels and scaled to fit the card. The Jellyfin look step uses that width to hide the home slideshow in this box only (see JELLYFIN_BOX_CSS in the installer). */
+  var JF_WIDE = 1137;
   function jfFit() {
     var v = document.querySelector("#hl-jf-frame .hl-jf-view"), f = v ? v.firstElementChild : null;
     if (!v || !f || !v.clientWidth || !v.clientHeight) return;
     var k = v.clientWidth / JF_WIDE;
-    if (k < 0.6 || k > 1) k = 1;
+    if (k < 0.6) k = 1;
     var w = Math.round(v.clientWidth / k), h = Math.round(v.clientHeight / k), sig = w + "x" + h;
     if (f.getAttribute("data-fit") === sig) return;
     f.setAttribute("data-fit", sig);
     f.style.width = w + "px";
     f.style.height = h + "px";
-    f.style.transform = k < 1 ? "scale(" + k.toFixed(4) + ")" : "";
+    f.style.transform = k !== 1 ? "scale(" + k.toFixed(4) + ")" : "";
   }
 
   /* Search palette (Ctrl+K). */

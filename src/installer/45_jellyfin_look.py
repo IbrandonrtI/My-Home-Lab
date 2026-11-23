@@ -7,9 +7,15 @@ JELLYFIN_LIBRARIES = (("Movies", "movies", "/media/movies"), ("Shows", "tvshows"
 JELLYFIN_DISPLAY = {"enableBackdrops": "true", "detailsBanner": "true"}
 
 
+# The dashboard shows Jellyfin in a box that homepage-config/custom.js draws exactly this wide, so a rule for this width reaches only that box.
+JELLYFIN_BOX_CSS = ("\n/* The dashboard box is exactly 1137 px wide: no slideshow there. */\n"
+                    "@media (width: 1137px) { html:root { --slideshow-height: 0px; } }\n")
+
+
 def jellyfin_css(slideshow=True):
     """The Custom CSS for Jellyfin: the Jellyfish theme with the Jellyflix colors and its add-ons. The slideshow file is left out without the Media Bar plugin."""
-    return "\n".join('@import url("%s%s");' % (JELLYFIN_THEME_URL, f) for f in JELLYFIN_CSS_FILES if slideshow or f != "slideshow.css") + "\n"
+    css = "\n".join('@import url("%s%s");' % (JELLYFIN_THEME_URL, f) for f in JELLYFIN_CSS_FILES if slideshow or f != "slideshow.css") + "\n"
+    return css + (JELLYFIN_BOX_CSS if slideshow else "")
 
 
 def jf_auth():
