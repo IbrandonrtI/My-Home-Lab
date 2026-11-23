@@ -1329,13 +1329,14 @@ html.hl-jf-side #hl-jf-frame .hl-jf-open:hover { color: var(--lk-hi, #fff); }
   html.hl-jf-side #inner_wrapper #navidrome-card .service-card { height: 100% !important; }
 }
 @media (min-width: 1500px) {
-  html.hl-jf-side #inner_wrapper #layout-groups:has(#navidrome-card) { grid-template-columns: minmax(0, 5fr) minmax(0, 5fr) minmax(0, 4fr); }
-  html.hl-jf-side #inner_wrapper #layout-groups:has(#navidrome-card) > .services-group { grid-column: 3; }
-  html.hl-jf-side #inner_wrapper #layout-groups:has(#navidrome-card) > .services-group:has(#navidrome-card) { grid-column: 1 / span 2; grid-row: 1 / span 3; }
+  /* Navidrome and Jellyfin side by side on top, the other groups in rows below them. */
+  html.hl-jf-side #inner_wrapper #layout-groups:has(#navidrome-card) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  html.hl-jf-side #inner_wrapper #layout-groups:has(#navidrome-card) > .services-group { grid-column: auto; grid-row: auto; }
+  html.hl-jf-side #inner_wrapper #layout-groups:has(#navidrome-card) > .services-group:has(#navidrome-card) { grid-column: 1 / -1; grid-row: 1; }
   html.hl-jf-side #inner_wrapper #layout-groups:has(#navidrome-card) > .services-group:has(li[id^="cal-"]) { grid-column: 1 / -1; grid-row: auto; }
 }
 @media (min-width: 2200px) {
-  html.hl-jf-side #inner_wrapper #layout-groups:has(#navidrome-card) { grid-template-columns: minmax(0, 5fr) minmax(0, 5fr) minmax(0, 4fr); }
+  html.hl-jf-side #inner_wrapper #layout-groups:has(#navidrome-card) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
 /* <<< homelab tabs <<< */
