@@ -239,7 +239,7 @@
     g.appendChild(pop);
   }
 
-  var LOCKED = "#hl-player-box, #customize-card iframe, #linkedit-card iframe, #terminal-card iframe", held = null;
+  var LOCKED = "#hl-player-box, #hl-jf-frame iframe, #customize-card iframe, #linkedit-card iframe, #terminal-card iframe", held = null;
   function scrolling(el) {
     for (var e = el; e && e !== document.body && e !== document.documentElement; e = e.parentElement) {
       if (e.hasAttribute("data-hl-locked")) return e;
@@ -268,8 +268,9 @@
     root.classList.remove("hl-lock");
   }
   var hovered = null;
+  /* While the pointer is over one of these frames the page itself stays still, so reaching the top or bottom of the frame never moves the dashboard. */
   function sync() {
-    if (hovered && document.activeElement === hovered) lock(hovered); else unlock();
+    if (hovered && hovered.getClientRects().length) lock(hovered); else unlock();
   }
   if (window.matchMedia && window.matchMedia("(hover: hover)").matches) {
     function leave(was) {
@@ -285,6 +286,7 @@
     window.addEventListener("blur", function () { window.setTimeout(sync, 0); });
     window.addEventListener("focus", function () { window.setTimeout(sync, 0); });
     document.addEventListener("mousedown", function () { window.setTimeout(sync, 0); }, true);
+    window.setInterval(sync, 1000);
   }
 
   function groups() {
@@ -739,7 +741,9 @@
       document.addEventListener("click", function (e) { var b = document.getElementById("hl-install"); if (b && !b.contains(e.target)) { b.classList.remove("hl-open"); b.querySelector("button").setAttribute("aria-expanded", "false"); } });
       document.addEventListener("keydown", function (e) { if (e.key === "Escape") { var b = document.getElementById("hl-install"); if (b) b.classList.remove("hl-open"); } });
     }
-    if (box.parentNode !== tabs || bellBox.nextSibling !== box) tabs.insertBefore(box, bellBox.nextSibling);
+    var place = document.getElementById("hl-find");
+    if (!place || place.parentNode !== tabs) place = bellBox;
+    if (box.parentNode !== tabs || place.nextSibling !== box) tabs.insertBefore(box, place.nextSibling);
     var every = box.hidden ? 15000 : 10000;
     if (!INSTALL.busy && Date.now() - INSTALL.at > every) installLoad();
     var jevery = JOBS.list.length ? 5000 : 20000;
@@ -844,10 +848,10 @@
 
   /* Quick launch: icons of favorite services in the bar under the header. By default it starts with the list below and moves the services opened most often to the front (counted in this browser). */
   var PREFER = ["jellyfin-card", "immich-card", "nextcloud-card", "filebrowser-card", "portainer-card", "adguard-card", "beszel-card", "tailscale-card"];
-  var DOCK_MAX = 5, SKIP = /^(customize|linkedit|terminal|navidrome)-card$/, VKEY = "hl-visits", CKEY = "hl-dock-cache";
+  var DOCK_MAX = 5, SKIP = /^(customize|linkedit|terminal|navidrome)-card$/, VKEY = "hl-visits", CKEY = "hl-dock-cache", BKEY = "hl-link-cache", TKEY = "hl-tray", TRAY_MAX = 12;
   function lsGet(k) { try { return JSON.parse(window.localStorage.getItem(k) || "null"); } catch (e) { return null; } }
   function lsSet(k, v) { try { window.localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* storage may be blocked */ } }
-  var VIS = lsGet(VKEY) || {}, CACHE = lsGet(CKEY) || {};
+  var VIS = lsGet(VKEY) || {}, CACHE = lsGet(CKEY) || {}, BM = lsGet(BKEY) || {};
   function countVisit(e) {
     var a = e.target && e.target.closest ? e.target.closest("a[href]") : null, id = "";
     if (!a || (e.type === "auxclick" && e.button !== 1)) return;
@@ -884,6 +888,14 @@
       if (JSON.stringify(CACHE[li.id]) !== JSON.stringify(rec)) { CACHE[li.id] = rec; dirty = true; }
     });
     if (dirty) lsSet(CKEY, CACHE);
+    var bd = false;
+    all(".bookmark > a[href]").forEach(function (a) {
+      var nm = a.querySelector(".bookmark-name"), ic = a.querySelector(".bookmark-icon"), name = (nm ? nm.textContent : a.textContent).trim();
+      if (!name || (!BM[a.href] && Object.keys(BM).length >= 100)) return;
+      var rec = { name: name, ic: iconRec(ic && ic.firstElementChild) };
+      if (JSON.stringify(BM[a.href]) !== JSON.stringify(rec)) { BM[a.href] = rec; bd = true; }
+    });
+    if (bd) lsSet(BKEY, BM);
   }
   function dockIds() {
     var raw = quoted("--hl-dock");
@@ -904,46 +916,235 @@
     if (!a) return null;
     return { a: a, name: (nm ? nm.textContent : a.textContent).trim(), icon: ic && ic.firstElementChild ? ic.firstElementChild : null };
   }
+  /* The icon row: services and links in this browser's own order. Until the person edits it, it follows the Look setting (Most Visited, chosen cards or off). */
+  function trayList() {
+    if (quoted("--hl-dock") === "off") return null;
+    var mine = lsGet(TKEY), out = [];
+    if (mine && Array.isArray(mine.items)) {
+      mine.items.forEach(function (it) {
+        if (it && it.id) { var r = CACHE[it.id]; if (r && r.href) out.push({ id: it.id, r: r }); }
+        else if (it && it.h) out.push({ link: true, r: { href: it.h, name: it.n || it.h, target: "_blank", ic: it.i || null } });
+      });
+      return out.slice(0, TRAY_MAX);
+    }
+    (dockIds() || []).forEach(function (id) { var r = CACHE[id]; if (r && r.href) out.push({ id: id, r: r }); });
+    return out;
+  }
+  function traySave(list) {
+    var items = list.slice(0, TRAY_MAX).map(function (x) { return x.link ? { n: x.r.name, h: x.r.href, i: x.r.ic || null } : { id: x.id }; });
+    lsSet(TKEY, { items: items });
+  }
+  function trayReset() { try { window.localStorage.removeItem(TKEY); } catch (e) { /* storage may be blocked */ } }
+  function linkAddress(text) {
+    var t = String(text || "").trim();
+    if (!t) return "";
+    if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(t)) {
+      if (/^(javascript|data|vbscript|file|blob):/i.test(t)) return "";
+      var host = t.split(/[\/?#]/)[0].replace(/:\d+$/, "").replace(/^.*@/, "");
+      t = (/^\d{1,3}(\.\d{1,3}){3}$/.test(host) || /\.(local|lan|home|internal)$/i.test(host) || host.indexOf(".") < 0 ? "http://" : "https://") + t;
+    }
+    try { var u = new URL(t); return (u.protocol === "http:" || u.protocol === "https:") && u.hostname ? u.href : ""; } catch (e) { return ""; }
+  }
+  function letterTile(span, name) { span.textContent = (name || "?").trim().charAt(0).toUpperCase() || "?"; }
+  function trayIcon(span, c) {
+    var ico = iconNode(c.r.ic);
+    if (ico) { span.appendChild(ico); return; }
+    if (c.link) {
+      var o = ""; try { o = new URL(c.r.href).origin; } catch (e) { o = ""; }
+      if (o) {
+        var im = el("img"); im.alt = ""; im.referrerPolicy = "no-referrer";
+        im.onerror = function () { if (im.parentNode) im.parentNode.removeChild(im); letterTile(span, c.r.name); };
+        im.src = o + "/favicon.ico";
+        span.appendChild(im);
+        return;
+      }
+    }
+    letterTile(span, c.r.name);
+  }
+  function after(box, anchor) {
+    if (!anchor || !anchor.parentNode) return;
+    if (box.parentNode !== anchor.parentNode || anchor.nextSibling !== box) anchor.parentNode.insertBefore(box, anchor.nextSibling);
+  }
+  var DOTS_ICON = '<svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden="true"><circle cx="12" cy="5" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="12" cy="19" r="2"/></svg>';
+  var TRAY = { wrap: null, btn: null, pop: null, note: "" };
+  function trayOpen() { return !!TRAY.wrap && TRAY.wrap.classList.contains("hl-open"); }
+  function trayClose(focus) {
+    if (!TRAY.wrap) return;
+    TRAY.wrap.classList.remove("hl-open");
+    TRAY.pop.hidden = true;
+    TRAY.btn.setAttribute("aria-expanded", "false");
+    if (focus) TRAY.btn.focus();
+  }
+  function trayEdit(fn) {
+    var list = trayList() || [];
+    fn(list);
+    traySave(list);
+    dock();
+    trayDraw();
+  }
+  function trayBtn(txt, label, fn, off) {
+    var b = el("button", "hl-tbtn", txt); b.type = "button"; b.setAttribute("aria-label", label); b.title = label;
+    if (off) b.disabled = true; else b.onclick = fn;
+    return b;
+  }
+  function trayDraw() {
+    var pop = TRAY.pop;
+    if (!pop || !trayOpen()) return;
+    var list = trayList() || [], mine = !!lsGet(TKEY);
+    while (pop.firstChild) pop.removeChild(pop.firstChild);
+    var head = el("div", "hl-thead");
+    head.appendChild(el("strong", "", "Quick launch icons"));
+    head.appendChild(el("span", "hl-tsub", list.length + " of " + TRAY_MAX));
+    pop.appendChild(head);
+    var ul = el("ul", "hl-tlist");
+    if (!list.length) ul.appendChild(el("li", "hl-tnone", "No icons yet. Add one below."));
+    list.forEach(function (c, i) {
+      var li = el("li", "hl-trow"), ic = el("span", "hl-di");
+      trayIcon(ic, c);
+      li.appendChild(ic);
+      li.appendChild(el("span", "hl-tname", c.r.name));
+      li.appendChild(trayBtn("↑", "Move " + c.r.name + " earlier", function () { trayEdit(function (l) { l.splice(i - 1, 0, l.splice(i, 1)[0]); }); }, i === 0));
+      li.appendChild(trayBtn("↓", "Move " + c.r.name + " later", function () { trayEdit(function (l) { l.splice(i + 1, 0, l.splice(i, 1)[0]); }); }, i === list.length - 1));
+      li.appendChild(trayBtn("✕", "Remove " + c.r.name, function () { trayEdit(function (l) { l.splice(i, 1); }); }));
+      ul.appendChild(li);
+    });
+    pop.appendChild(ul);
+    var full = list.length >= TRAY_MAX, used = {};
+    list.forEach(function (c) { used[c.r.href] = true; });
+    var sel = el("select"); sel.setAttribute("aria-label", "Add a service or link from this dashboard");
+    var o0 = el("option", "", "Add from this dashboard…"); o0.value = ""; sel.appendChild(o0);
+    var gs = el("optgroup"); gs.label = "Services";
+    Object.keys(CACHE).filter(function (id) { return !SKIP.test(id) && CACHE[id] && CACHE[id].href && !used[CACHE[id].href]; }).sort(function (x, y) { return CACHE[x].name.localeCompare(CACHE[y].name); }).forEach(function (id) { var o = el("option", "", CACHE[id].name); o.value = "s:" + id; gs.appendChild(o); });
+    var gl = el("optgroup"); gl.label = "Links";
+    Object.keys(BM).filter(function (h) { return !used[h]; }).sort(function (x, y) { return BM[x].name.localeCompare(BM[y].name); }).forEach(function (h) { var o = el("option", "", BM[h].name); o.value = "b:" + h; gl.appendChild(o); });
+    if (gs.children.length) sel.appendChild(gs);
+    if (gl.children.length) sel.appendChild(gl);
+    sel.disabled = full || sel.children.length < 2;
+    sel.onchange = function () {
+      var v = sel.value; if (!v) return;
+      trayEdit(function (l) {
+        if (v.slice(0, 2) === "s:") l.push({ id: v.slice(2), r: CACHE[v.slice(2)] });
+        else { var h = v.slice(2), b = BM[h]; if (b) l.push({ link: true, r: { href: h, name: b.name, target: "_blank", ic: b.ic || null } }); }
+      });
+    };
+    var row = el("div", "hl-tadd"); row.appendChild(sel); pop.appendChild(row);
+    var form = el("form", "hl-tform");
+    var nm = el("input"); nm.type = "text"; nm.maxLength = 24; nm.placeholder = "Name"; nm.setAttribute("aria-label", "Name of the link");
+    var ad = el("input"); ad.type = "text"; ad.placeholder = "https://example.com"; ad.setAttribute("aria-label", "Address of the link"); ad.setAttribute("autocapitalize", "off"); ad.spellcheck = false;
+    var go = el("button", "hl-tgo", "Add Link"); go.type = "submit"; go.disabled = full;
+    var msg = el("div", "hl-tmsg", TRAY.note); msg.setAttribute("role", "status");
+    form.appendChild(nm); form.appendChild(ad); form.appendChild(go);
+    form.onsubmit = function (ev) {
+      ev.preventDefault();
+      var name = nm.value.replace(/\s+/g, " ").trim(), href = linkAddress(ad.value);
+      if (!name) { msg.textContent = "Enter a name for the link."; nm.focus(); return; }
+      if (!href) { msg.textContent = "That address does not work. Use something like https://example.com or http://192.168.1.5:8080."; ad.focus(); return; }
+      if (used[href]) { msg.textContent = "That link is already in the row."; return; }
+      TRAY.note = "";
+      trayEdit(function (l) { l.push({ link: true, r: { href: href, name: name, target: "_blank", ic: null } }); });
+    };
+    pop.appendChild(form);
+    pop.appendChild(msg);
+    if (full) pop.appendChild(el("div", "hl-tmsg", "The row can hold up to " + TRAY_MAX + " icons. Remove one to add another."));
+    var foot = el("div", "hl-tfoot");
+    var rs = el("button", "hl-treset", "Use Most Visited"); rs.type = "button"; rs.disabled = !mine;
+    rs.title = "Go back to the icons chosen on the Look screen";
+    rs.onclick = function () { trayReset(); TRAY.note = ""; dock(); trayDraw(); };
+    foot.appendChild(rs);
+    pop.appendChild(foot);
+  }
+  function trayMenu(tabs) {
+    var w = TRAY.wrap;
+    if (!w) {
+      w = el("div"); w.id = "hl-tray-menu";
+      var b = el("button"); b.type = "button"; b.innerHTML = DOTS_ICON;
+      b.title = "Edit the quick launch icons"; b.setAttribute("aria-label", "Edit the quick launch icons"); b.setAttribute("aria-haspopup", "dialog"); b.setAttribute("aria-expanded", "false");
+      var pop = el("div", "hl-traypop"); pop.hidden = true; pop.setAttribute("role", "dialog"); pop.setAttribute("aria-label", "Quick launch icons");
+      b.onclick = function () {
+        if (trayOpen()) { trayClose(false); return; }
+        w.classList.add("hl-open"); pop.hidden = false; b.setAttribute("aria-expanded", "true"); TRAY.note = "";
+        trayDraw();
+      };
+      w.addEventListener("keydown", function (ev) {
+        if (ev.key === "Escape" && trayOpen()) { ev.stopPropagation(); trayClose(true); return; }
+        if (pop.contains(ev.target)) ev.stopPropagation();
+      });
+      document.addEventListener("keydown", function (ev) { if (ev.key === "Escape" && trayOpen()) trayClose(false); });
+      document.addEventListener("click", function (ev) { var path = ev.composedPath ? ev.composedPath() : []; if (trayOpen() && path.indexOf(w) < 0 && !w.contains(ev.target)) trayClose(false); });
+      w.appendChild(b); w.appendChild(pop);
+      TRAY.wrap = w; TRAY.btn = b; TRAY.pop = pop;
+    }
+    return w;
+  }
   function dock() {
     var tabs = document.getElementById("tabs"), ul = document.getElementById("myTab");
     if (!tabs || !ul) return;
     remember();
-    var ids = dockIds(), box = document.getElementById("hl-dock");
-    if (!ids || !ids.length) { if (box && !box.hidden) box.hidden = true; return; }
-    var items = [];
-    ids.forEach(function (id) { var r = CACHE[id]; if (r && r.href) items.push({ id: id, r: r }); });
-    var sig = items.map(function (c) { return c.id + "|" + c.r.href + "|" + c.r.name; }).join("\n");
+    var list = trayList(), box = document.getElementById("hl-dock"), menu = trayMenu(tabs);
     if (!box) { box = el("nav"); box.id = "hl-dock"; box.setAttribute("aria-label", "Quick launch"); }
+    if (!list) {
+      box.hidden = true; menu.hidden = true;
+      if (trayOpen()) trayClose(false);
+      return;
+    }
+    var sig = list.map(function (c) { return (c.id || "l") + "|" + c.r.href + "|" + c.r.name; }).join("\n");
     if (box.getAttribute("data-sig") !== sig) {
       box.setAttribute("data-sig", sig);
       while (box.firstChild) box.removeChild(box.firstChild);
-      items.forEach(function (c) {
+      list.forEach(function (c) {
         var a = el("a"), span = el("span", "hl-di");
-        a.href = c.r.href; a.title = c.r.name; a.setAttribute("aria-label", c.r.name); a.setAttribute("data-id", c.id);
+        a.href = c.r.href; a.title = c.r.name; a.setAttribute("aria-label", c.r.name);
+        if (c.id) a.setAttribute("data-id", c.id);
         if (c.r.target) a.target = c.r.target;
         a.rel = "noopener";
-        var ico = iconNode(c.r.ic);
-        if (ico) span.appendChild(ico); else span.textContent = (c.r.name || "?").charAt(0);
+        trayIcon(span, c);
         a.appendChild(span);
         box.appendChild(a);
       });
     }
-    var fb = document.getElementById("hl-find");
-    if (box.parentNode !== tabs || (fb && box.nextSibling !== fb)) { if (fb && fb.parentNode === tabs) tabs.insertBefore(box, fb); else tabs.appendChild(box); }
-    box.hidden = items.length === 0;
+    var anchor = document.getElementById("hl-install"), fb = document.getElementById("hl-find"), bell = document.getElementById("hl-bell");
+    if (!anchor || anchor.parentNode !== tabs) anchor = fb && fb.parentNode === tabs ? fb : bell && bell.parentNode === tabs ? bell : ul;
+    after(box, anchor);
+    after(menu, box);
+    box.hidden = list.length === 0;
+    menu.hidden = false;
   }
 
-  /* Jellyfin card: leave out the Songs count, and (when chosen on the Look screen) show Jellyfin's own library inside the card, beside Navidrome. */
+  /* Jellyfin card: leave out the Songs count. A small arrow on the card opens Jellyfin's own library inside it, beside Navidrome (and hides the card's numbers while it is open). */
+  function jfOpen() { return lsGet("hl-jf-open") !== 0; }
+  function jfLabel(b) {
+    var on = jfOpen();
+    b.setAttribute("aria-label", on ? "Close the Jellyfin library" : "Open the Jellyfin library");
+    b.setAttribute("title", on ? "Close the Jellyfin library" : "Open the Jellyfin library");
+    b.setAttribute("aria-expanded", on ? "true" : "false");
+  }
+  function jfButton(card) {
+    var title = card.querySelector(".service-title");
+    if (!title || title.querySelector(".hl-jf-toggle")) return;
+    var b = el("button", "hl-shrink hl-jf-toggle");
+    b.type = "button";
+    b.addEventListener("click", function (ev) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      lsSet("hl-jf-open", jfOpen() ? 0 : 1);
+      jellyfin();
+      jfLabel(b);
+      window.dispatchEvent(new Event("resize"));
+    });
+    jfLabel(b);
+    title.appendChild(b);
+  }
   function jellyfin() {
-    var card = document.getElementById("jellyfin-card"), side = quoted("--hl-jf") === "beside" && !!card, root = document.documentElement;
+    var card = document.getElementById("jellyfin-card"), side = !!card && jfOpen(), root = document.documentElement;
     if (root.classList.contains("hl-jf-side") !== side) root.classList.toggle("hl-jf-side", side);
     if (!card) return;
     all(".service-block", card).forEach(function (b) {
       var l = b.querySelector(".service-block-label"), tx = (l ? l.textContent : b.textContent).replace(/[\d.,]+/g, "").trim(), gone = /^songs?$/i.test(tx);
       if (b.classList.contains("hl-gone") !== gone) b.classList.toggle("hl-gone", gone);
     });
+    jfButton(card);
     var sc = card.querySelector(".service-card"), fr = document.getElementById("hl-jf-frame");
-    if (!side || !sc) { if (fr && fr.parentNode) fr.parentNode.removeChild(fr); return; }
+    if (!side || !sc) return;
     var a = card.querySelector("a[href]"), base = "";
     try { base = a ? new URL(a.href).origin : ""; } catch (e) { base = ""; }
     if (!base) return;
@@ -1072,7 +1273,7 @@
       b.onclick = function () { palOpen(); };
       box.appendChild(b);
     }
-    if (box.parentNode !== tabs || box.nextSibling) tabs.appendChild(box);
+    after(box, document.getElementById("hl-bell") || document.getElementById("myTab"));
   }
 
   /* History for the small network graph (the control panel keeps the last hour in trends.json). */
