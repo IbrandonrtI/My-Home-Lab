@@ -6200,17 +6200,27 @@ class BackupConf(Step):
     id, group, title = "backup-conf", "Scripts and schedule", "Backup settings file (/etc/homelab-backup.conf)"
     needs = ("scripts",)
 
+    HEADER = ("# /etc/homelab-backup.conf (optional; every line is a shell setting)\n"
+              "# The backup runs only while a drive is mounted in the Backup pool (/mnt/backup).\n"
+              "# Other settings you can change: RETENTION_DAYS=30, MIN_FREE_GB=20\n")
+
     def probe(self):
         path = P("/etc/homelab-backup.conf")
         if not os.path.exists(path):
             return "todo"
-        m = re.search(r'DEST_FALLBACK="([^"]*)"', read_file(path))
-        if m and "/750GB_HDD/" in m.group(1) and not os.path.isdir(P(Ctx.home + "/750GB_HDD")):
-            return "todo"
-        return "done"
+        return "todo" if self.old_fallback(read_file(path)) else "done"
+
+    @staticmethod
+    def old_fallback(text):
+        """The line an earlier install wrote: a backup folder on the boot drive that took the copy while the Backup pool had no drive."""
+        return re.search(r'^DEST_FALLBACK="[^"]*/backup-interim"[ \t]*$', text, re.M)
 
     def run(self):
-        write_file(P("/etc/homelab-backup.conf"), 'DEST_FALLBACK="%s/backup-interim"\n' % boot_share_dir(), 0o644)
+        path = P("/etc/homelab-backup.conf")
+        text = read_file(path) if os.path.exists(path) else ""
+        kept = [ln for ln in text.split("\n") if not re.fullmatch(r'DEST_FALLBACK="[^"]*/backup-interim"[ \t]*', ln)]
+        body = "\n".join(kept).strip("\n")
+        write_file(path, (body + "\n") if body else self.HEADER, 0o644)
 
 
 CRON_LINES = [
