@@ -1150,11 +1150,28 @@
     if (!base) return;
     if (!fr) {
       fr = el("div"); fr.id = "hl-jf-frame";
+      var view = el("div", "hl-jf-view");
       var f = el("iframe"); f.title = "Jellyfin library"; f.setAttribute("loading", "lazy"); f.setAttribute("allow", "fullscreen; autoplay"); f.src = base + "/web/index.html";
       var o = el("a", "hl-jf-open", "Open Jellyfin"); o.href = base + "/"; o.target = "_blank"; o.rel = "noopener";
-      fr.appendChild(f); fr.appendChild(o);
+      view.appendChild(f); fr.appendChild(view); fr.appendChild(o);
+      if (window.ResizeObserver) new ResizeObserver(jfFit).observe(view);
     }
     if (fr.parentNode !== sc) sc.appendChild(fr);
+    jfFit();
+  }
+  /* The card is narrower than a desktop window, which makes Jellyfin switch to its small-screen layout (and its slideshow does not show there). So Jellyfin is drawn at desktop width and scaled down to fit the card. */
+  var JF_WIDE = 1100;
+  function jfFit() {
+    var v = document.querySelector("#hl-jf-frame .hl-jf-view"), f = v ? v.firstElementChild : null;
+    if (!v || !f || !v.clientWidth || !v.clientHeight) return;
+    var k = v.clientWidth / JF_WIDE;
+    if (k < 0.6 || k > 1) k = 1;
+    var w = Math.round(v.clientWidth / k), h = Math.round(v.clientHeight / k), sig = w + "x" + h;
+    if (f.getAttribute("data-fit") === sig) return;
+    f.setAttribute("data-fit", sig);
+    f.style.width = w + "px";
+    f.style.height = h + "px";
+    f.style.transform = k < 1 ? "scale(" + k.toFixed(4) + ")" : "";
   }
 
   /* Search palette (Ctrl+K). */
