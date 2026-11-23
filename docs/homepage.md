@@ -198,7 +198,7 @@ The Upload card sends photos and videos straight to Immich, and songs straight t
 
 The Backups card is a task list like the one in TrueNAS. A task copies a folder somewhere on a schedule, and every run keeps a version that can be restored. The destination can be a drive, another computer over SSH, or the cloud (Backblaze B2, S3, Google Drive and others). You can run a task right away, and browse and restore its versions.
 
-For a backup kept on a drive of this computer there is also a **Download** button. It opens a small browser of the backup where you can save a single file, or a whole folder as a `.zip`, to the device you are using. That's the way out when nothing else works. The schedule can be every hour, every day, every few days (2 to 30), every week or every month. The nightly backup of the files is the first task in the list. Its **Edit** window has the same schedule choices and a setting for how many days deleted or replaced files are kept (30 by default).
+For a backup kept on a drive of this computer there is also a **Download** button. It opens a small browser of the backup where you can save a single file, or a whole folder as a `.zip`, to the device you are using. That's the way out when nothing else works. The schedule can be every hour, every day, every few days (2 to 30), every week or every month. The nightly backup of the files is the first task in the list. Its **Edit** window has the same schedule choices, a setting for how many days deleted or replaced files are kept (30 by default) and a **What to back up** list with a tick box for each folder of the Main pool. An unticked folder is not copied, and the window says what that means for restoring.
 
 ![The Backups card with a nightly task](images/panel-backups.png)
 

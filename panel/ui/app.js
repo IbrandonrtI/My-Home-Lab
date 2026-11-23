@@ -343,6 +343,12 @@ const STATE_TEXT = { connected: "Connected", "connected (used last)": "Connected
 const STATE_HINT = { "connected (used last)": "A backup copy on the boot drive. It is used only when the other backup drives are full.", "boot/system drive (not changed)": "The boot drive. The panel never changes it." };
 const JOB_TEXT = { add: "Adding the drive...", wipe: "Erasing the drive...", disconnect: "Taking the drive out of its pool...", move: "Moving the drive...", remount: "Repairing the drives. This can take a minute...", moveboot: "Moving the files from the boot drive to the drive. This can take a while...", appsfix: "Repairing Immich and Nextcloud. Copying files back from the backup can take a long time...",
   setup: "Building the new setup. This can take a few minutes...", bootadd: "Reserving part of the boot drive...", rename: "Saving the name...", sleep: "Telling the drive to sleep...", wake: "Waking the drive up..." };
+// The automatic name of a Boot Drive Space starts with the size of its file. Show the space that can be filled instead, so the name and the pool agree.
+function bootSectionName(d) {
+  const n = String(d.name || "");
+  const auto = /^[\d.]+ (MB|GB|TB) boot drive section$/i.test(n);
+  return auto && typeof d.size_bytes === "number" ? humanBytes(d.size_bytes) + " Boot Drive Space" : n.replace(/ boot drive section$/i, " Boot Drive Space");
+}
 function humanBytes(n) {
   if (typeof n !== "number" || !(n >= 0)) return "-";
   const u = ["B", "KB", "MB", "GB", "TB", "PB"];
@@ -740,7 +746,7 @@ async function bootAdd(role) {
     title: "Use Part of the Boot Drive for the " + R + " Pool",
     lead: ["The boot drive also holds the system and the apps. Free now: " + humanBytes(free) + ". It always keeps " + humanBytes(typeof free === "number" ? free - bl.max_bytes : 0) + " or more free for the system.",
       "The space is taken from the boot drive immediately and stays reserved, even while the space is empty. The space is the last drive the " + role + " pool uses. It receives files only when the other " + role + " drives are full."],
-    fields: [{ id: "size", label: "Size in " + bl.unit, value: Math.max(bl.lo, Math.min(bl.hi, 100)), min: bl.lo, max: bl.hi, hint: "From " + bl.lo + " to " + bl.hi + " " + bl.unit }],
+    fields: [{ id: "size", label: "Size in " + bl.unit, value: Math.max(bl.lo, Math.min(bl.hi, 100)), min: bl.lo, max: bl.hi, hint: "From " + bl.lo + " to " + bl.hi + " " + bl.unit + ". The space you can fill is about 2% less, because the new file system keeps some for its own index and journal." }],
     questions: [],
     invalid: st => { const n = Number(st.size); return !Number.isInteger(n) || n < bl.lo || n > bl.hi ? "Choose a whole number from " + bl.lo + " to " + bl.hi + " " + bl.unit + "." : null; },
     warn: () => "If the boot drive fails, everything in this space is lost together with the system." + (role === "backup" ? " A backup on the boot drive helps if a Main drive fails, but not if the boot drive fails, because the backup is lost with it." : ""),
@@ -918,7 +924,7 @@ function tilesNow() {
   const lend = bootTile();
   const list = (st.drives || []).filter(d => !(lend.length && /^boot\/system drive/.test(d.state || ""))).map(d0 => {
     const ren = (act.rename || []).find(a => d0.mount && d0.mount.split("/").pop() === a.id) || null;
-    const d = ren && ren.boot_section ? Object.assign({}, d0, { name: d0.name.replace(/ boot drive section$/i, " Boot Drive Space") }) : d0;
+    const d = ren && ren.boot_section ? Object.assign({}, d0, { name: bootSectionName(d0) }) : d0;
     const sp = ren ? null : (act.spare || []).find(a => diskOf(d.device) === a.id) || null;
     const kind = ren ? (ren.boot_section ? "boot" : "pool") : sp ? "spare" : "other";
     const group = kind === "spare" ? "spare" : (kind === "pool" || kind === "boot") && ren.connected ? ren.role : "";
@@ -1725,8 +1731,24 @@ function bkEdit(t) {
   };
   const form = [h("h2", {}, t ? "Edit " + t.name : "New Backup Task"),
     bkField("Name", h("input", { type: "text", value: f.name, maxlength: 40, placeholder: "My documents", oninput: e => { f.name = e.target.value; } }))];
+  const FOLDER_NAMES = { immich: "Photos and videos (Immich)", nextcloud: "Files and documents (Nextcloud)", music: "Music (Navidrome and Downtify)" };
+  const folders = h("div", { class: "field" });
+  const drawFolders = () => {
+    const skip = new Set(f.skip || []), names = f.folders || [];
+    const left = names.filter(n => skip.has(n));
+    const rows = names.map(n => h("label", { class: "row check" },
+      h("input", { type: "checkbox", checked: !skip.has(n), "aria-label": "Back up " + (FOLDER_NAMES[n] || n),
+        onchange: e => { if (e.target.checked) skip.delete(n); else skip.add(n); f.skip = names.filter(x => skip.has(x)); drawFolders(); } }),
+      h("span", {}, FOLDER_NAMES[n] || n, FOLDER_NAMES[n] ? h("small", { class: "muted" }, "  " + n) : null)));
+    put(folders, h("label", {}, "What to back up"),
+      names.length ? h("div", { class: "grid cols2" }, rows) : h("p", { class: "muted" }, "No folders were found in the Main pool, so the whole pool is backed up."),
+      left.length === names.length && names.length ? h("p", { class: "warntext" }, "Leave at least one folder ticked.") : null,
+      left.length ? h("p", { class: "warntext" }, "Not backed up: " + left.map(n => FOLDER_NAMES[n] || n).join(", ") + ". If a drive fails, these files cannot be restored from this backup. Copies that are already in the backup stay where they are and stop being updated.") : null,
+      h("span", { class: "hint" }, "The lab's settings and the Nextcloud database are always backed up, whatever is ticked here."));
+  };
   if (nightly) {
-    form.push(h("p", { class: "muted" }, "This is the nightly backup of " + f.source + " to " + f.dest.path + ". You can rename it, turn it off, change when it runs and how long it keeps files you delete or replace."), when,
+    drawFolders();
+    form.push(h("p", { class: "muted" }, "This is the nightly backup of " + f.source + " to " + f.dest.path + ". You can rename it, turn it off, choose what is backed up, change when it runs and how long it keeps files you delete or replace."), folders, when,
       bkField("Keep files that are deleted or replaced for how many days?",
         h("input", { type: "number", min: 1, max: 3650, value: (f.keep && f.keep.days) || 30, "aria-label": "Days to keep deleted or replaced files", oninput: e => { f.keep = { days: Math.max(1, Math.min(3650, parseInt(e.target.value, 10) || 30)) }; } }),
         "The default is 30 days. When a file is deleted or changed, the older copy stays in the backup for this long and is then removed to free space. A longer period needs more space on the backup drive."));
@@ -1744,7 +1766,7 @@ function bkEdit(t) {
         setErr("");
         const out = { id: f.id, name: f.name, enabled: f.enabled, schedule: f.schedule };
         if (!nightly) Object.assign(out, { source: f.source, exclude: f.exclude, dest: f.dest, keep: f.keep });
-        else out.keep = { days: (f.keep && f.keep.days) || 30 };
+        else { out.keep = { days: (f.keep && f.keep.days) || 30 }; out.skip = f.skip || []; }
         if (!t) delete out.id;
         try { await api("POST", "/api/backup/save", out); d.close(); toast("Saved."); await loadBackups(); } catch (e) { setErr(e.message); }
       } }, "Save")));

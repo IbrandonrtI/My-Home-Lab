@@ -12,6 +12,8 @@ Runs from root's crontab at 6:00. What it does, in order:
   4. removes dumps and _deleted folders older than 30 days
 
 Settings can be overridden in /etc/homelab-backup.conf (see the guide).
+SKIP_FOLDERS="name|name" leaves folders of the main storage out (the panel sets it from the tick list of the nightly task). A folder
+that is left out is not copied or compared, and its older copy in the backup stays as it is.
 The result of each run is saved in /var/lib/homelab-backup/last-run as
   date|result|destination|seconds|bytes   (bytes = size of the whole backup folder)
 
@@ -66,6 +68,8 @@ NEXTCLOUD_DB_CONTAINER="nextcloud_db"
 NEXTCLOUD_DB_USER="nextcloud"
 NEXTCLOUD_DB_NAME="nextcloud"
 MIN_FREE_GB=20
+# Folders of the Main pool that are not backed up, written as name|name (set in the panel: Drives, Backups, Edit the nightly task).
+SKIP_FOLDERS=""
 VERIFY_MB=2048
 LAB_USER="${HOMELAB_USER:-$(getent passwd 1000 | cut -d: -f1)}"
 LAB_HOME="$(getent passwd "$LAB_USER" 2>/dev/null | cut -d: -f6)"
@@ -87,6 +91,22 @@ CONFIG_PATHS=(
 CONF="${BACKUP_CONF:-/etc/homelab-backup.conf}"
 # shellcheck disable=SC1090
 [ -f "$CONF" ] && . "$CONF"
+
+# The folders of Main that are left out. Only plain folder names are accepted, so nothing in the setting can act as a pattern or a path.
+SKIP_NAMES=()
+SKIP_ARGS=()
+if [ -n "$SKIP_FOLDERS" ]; then
+  skip_re='^[A-Za-z0-9._+() -]{1,80}$'
+  IFS='|' read -r -a skip_list <<<"$SKIP_FOLDERS"
+  for skip_one in "${skip_list[@]}"; do
+    [[ $skip_one =~ $skip_re ]] || continue
+    [ "$skip_one" = "." ] || [ "$skip_one" = ".." ] || [ "$skip_one" = "lost+found" ] && continue
+    SKIP_NAMES+=("$skip_one")
+    SKIP_ARGS+=("--exclude=/$skip_one")
+  done
+fi
+SKIP_FOLDERS=$(IFS='|'; echo "${SKIP_NAMES[*]:-}")
+export SKIP_FOLDERS
 
 VERIFY_STATUS_FILE="${VERIFY_STATUS_FILE:-$(dirname "$STATUS_FILE")/last-verify}"
 START=$(date +%s)
@@ -158,10 +178,11 @@ verify_list() {
 import os, random, sys
 src, dst, changed, budget = sys.argv[1], sys.argv[2], sys.argv[3], int(sys.argv[4]) * 1048576
 since = float(os.environ.get("VERIFY_SINCE") or 0)
+skip = {n for n in os.environ.get("SKIP_FOLDERS", "").split("|") if n}
 picked, seen, used = [], set(), 0
 def add(rel):
     global used
-    if rel in seen:
+    if rel in seen or rel.split("/", 1)[0] in skip:
         return False
     try:
         a, b = os.lstat(os.path.join(src, rel)), os.lstat(os.path.join(dst, rel))
@@ -321,13 +342,26 @@ print(len(names) - len(kept))
 PY
 }
 
+# drop_skipped: read a NUL-separated list of names from Main's backup and drop the ones inside an unticked folder.
+# Their copies in the backup are old on purpose, so comparing them with the originals would report damage that is not there.
+drop_skipped() {
+  [ -n "${SKIP_FOLDERS:-}" ] || { cat; return; }
+  python3 -c '
+import os, sys
+skip = {n for n in os.environ.get("SKIP_FOLDERS", "").split("|") if n}
+for n in sys.stdin.buffer.read().split(b"\0"):
+    if n and n.decode("utf-8", "surrogateescape").split("/", 1)[0] not in skip:
+        sys.stdout.buffer.write(n + b"\0")
+'
+}
+
 # verify_all: compare EVERY file (the `verify` command). With --repair the files that differ are copied again from the originals;
 # the version the backup held before is kept in _deleted/<date> like in a nightly run, and a second compare says what is still different.
 verify_all() {
   local all bad n left
   all=$(mktemp) || return 1
   bad=$(mktemp) || return 1
-  ( cd "$DEST/main" && find . -type f -print0 ) | sed -z 's|^\./||' >"$all"
+  ( cd "$DEST/main" && find . -type f -print0 ) | sed -z 's|^\./||' | drop_skipped >"$all"
   VGONE=$(split_gone "$all" 2>/dev/null || echo 0)
   VCOMPARED=$(tr -cd '\0' <"$all" | wc -c)   # find -print0 ends every name with a NUL, so the NULs are the files
   if [ "${VGONE:-0}" -gt 0 ] 2>/dev/null; then
@@ -464,6 +498,19 @@ if [ -z "$(find "$SRC" -mindepth 1 -maxdepth 1 ! -name lost+found -print -quit)"
   fail "main storage ($SRC) looks empty, nothing was copied (this protects the backup from being emptied)"
   finish
 fi
+if [ "${#SKIP_NAMES[@]}" -gt 0 ]; then
+  included=0
+  while IFS= read -r -d '' entry; do
+    left_out=0
+    for skip_one in "${SKIP_NAMES[@]}"; do [ "$entry" = "$skip_one" ] && left_out=1; done
+    if [ "$left_out" = 0 ]; then included=1; break; fi
+  done < <(find "$SRC" -mindepth 1 -maxdepth 1 ! -name lost+found -printf '%f\0')
+  if [ "$included" = 0 ]; then
+    fail "every folder of main storage ($SRC) is left out of the backup, nothing was copied"
+    finish
+  fi
+  log "folders left out of the backup (not ticked): ${SKIP_FOLDERS//|/, }"
+fi
 
 renice -n 19 -p $$ >/dev/null 2>&1 || true
 ionice -c3 -p $$ >/dev/null 2>&1 || true
@@ -481,6 +528,11 @@ if [ "$MODE" = backup ] || [ "$REPAIR" = 1 ]; then
   fi
   if [ ! -d "$DEST/main" ]; then
     used_gb=$(( $(df -B1 --output=used "$SRC" | tail -1 | tr -d ' ') / 1073741824 ))
+    for skip_one in "${SKIP_NAMES[@]}"; do
+      [ -d "$SRC/$skip_one" ] || continue
+      left_gb=$(( $(du -sb "$SRC/$skip_one" 2>/dev/null | cut -f1) / 1073741824 ))
+      used_gb=$(( used_gb > left_gb ? used_gb - left_gb : 0 ))
+    done
     if [ "$free_gb" -lt $(( used_gb + floor_gb )) ]; then
       fail "first backup needs about ${used_gb} GB plus $floor_gb GB spare, but only ${free_gb} GB are free at ${DEST_SHOWN:-$DEST}"
       finish
@@ -513,7 +565,7 @@ else
 fi
 
 changed=$(mktemp)
-rsync -aHS --numeric-ids --delete --exclude=/lost+found \
+rsync -aHS --numeric-ids --delete --exclude=/lost+found ${SKIP_ARGS[@]+"${SKIP_ARGS[@]}"} \
   --temp-dir="$DEST/.rsync-tmp" \
   --backup --backup-dir="$DEST/_deleted/$TODAY/main" \
   --out-format='%i|%n' "$SRC/" "$DEST/main/" 2>>"$LOGFILE" | rsync_names >"$changed"

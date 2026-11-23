@@ -7,3 +7,4 @@ DEST_FALLBACK="/home/your-username/boot-drive-files/backup-interim"   # replace 
 # Other settings you can change:
 # RETENTION_DAYS=30
 # MIN_FREE_GB=20
+# SKIP_FOLDERS="music"   # folders of the Main pool to leave out of the nightly backup, written name|name (the panel sets this)

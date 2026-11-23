@@ -3312,7 +3312,7 @@ BACKUP_VERSION = re.compile(r"(current|\d{4}-\d\d-\d\d(_\d{6})?)\Z")
 BACKUP_HOST = re.compile(r"[a-z_][a-z0-9_-]{0,31}@[A-Za-z0-9][A-Za-z0-9.-]{0,252}(:[0-9]{1,5})?\Z")
 BJOB = {"id": 0, "running": False, "action": "", "task": "", "lines": [], "rc": None, "message": "", "started": 0, "pct": None}
 BJOB_LOCK = threading.Lock()
-BACKUP_SAVE_KEYS = ("id", "name", "enabled", "source", "exclude", "dest", "schedule", "keep")
+BACKUP_SAVE_KEYS = ("id", "name", "enabled", "source", "exclude", "dest", "schedule", "keep", "skip")
 
 
 def backup_problem(rc, text):
