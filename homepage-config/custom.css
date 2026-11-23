@@ -1200,10 +1200,10 @@ html[data-hl-fit="1440"] #information-widgets { zoom: 0.80; }
 
 @media (prefers-reduced-motion: reduce) {
   #background::before, .hl-dot-up, .hl-dot-down, .hl-wait::after, [role="tabpanel"] { animation: none !important; }
-  #hl-dock a:hover { transform: none; }
+  #hl-dock a:hover, #hl-find button:hover { transform: none; }
 }
 @media (max-width: 700px) {
-  #hl-hello, #hl-dock { display: none !important; }
+  #hl-hello, #hl-dock, #hl-find { display: none !important; }
 }
 /* One header panel: greeting, clock, weather, system numbers and search share a single glass surface. */
 @media (min-width: 1181px) {
@@ -1245,5 +1245,43 @@ html[data-hl-fit="1440"] #information-widgets { zoom: 0.80; }
 @media (max-width: 1180px) {
   #inner_wrapper #hl-hello.hl-in-panel { order: -5; flex: 1 1 100%; margin: 0 0 2px; text-align: center; }
 }
+
+/* Tabs, notifications, quick launch and search share one bar, separated by thin lines. */
+@media (min-width: 701px) {
+  #inner_wrapper .information-widget-search { display: none !important; }
+  #inner_wrapper #tabs {
+    width: fit-content; max-width: calc(100% - 2 * var(--lk-side));
+    margin-left: auto !important; margin-right: auto !important;
+    align-items: center; gap: 0;
+    padding: 4px;
+    border-radius: 16px;
+    background: rgba(var(--lk-glass), var(--lk-glass-a));
+    border: 1px solid var(--lk-line);
+    box-shadow: var(--lk-rim, 0 0 0 0 transparent), 0 0 var(--lk-glowr, 0px) rgba(var(--accent, var(--lk-accent)), var(--lk-glowa, 0));
+    -webkit-backdrop-filter: blur(var(--lk-blur, 14px)) saturate(var(--lk-sat, 125%));
+    backdrop-filter: blur(var(--lk-blur, 14px)) saturate(var(--lk-sat, 125%));
+  }
+  #inner_wrapper #myTab li { flex: 1 1 auto !important; }
+  #inner_wrapper #myTab { background: none !important; border: 0 !important; box-shadow: none !important; -webkit-backdrop-filter: none !important; backdrop-filter: none !important; padding: 0 !important; }
+  #inner_wrapper #hl-bell, #inner_wrapper #hl-install, #inner_wrapper #hl-dock, #inner_wrapper #hl-find {
+    position: relative; margin-left: 8px; padding: 0 0 0 9px;
+    background: none; border: 0; border-radius: 0; box-shadow: none;
+    -webkit-backdrop-filter: none; backdrop-filter: none;
+  }
+  #inner_wrapper #hl-bell::before, #inner_wrapper #hl-install::before, #inner_wrapper #hl-dock::before, #inner_wrapper #hl-find::before {
+    content: ""; position: absolute; left: 0; top: 12%; bottom: 12%; width: 1px; background: rgba(var(--lk-ink, 255, 255, 255), 0.14);
+  }
+  #inner_wrapper #hl-bell > button, #inner_wrapper #hl-install > button { min-height: 34px; }
+}
+#hl-find { flex: 0 0 auto; display: flex; gap: 4px; padding: 4px; border-radius: 14px; background: rgba(var(--lk-glass), var(--lk-glass-a)); border: 1px solid var(--lk-line); }
+#hl-find[hidden] { display: none; }
+#hl-find button {
+  display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; padding: 0; border: 0; border-radius: 10px; cursor: pointer;
+  color: var(--lk-muted); background: rgba(var(--lk-ink, 255, 255, 255), calc(0.05 * var(--lk-plate, 1)));
+  transition: background-color 0.2s ease, transform 0.2s ease;
+}
+#hl-find button:hover { background: rgba(var(--lk-accent), 0.24); transform: translateY(calc(var(--lk-lift, 2px) * -1)); color: var(--lk-hi, #fff); }
+#hl-find button:focus-visible { outline: 2px solid rgba(var(--lk-accent), 0.85); outline-offset: 1px; }
+#hl-find svg { width: 18px; height: 18px; }
 
 /* <<< homelab tabs <<< */

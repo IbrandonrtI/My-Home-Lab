@@ -923,7 +923,8 @@
         box.appendChild(a);
       });
     }
-    if (box.parentNode !== tabs) tabs.appendChild(box);
+    var fb = document.getElementById("hl-find");
+    if (box.parentNode !== tabs || (fb && box.nextSibling !== fb)) { if (fb && fb.parentNode === tabs) tabs.insertBefore(box, fb); else tabs.appendChild(box); }
     box.hidden = items.length === 0;
   }
 
@@ -1034,6 +1035,18 @@
       if (PAL.box && !PAL.box.hidden) palClose(); else palOpen();
     }
   }, true);
+  function find() {
+    var tabs = document.getElementById("tabs"), box = document.getElementById("hl-find");
+    if (!tabs || !document.getElementById("myTab")) return;
+    if (!box) {
+      box = el("div"); box.id = "hl-find";
+      var b = el("button"); b.type = "button"; b.title = "Search (Ctrl+K)"; b.setAttribute("aria-label", "Search services, links and tabs"); b.innerHTML = ICON_PAL;
+      b.onclick = function () { palOpen(); };
+      box.appendChild(b);
+    }
+    if (box.parentNode !== tabs || box.nextSibling) tabs.appendChild(box);
+  }
+
   /* Short graphs of the last hour behind the numbers in the header (the control panel keeps the history in trends.json). */
   var TR = { data: null, at: 0, busy: false, stamp: 0 };
   function trendsLoad() {
@@ -1144,7 +1157,7 @@
 
   function run() {
     queued = false;
-    dots(); waiting(); hello(); dock(); sparks(); counting();
+    dots(); waiting(); hello(); dock(); find(); sparks(); counting();
     if (!TR.busy && Date.now() - TR.at > 30000) trendsLoad();
   }
   function soon() { if (!queued) { queued = true; window.requestAnimationFrame(run); } }
