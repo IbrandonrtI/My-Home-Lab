@@ -1856,7 +1856,7 @@ function rimShadow(level, bevel, tone) {
   if (bv > 0) {
     const light = tone === "light", shade = light ? "70,92,126" : "0,0,0";
     parts.push("inset 2px 2px 2px rgba(255,255,255," + n((light ? 0.95 : 0.4) * bv) + ")", "inset -2px -3px 4px rgba(" + shade + "," + n((light ? 0.2 : 0.45) * bv) + ")",
-      "inset 0 0 14px rgba(255,255,255," + n((light ? 0.35 : 0.08) * bv) + ")", "0 8px 18px -8px rgba(" + shade + "," + n(0.38 * bv) + ")");
+      "inset 0 0 14px rgba(255,255,255," + n((light ? 0.18 : 0.08) * bv) + ")", "0 8px 18px -8px rgba(" + shade + "," + n(0.38 * bv) + ")");
   }
   return parts.length ? parts.join(", ") : "0 0 0 0 transparent";
 }

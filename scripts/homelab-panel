@@ -416,7 +416,7 @@ LEGACY_THEME_IDS = ("calm", "frost", "ocean", "sunset", "rose", "graphite", "neo
 PAINT_STYLES = ("gradient", "solid")
 NO_PAINT = ("customize-card", "linkedit-card", "terminal-card")
 # Bump the number when the pictures change, so a picture stored by an older version is fetched again.
-THEME_PIC_REV = "-v2"
+THEME_PIC_REV = "-v3"
 THEME_PICTURES = "https://raw.githubusercontent.com/IbrandonrtI/My-Home-Lab/main/theme-pictures/"
 
 
@@ -426,59 +426,59 @@ def theme_bg(name, blur="none", saturate=100, brightness=100, opacity=100):
 
 
 LOOK_THEMES = [
-    {"id": "mocha", "name": "Catppuccin Mocha", "blurb": "Soft pastel colors on a warm dark blue. A popular dark scheme.",
+    {"id": "mocha", "name": "Pastel Night", "blurb": "Soft pastel colors on a warm dark blue. Based on the Catppuccin Mocha colors.",
      "look": {"veil": 70, "glass": "#313244", "glassOpacity": 62, "accent": "#cba6f7", "radius": 16, "edge": 9, "glassBlur": 18, "glassSat": 130, "paintStrength": 22,
               "text": "#cdd6f4", "muted": "#a6adc8", "tabs": {"Stats": "#a6e3a1", "Links": "#f5c2e7"}},
      "palette": ["#cba6f7", "#89b4fa", "#a6e3a1", "#fab387", "#f5c2e7", "#94e2d5", "#f9e2af", "#f38ba8"], "paintLinks": "#f5c2e7",
      "background": theme_bg("mocha"),
      "ui": {"bg": "#11111b", "panel": "#1e1e2e", "panel2": "#313244", "line": "rgba(205,214,244,0.12)", "field": "#181825", "dialog": "#1e1e2e"}},
-    {"id": "dracula", "name": "Dracula", "blurb": "Purple and pink with a soft glow on a dark gray-violet.",
+    {"id": "dracula", "name": "Violet Glow", "blurb": "Purple and pink with a soft glow on dark violet. Based on the Dracula colors.",
      "look": {"veil": 70, "glass": "#282a36", "glassOpacity": 72, "accent": "#bd93f9", "radius": 10, "edge": 10, "glassBlur": 12, "glassSat": 125, "glow": 35, "paintStrength": 24,
               "text": "#f8f8f2", "muted": "#b9bdd6", "tabs": {"Stats": "#50fa7b", "Links": "#ff79c6"}},
      "palette": ["#bd93f9", "#ff79c6", "#8be9fd", "#50fa7b", "#ffb86c", "#f1fa8c"], "paintLinks": "#ff79c6",
      "background": theme_bg("dracula"),
      "ui": {"bg": "#191a21", "panel": "#21222c", "panel2": "#343746", "line": "rgba(189,147,249,0.18)", "field": "#191a21", "dialog": "#21222c"}},
-    {"id": "nord", "name": "Nord", "blurb": "Calm arctic blue-gray with flat, quiet cards.",
+    {"id": "nord", "name": "Arctic Slate", "blurb": "Calm blue-gray with flat, quiet cards. Based on the Nord colors.",
      "look": {"veil": 85, "glass": "#3b4252", "glassOpacity": 82, "accent": "#88c0d0", "radius": 6, "edge": 7, "glassBlur": 6, "glassSat": 100, "paintStrength": 12,
               "text": "#eceff4", "muted": "#a7b2c5", "tabs": {"Stats": "#a3be8c", "Links": "#b48ead"}},
      "palette": ["#88c0d0", "#81a1c1", "#a3be8c", "#ebcb8b", "#b48ead", "#d08770"], "paintLinks": "#81a1c1",
      "background": theme_bg("nord"),
      "ui": {"bg": "#242933", "panel": "#2e3440", "panel2": "#3b4252", "line": "rgba(216,222,233,0.12)", "field": "#272c36", "dialog": "#2e3440"}},
-    {"id": "tokyo", "name": "Tokyo Night", "blurb": "Deep navy with blue and violet lights, like a city at night.",
+    {"id": "tokyo", "name": "City Lights", "blurb": "Deep navy with blue and violet lights. Based on the Tokyo Night colors.",
      "look": {"veil": 65, "glass": "#1a1b26", "glassOpacity": 68, "accent": "#7aa2f7", "radius": 12, "edge": 9, "glassBlur": 16, "glassSat": 135, "glow": 28, "paintStrength": 24,
               "text": "#c0caf5", "muted": "#9aa5ce", "tabs": {"Stats": "#9ece6a", "Links": "#bb9af7"}},
      "palette": ["#7aa2f7", "#bb9af7", "#7dcfff", "#9ece6a", "#e0af68", "#f7768e", "#ff9e64"], "paintLinks": "#bb9af7",
      "background": theme_bg("tokyo"),
      "ui": {"bg": "#16161e", "panel": "#1a1b26", "panel2": "#24283b", "line": "rgba(122,162,247,0.16)", "field": "#13131a", "dialog": "#1a1b26"}},
-    {"id": "gruvbox", "name": "Gruvbox", "blurb": "Warm retro browns, yellow and orange. Solid cards and a monospace font.",
+    {"id": "gruvbox", "name": "Retro Amber", "blurb": "Warm browns, yellow and orange with solid cards and a monospace font. Based on the Gruvbox colors.",
      "look": {"veil": 80, "glass": "#3c3836", "glassOpacity": 88, "accent": "#fabd2f", "radius": 4, "edge": 12, "glassBlur": 0, "glassSat": 100, "paintStrength": 14, "font": "mono",
               "text": "#ebdbb2", "muted": "#bdae93", "tabs": {"Stats": "#b8bb26", "Links": "#d3869b"}},
      "palette": ["#fabd2f", "#fe8019", "#b8bb26", "#83a598", "#d3869b", "#8ec07c", "#fb4934"], "paintLinks": "#83a598",
      "background": theme_bg("gruvbox"),
      "ui": {"bg": "#1d2021", "panel": "#282828", "panel2": "#3c3836", "line": "rgba(235,219,178,0.14)", "field": "#1d2021", "dialog": "#282828"}},
-    {"id": "solarized", "name": "Solarized Dark", "blurb": "The classic teal and yellow scheme, with flat cards.",
+    {"id": "solarized", "name": "Deep Teal", "blurb": "Dark teal with soft yellow and blue accents and flat cards. Based on the Solarized Dark colors.",
      "look": {"veil": 80, "glass": "#073642", "glassOpacity": 88, "accent": "#268bd2", "radius": 6, "edge": 10, "glassBlur": 0, "glassSat": 100, "paintStrength": 14,
               "text": "#eee8d5", "muted": "#93a1a1", "tabs": {"Stats": "#859900", "Links": "#6c71c4"}},
      "palette": ["#268bd2", "#2aa198", "#859900", "#b58900", "#cb4b16", "#d33682", "#6c71c4"], "paintLinks": "#2aa198",
      "background": theme_bg("solarized"),
      "ui": {"bg": "#00212b", "panel": "#002b36", "panel2": "#073642", "line": "rgba(147,161,161,0.18)", "field": "#001f27", "dialog": "#002b36"}},
-    {"id": "macos", "name": "macOS", "blurb": "Dark frosted glass over a colorful wave wallpaper, with the system blue and font.",
+    {"id": "macos", "name": "Frosted Wave", "blurb": "Dark frosted glass over a colorful wave picture, with an Apple-style font.",
      "look": {"veil": 25, "glass": "#1e1e24", "glassOpacity": 46, "accent": "#0a84ff", "radius": 14, "edge": 16, "glassBlur": 40, "glassSat": 180, "glassRim": 22, "paintStrength": 16, "font": "apple",
               "text": "#ffffff", "muted": "#cfcfd8", "tabs": {"Stats": "#30d158", "Links": "#bf5af2"}},
      "palette": ["#0a84ff", "#bf5af2", "#30d158", "#ff9f0a", "#ff375f", "#64d2ff", "#ffd60a"], "paintLinks": "#64d2ff",
      "background": theme_bg("macos"),
      "ui": {"bg": "linear-gradient(135deg,#1b1747,#3a1c63 55%,#12254d)", "panel": "rgba(255,255,255,0.08)", "panel2": "rgba(255,255,255,0.14)",
             "line": "rgba(255,255,255,0.20)", "field": "rgba(255,255,255,0.09)", "dialog": "#2a2240", "blur": "24px", "rim": 25}},
-    {"id": "windows", "name": "Windows 11", "blurb": "Mica gray panels with small corners, a light-blue accent and the Windows font.",
+    {"id": "windows", "name": "Mica Blue", "blurb": "Gray panels with small corners, a light-blue accent and a Windows-style font.",
      "look": {"veil": 35, "glass": "#202020", "glassOpacity": 74, "accent": "#4cc2ff", "radius": 8, "edge": 9, "glassBlur": 30, "glassSat": 125, "paintStrength": 12, "font": "windows",
               "text": "#ffffff", "muted": "#cbcbcb", "tabs": {"Stats": "#6ccb5f", "Links": "#c4a0ff"}},
      "palette": ["#4cc2ff", "#6ccb5f", "#ffb900", "#ff99a4", "#c4a0ff", "#00cc6a", "#ff8c00"], "paintLinks": "#4cc2ff",
      "background": theme_bg("windows"),
      "ui": {"bg": "#101010", "panel": "#202020", "panel2": "#2b2b2b", "line": "rgba(255,255,255,0.10)", "field": "#181818", "dialog": "#2b2b2b"}},
-    {"id": "liquid", "name": "Liquid Glass", "blurb": "Light, clear glass with raised rounded edges and dark text, on a soft blue-gray background.",
-     "look": {"tone": "light", "glass": "#ffffff", "glassClear": True, "glassLevel": 20, "accent": "#3f6fe0", "radius": 28, "edge": 60, "glassBlur": 22, "glassSat": 160,
-              "glassBevel": 70, "paintStrength": 12, "text": "#17243b", "muted": "#33445c", "tabs": {"Stats": "#1f9d8a", "Links": "#8559d6"}},
-     "palette": ["#3f6fe0", "#7c5cd6", "#1f9d8a", "#d9822b", "#d1457a", "#2a8fc7"], "paintLinks": "#3f6fe0",
+    {"id": "liquid", "name": "Crystal Glass", "blurb": "Light, clear glass with raised rounded edges and dark text, on a blue-gray background.",
+     "look": {"tone": "light", "glass": "#dde8f5", "glassClear": True, "glassLevel": 30, "accent": "#2f5fd0", "radius": 26, "edge": 45, "glassBlur": 24, "glassSat": 150,
+              "glassBevel": 55, "paintStrength": 22, "text": "#13203a", "muted": "#2c3d56", "tabs": {"Stats": "#12806f", "Links": "#6a47c2"}},
+     "palette": ["#2f5fd0", "#4a7fb0", "#12806f", "#6a5cc8", "#3a76a8", "#2a8fc7"], "paintLinks": "#2f5fd0",
      "background": theme_bg("liquid"),
      "ui": {"bg": "linear-gradient(135deg,#2b3b4e,#3f5167 50%,#2a3c4d)", "panel": "rgba(255,255,255,0.08)", "panel2": "rgba(255,255,255,0.14)",
             "line": "rgba(255,255,255,0.18)", "field": "rgba(255,255,255,0.08)", "dialog": "#2f4156", "blur": "28px", "rim": 55}},
@@ -706,7 +706,7 @@ def rim_shadow(level, bevel=0, tone="dark"):
         hi = 0.95 if tone == "light" else 0.4
         lo = 0.2 if tone == "light" else 0.45
         parts += ["inset 2px 2px 2px rgba(255, 255, 255, %s)" % num(hi * b), "inset -2px -3px 4px rgba(%s, %s)" % (shade, num(lo * b)),
-                  "inset 0 0 14px rgba(255, 255, 255, %s)" % num((0.35 if tone == "light" else 0.08) * b),
+                  "inset 0 0 14px rgba(255, 255, 255, %s)" % num((0.18 if tone == "light" else 0.08) * b),
                   "0 8px 18px -8px rgba(%s, %s)" % (shade, num(0.38 * b))]
     return ", ".join(parts) if parts else NO_RIM
 
