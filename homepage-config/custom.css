@@ -1325,8 +1325,8 @@ html.hl-jf-side #hl-jf-frame .hl-jf-open { flex: 0 0 auto; padding: 6px 12px; fo
 html.hl-jf-side #hl-jf-frame .hl-jf-open:hover { color: var(--lk-hi, #fff); }
 @media (min-width: 701px) {
   html.hl-jf-side #inner_wrapper .services-group:has(#navidrome-card) .services-list { display: grid !important; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; align-items: stretch; }
-  html.hl-jf-side #inner_wrapper .services-group:has(#navidrome-card) .services-list > li { flex: none; order: 0; margin: 0 !important; min-width: 0; }
-  html.hl-jf-side #inner_wrapper #navidrome-card .service-card { height: 100% !important; }
+  html.hl-jf-side #inner_wrapper .services-group:has(#navidrome-card) .services-list > li { flex: none; order: 0; margin: 0 !important; min-width: 0; align-self: stretch; display: flex; flex-direction: column; }
+  html.hl-jf-side #inner_wrapper #navidrome-card .service-card, html.hl-jf-side #inner_wrapper #jellyfin-card .service-card { flex: 1 1 auto; height: auto !important; margin: 0 !important; box-sizing: border-box; }
 }
 @media (min-width: 1500px) {
   /* Navidrome and Jellyfin side by side on top, the other groups in rows below them. */

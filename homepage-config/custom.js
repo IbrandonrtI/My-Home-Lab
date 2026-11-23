@@ -180,7 +180,8 @@
   }
   var FRAMES = {
     "Customize": { key: "hl-h-customize", css: "--hl-h-customize", min: 400, max: 1600, vh: 0.88, top: 1200, label: "Customize Height", sel: "#customize-card iframe" },
-    "Terminal": { key: "hl-h-terminal", css: "--hl-h-terminal", min: 240, max: 1400, vh: 0.7, top: 720, label: "Terminal Height", sel: "#terminal-card iframe" }
+    "Terminal": { key: "hl-h-terminal", css: "--hl-h-terminal", min: 240, max: 1400, vh: 0.7, top: 720, label: "Terminal Height", sel: "#terminal-card iframe" },
+    "Player": { key: "hl-player-h", css: "--lk-player-h", min: 240, max: 1000, vh: 0.54, top: 680, label: "Player Height", sel: "#navidrome-card iframe" }
   };
   function frameHeights() {
     var w = document.getElementById("inner_wrapper");
@@ -197,7 +198,7 @@
     var b = document.createElement("button");
     b.type = "button";
     b.className = "hl-height hl-gheight";
-    b.setAttribute("aria-label", "Change the height of " + name);
+    b.setAttribute("aria-label", "Change the height of " + (name === "Player" ? "the player" : name));
     b.setAttribute("title", "Change the height");
     b.setAttribute("aria-expanded", "false");
     var pop = document.createElement("aside");
@@ -294,7 +295,7 @@
       if (PANEL_GROUPS.indexOf(name) >= 0) h.removeAttribute("data-count");
       else if (n && h.getAttribute("data-count") !== String(n)) h.setAttribute("data-count", String(n));
       g.classList.toggle("hl-folded", isFolded(name));
-      groupHeight(g, name);
+      groupHeight(g, g.querySelector("#navidrome-card") ? "Player" : name);
       if (g.querySelector(":scope > .hl-gfold")) return;
       var b = document.createElement("button");
       b.type = "button";
@@ -328,45 +329,6 @@
     if (v >= 240 && v <= 1000) { if (w.style.getPropertyValue("--lk-player-h") !== v + "px") w.style.setProperty("--lk-player-h", v + "px"); }
     else if (w.style.getPropertyValue("--lk-player-h")) w.style.removeProperty("--lk-player-h");
   }
-  function heightButton() {
-    var title = document.querySelector("#navidrome-card .service-title");
-    if (!title || title.querySelector(".hl-height")) return;
-    var b = document.createElement("button");
-    b.type = "button";
-    b.className = "hl-height";
-    b.setAttribute("aria-label", "Change the height of the player");
-    b.setAttribute("title", "Change the height of the player");
-    b.setAttribute("aria-expanded", "false");
-    var pop = document.createElement("div");
-    pop.className = "hl-height-pop";
-    pop.hidden = true;
-    var lab = document.createElement("label");
-    lab.textContent = "Player Height";
-    var val = document.createElement("span");
-    var rng = document.createElement("input");
-    rng.type = "range"; rng.min = "240"; rng.max = "1000"; rng.step = "10";
-    rng.setAttribute("aria-label", "Player height");
-    var back = document.createElement("button");
-    back.type = "button";
-    back.textContent = "Default";
-    function current() { var v = parseInt(store("hl-player-h") || "", 10); if (v >= 240 && v <= 1000) return v; var w = document.getElementById("inner_wrapper"); return Math.round(parseFloat(window.getComputedStyle(w).getPropertyValue("--lk-player-h")) || 600); }
-    function show() { var v = current(); rng.value = String(v); val.textContent = v + " px"; }
-    rng.addEventListener("input", function () { store("hl-player-h", rng.value); playerHeight(); show(); window.dispatchEvent(new Event("resize")); });
-    back.addEventListener("click", function () { store("hl-player-h", ""); playerHeight(); show(); window.dispatchEvent(new Event("resize")); });
-    ["click", "mousedown", "pointerdown", "touchstart"].forEach(function (t) { pop.addEventListener(t, function (ev) { ev.stopPropagation(); }); });
-    b.addEventListener("click", function (ev) {
-      ev.preventDefault(); ev.stopPropagation();
-      pop.hidden = !pop.hidden;
-      b.setAttribute("aria-expanded", pop.hidden ? "false" : "true");
-      if (!pop.hidden) show();
-    });
-    document.addEventListener("click", function (ev) { if (!pop.hidden && !pop.contains(ev.target) && ev.target !== b) { pop.hidden = true; b.setAttribute("aria-expanded", "false"); } });
-    document.addEventListener("keydown", function (ev) { if (ev.key === "Escape" && !pop.hidden) { pop.hidden = true; b.setAttribute("aria-expanded", "false"); b.focus(); } });
-    pop.appendChild(lab); pop.appendChild(rng); pop.appendChild(val); pop.appendChild(back);
-    title.appendChild(b);
-    title.appendChild(pop);
-  }
-
   var namesPreview = null, textWas = new WeakMap(), textSet = new WeakMap(), renamed = false;
   function cssText(name) {
     var w = document.getElementById("inner_wrapper");
@@ -786,7 +748,7 @@
 
   function run() {
     queued = false;
-    wording(); health(); shrinkButton(); heightButton(); playerHeight(); frameHeights(); rename(); logo(); groups(); calendar(); linkRows(); searchButton(); tabName(); bars(); sharp(); bell(); installRing();
+    wording(); health(); shrinkButton(); playerHeight(); frameHeights(); rename(); logo(); groups(); calendar(); linkRows(); searchButton(); tabName(); bars(); sharp(); bell(); installRing();
   }
   function soon() { if (!queued) { queued = true; window.requestAnimationFrame(run); } }
   night(); soon();
