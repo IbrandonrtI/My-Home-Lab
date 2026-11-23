@@ -482,6 +482,13 @@ LOOK_THEMES = [
      "background": theme_bg("liquid"),
      "ui": {"bg": "linear-gradient(135deg,#2b3b4e,#3f5167 50%,#2a3c4d)", "panel": "rgba(255,255,255,0.08)", "panel2": "rgba(255,255,255,0.14)",
             "line": "rgba(255,255,255,0.18)", "field": "rgba(255,255,255,0.08)", "dialog": "#2f4156", "blur": "28px", "rim": 55}},
+    {"id": "crystalnight", "name": "Crystal Night", "blurb": "Dark, clear glass with raised rounded edges and light text, on a deep blue-gray background.",
+     "look": {"veil": 40, "glass": "#9fb8d8", "glassClear": True, "glassLevel": 72, "accent": "#7aa8ff", "radius": 26, "edge": 24, "glassBlur": 26, "glassSat": 160, "glassRim": 18,
+              "glassBevel": 60, "glow": 12, "paintStrength": 24, "text": "#eef4ff", "muted": "#b4c3da", "tabs": {"Stats": "#5fd6c0", "Links": "#b69cff"}},
+     "palette": ["#7aa8ff", "#6cc4e8", "#5fd6c0", "#b69cff", "#8fb0e8", "#7ad0f0"], "paintLinks": "#7aa8ff",
+     "background": theme_bg("crystalnight"),
+     "ui": {"bg": "linear-gradient(135deg,#131c29,#223249 50%,#17222f)", "panel": "rgba(255,255,255,0.07)", "panel2": "rgba(255,255,255,0.13)",
+            "line": "rgba(255,255,255,0.16)", "field": "rgba(255,255,255,0.07)", "dialog": "#1f2e43", "blur": "28px", "rim": 45}},
 ]
 THEME_IDS = [t["id"] for t in LOOK_THEMES]
 
@@ -1289,7 +1296,7 @@ def theme_download(t, timeout=30):
 
 
 def theme_picture(body):
-    """Return the picture of a theme. The panel only names the theme and the address comes from the list above, so it cannot be made to fetch any other address."""
+    """Return the picture of a theme. The panel only names the theme and the address comes from the list above, so it cannot be made to use any other address."""
     t = next((x for x in LOOK_THEMES if x["id"] == body.get("theme")), None)
     if not t or not t.get("background"):
         raise Fail("That theme has no picture.")
@@ -1301,10 +1308,8 @@ def theme_picture(body):
             tx.put(SETTINGS, bg_numbers(body, bg_set(tx.get(SETTINGS), "image", "/images/" + have)))
             tx.commit()
             return {"restarting": False, "image": "/images/" + have, "stored": True, "cached": True}
-    data = theme_download(t)
+    # A picture that is not stored yet is used from its web address. Storing it here would restart Homepage and reload the page, so only `homelab-setup refresh` stores them.
     with LOCK:
-        if data:
-            return dict(bg_store(data, body, "theme-" + t["id"] + THEME_PIC_REV), stored=True)
         tx = Tx("Background picture changed")
         tx.put(SETTINGS, bg_numbers(body, bg_set(tx.get(SETTINGS), "image", url)))
         tx.commit()
@@ -4431,6 +4436,8 @@ def cmd_serve():
     srv = ThreadingHTTPServer((BIND, PORT), Handler)
     srv.daemon_threads = True
     threading.Thread(target=job_status_loop, daemon=True).start()
+    if not NO_DOCKER:
+        threading.Thread(target=prefetch_theme_pictures, daemon=True).start()
     sys.stderr.write("homelab-panel %s listening on http://%s:%d (files in %s)\n" % (VERSION, BIND, PORT, HP))
     try:
         srv.serve_forever()
@@ -4464,15 +4471,14 @@ def cmd_status():
     return 0
 
 
-def cmd_theme_pictures(args):
-    """Store the picture of every theme in the images folder. Homepage serves a picture only if it was there when Homepage started, so having them all in place
-    means choosing a theme later never needs a restart. With --check nothing is downloaded: the answer is the exit status (0 = all stored)."""
+def store_theme_pictures(check=False, timeout=20):
+    """Store the picture of every theme in the images folder. Returns (new, missing). With check=True nothing is downloaded."""
     os.makedirs(IMAGES, exist_ok=True)
     new = missing = 0
     for t in LOOK_THEMES:
         if not t.get("background") or theme_file(t["id"]):
             continue
-        data = None if "--check" in args else theme_download(t, 20)
+        data = None if check else theme_download(t, timeout)
         ext = sniff_image(data) if data else None
         if not ext:
             missing += 1
@@ -4482,8 +4488,27 @@ def cmd_theme_pictures(args):
             f.write(data)
         os.chmod(path, 0o644)
         new += 1
+    return new, missing
+
+
+def cmd_theme_pictures(args):
+    """Store the picture of every theme in the images folder. Homepage serves a picture only if it was there when Homepage started, so having them all in place
+    means choosing a theme later never needs a restart. With --check nothing is downloaded: the answer is the exit status (0 = all stored)."""
+    new, missing = store_theme_pictures("--check" in args)
     print("new %d missing %d" % (new, missing))
     return 1 if missing else 0
+
+
+def prefetch_theme_pictures():
+    """A little after the panel starts, fetch any theme picture that is not stored yet and restart Homepage once if there were any, so that choosing a theme
+    never has to. It tries once per start."""
+    time.sleep(20)
+    try:
+        new, _missing = store_theme_pictures()
+    except OSError:
+        return
+    if new:
+        restart_homepage()
 
 
 def main(argv):
