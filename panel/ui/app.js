@@ -1549,6 +1549,7 @@ function bkStatus(t) {
   if (mine) return h("span", { class: "pill warn" }, BK_WORKING[BKjob.action] || "Working...");
   if (t.running) return h("span", { class: "pill warn" }, "Running now");
   if (!t.enabled) return h("span", { class: "pill dim" }, "Off");
+  if (t.waiting) return h("span", { class: "pill warn" }, "Waiting for a backup drive");
   if (!t.last) return h("span", { class: "pill dim" }, "Never run");
   return t.last.result === "OK" ? h("span", { class: "pill ok" }, "Last run OK, " + bkWhen(t.last.when, t.last.zone)) : h("span", { class: "pill bad" }, "Last run failed, " + bkWhen(t.last.when, t.last.zone));
 }
@@ -1560,7 +1561,8 @@ function bkTask(t) {
   const rows = [
     h("div", { class: "bkline" }, h("span", { class: "k" }, "From"), h("span", { class: "v" }, t.source)),
     h("div", { class: "bkline" }, h("span", { class: "k" }, "To"), h("span", { class: "v" }, bkDestText(t.dest))),
-    h("div", { class: "bkline" }, h("span", { class: "k" }, "When"), h("span", { class: "v" }, t.schedule_text + (t.schedule_zone && t.schedule.kind !== "hourly" ? " (server time, " + t.schedule_zone + ")" : "") + (t.enabled && t.next_run ? ". Next: " + bkWhen(t.next_run, t.next_zone) : ""))),
+    h("div", { class: "bkline" }, h("span", { class: "k" }, "When"), h("span", { class: "v" }, t.schedule_text + (t.schedule_zone && t.schedule.kind !== "hourly" ? " (server time, " + t.schedule_zone + ")" : "") + (t.enabled && t.next_run && !t.waiting ? ". Next: " + bkWhen(t.next_run, t.next_zone) : ""))),
+    t.waiting ? h("div", { class: "bkline" }, h("span", { class: "k" }, "Status"), h("span", { class: "v" }, "There is no drive in the Backup pool, so nothing is copied. The backup runs on its schedule once a backup drive is added.")) : null,
     bkKeepText(t) ? h("div", { class: "bkline" }, h("span", { class: "k" }, "Keeps"), h("span", { class: "v" }, bkKeepText(t))) : null,
     last && typeof last.size_bytes === "number" ? h("div", { class: "bkline" }, h("span", { class: "k" }, "Space used"), h("span", { class: "v" }, humanBytes(last.size_bytes) + " in all versions together")) : null,
     last && last.message ? h("div", { class: "bkline" }, h("span", { class: "k" }, "Last run"), h("span", { class: "v " + (last.result === "OK" ? "" : "badtext") }, last.message)) : null];
