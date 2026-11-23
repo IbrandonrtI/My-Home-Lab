@@ -405,7 +405,7 @@ def number(v, what, lo, hi):
 
 SHIPPED_TAB_COLORS = {"Stats": "#5ed6a4", "Links": "#bea0ff"}
 LOOK_DEFAULT = {"accent": "#8ab4ff", "glass": "#0d121e", "glassOpacity": 56, "glassClear": False, "glassLevel": 70, "radius": 16, "edge": 7.5,
-                "side": 70, "glassBlur": 14, "glassSat": 125, "glassRim": 0, "glassBevel": 0, "glow": 0, "veil": 100, "tone": "dark", "font": "default", "motion": "subtle", "iconStyle": "plate", "hello": True, "helloName": "", "dockMode": "auto", "dock": [], "glassTint": True, "cardDepth": 0, "text": "#eef2f9", "muted": "#a9b4c7", "theme": "calm", "playerHeight": 600, "paintStrength": 10, "paintStyle": "gradient", "labelIcon": "plain", "tabs": {}, "paintAll": "", "cards": {}, "links": {}, "labels": {}, "names": {}, "logo": {}}
+                "side": 70, "glassBlur": 14, "glassSat": 125, "glassRim": 0, "glassBevel": 0, "glow": 0, "veil": 100, "tone": "dark", "font": "default", "motion": "subtle", "iconStyle": "plate", "hello": True, "helloName": "", "dockMode": "auto", "dock": [], "jellyfinView": "card", "glassTint": True, "cardDepth": 0, "text": "#eef2f9", "muted": "#a9b4c7", "theme": "calm", "playerHeight": 600, "paintStrength": 10, "paintStyle": "gradient", "labelIcon": "plain", "tabs": {}, "paintAll": "", "cards": {}, "links": {}, "labels": {}, "names": {}, "logo": {}}
 LABEL_ICONS = ("plain", "circle", "square", "ring")
 TONES = ("dark", "light")
 MOTIONS = {"off": "--lk-mo: 0; --lk-lift: 0px; --lk-spot: 0; --lk-aur-op: 0; --lk-aur-dur: 0s;",
@@ -413,8 +413,9 @@ MOTIONS = {"off": "--lk-mo: 0; --lk-lift: 0px; --lk-spot: 0; --lk-aur-op: 0; --l
            "lively": "--lk-mo: 1.3; --lk-lift: 5px; --lk-spot: 1; --lk-aur-op: 0.7; --lk-aur-dur: 38s;"}
 ICON_STYLES = ("plate", "none")
 DOCK_MODES = ("auto", "custom", "off")
+JELLYFIN_VIEWS = ("card", "beside")
 # What a day or night theme must not overwrite, because it belongs to the person and not to a theme.
-PERSONAL_KEYS = ("names", "logo", "labels", "labelIcon", "motion", "iconStyle", "hello", "helloName", "dockMode", "dock")
+PERSONAL_KEYS = ("names", "logo", "labels", "labelIcon", "motion", "iconStyle", "hello", "helloName", "dockMode", "dock", "jellyfinView")
 FONTS = {"default": "inherit",
          "apple": '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif',
          "windows": '"Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif',
@@ -684,6 +685,10 @@ def look_clean(raw):
         out["dockMode"] = raw["dockMode"]
     if "dock" in raw:
         out["dock"] = dock_ids(raw["dock"])
+    if "jellyfinView" in raw:
+        if raw["jellyfinView"] not in JELLYFIN_VIEWS:
+            raise Fail("The Jellyfin view is not valid.")
+        out["jellyfinView"] = raw["jellyfinView"]
     if "theme" in raw:
         if raw["theme"] not in THEME_IDS and raw["theme"] not in LEGACY_THEME_IDS and not MYTHEME_ID.match(str(raw["theme"])):
             raise Fail("The theme is not understood.")
@@ -975,6 +980,8 @@ def look_css(custom, full=False, saved=None, css=""):
             tok.append('--hl-dock: "off";')
         elif custom.get("dockMode") == "custom":
             tok.append('--hl-dock: "%s";' % ",".join(custom.get("dock") or []) if custom.get("dock") else '--hl-dock: "none";')
+        if custom.get("jellyfinView") == "beside":
+            tok.append('--hl-jf: "beside";')
         lg = custom.get("logo") or {}
         if lg.get("src") and not lg.get("off"):
             tok.append('--hl-logo-src: "%s";' % lg["src"])

@@ -1314,4 +1314,28 @@ html[data-hl-fit="1440"] #information-widgets { zoom: 0.80; }
   #inner_wrapper #tabs button[id$="-tab"] { width: auto !important; display: block; white-space: nowrap; padding: 9px 18px !important; }
 }
 
+/* Jellyfin: no Songs count; optionally the library inside its card, beside Navidrome. */
+#inner_wrapper .hl-gone { display: none !important; }
+#hl-jf-frame { display: none; }
+html.hl-jf-side #inner_wrapper #jellyfin-card { display: flex; flex-direction: column; }
+html.hl-jf-side #inner_wrapper #jellyfin-card .service-card { flex: 1 1 auto; display: flex; flex-direction: column; height: auto !important; }
+html.hl-jf-side #hl-jf-frame { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 340px; margin-top: 8px; border-radius: 10px; overflow: hidden; background: #0a0f19; }
+html.hl-jf-side #hl-jf-frame iframe { flex: 1 1 auto; display: block; width: 100%; min-height: 320px; border: 0; background: #0a0f19; }
+html.hl-jf-side #hl-jf-frame .hl-jf-open { flex: 0 0 auto; padding: 6px 12px; font-size: 12px; text-align: right; color: var(--lk-muted); text-decoration: none; background: rgba(0, 0, 0, 0.35); }
+html.hl-jf-side #hl-jf-frame .hl-jf-open:hover { color: var(--lk-hi, #fff); }
+@media (min-width: 701px) {
+  html.hl-jf-side #inner_wrapper .services-group:has(#navidrome-card) .services-list { display: grid !important; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; align-items: stretch; }
+  html.hl-jf-side #inner_wrapper .services-group:has(#navidrome-card) .services-list > li { flex: none; order: 0; margin: 0 !important; min-width: 0; }
+  html.hl-jf-side #inner_wrapper #navidrome-card .service-card { height: 100% !important; }
+}
+@media (min-width: 1500px) {
+  html.hl-jf-side #inner_wrapper #layout-groups:has(#navidrome-card) { grid-template-columns: minmax(0, 5fr) minmax(0, 5fr) minmax(0, 4fr); }
+  html.hl-jf-side #inner_wrapper #layout-groups:has(#navidrome-card) > .services-group { grid-column: 3; }
+  html.hl-jf-side #inner_wrapper #layout-groups:has(#navidrome-card) > .services-group:has(#navidrome-card) { grid-column: 1 / span 2; grid-row: 1 / span 3; }
+  html.hl-jf-side #inner_wrapper #layout-groups:has(#navidrome-card) > .services-group:has(li[id^="cal-"]) { grid-column: 1 / -1; grid-row: auto; }
+}
+@media (min-width: 2200px) {
+  html.hl-jf-side #inner_wrapper #layout-groups:has(#navidrome-card) { grid-template-columns: minmax(0, 5fr) minmax(0, 5fr) minmax(0, 4fr); }
+}
+
 /* <<< homelab tabs <<< */

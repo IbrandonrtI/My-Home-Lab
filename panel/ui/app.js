@@ -2150,7 +2150,7 @@ function themeBg(t) {
 function savedBg() { const b = S.background; return { url: "", blur: b.blur || "none", saturate: b.saturate, brightness: b.brightness, opacity: b.opacity }; }
 function previewBg() { const B = bgW || savedBg(), b = S.background; send({ type: "bg", image: B.url || b.image, blur: B.blur, saturate: B.saturate, brightness: B.brightness, opacity: B.opacity }); }
 // What belongs to the person and not to a theme: a theme never changes these.
-const PERSONAL = ["labels", "labelIcon", "names", "logo", "motion", "iconStyle", "hello", "helloName", "dockMode", "dock"];
+const PERSONAL = ["labels", "labelIcon", "names", "logo", "motion", "iconStyle", "hello", "helloName", "dockMode", "dock", "jellyfinView"];
 function themeLook(t) {
   const def = S.look.defaults;
   const base = clone(def); base.tabs = Object.assign({}, def.tabs);
@@ -2291,14 +2291,17 @@ function polishCard() {
         h("div", { class: "chips" }, chip((L.iconStyle || "plate") === "plate", "Glass Plates", () => { L.iconStyle = "plate"; }), chip(L.iconStyle === "none", "Plain", () => { L.iconStyle = "none"; })),
         h("div", { class: "hint" }, "Glass Plates puts every icon on the same rounded glass tile, so icons of different shapes and colors look like a set. Plain shows the icons as they are.")),
       h("div", { class: "field" }, h("div", { class: "lab" }, "Greeting"),
-        h("label", { class: "row check" }, h("input", { type: "checkbox", checked: L.hello !== false, "aria-label": "Show a greeting above the tabs", onchange: ev => { L.hello = ev.target.checked; lookChanged(); } }),
-          h("span", {}, "Show a Greeting Above the Tabs")),
+        h("label", { class: "row check" }, h("input", { type: "checkbox", checked: L.hello !== false, "aria-label": "Show a greeting at the top of the page", onchange: ev => { L.hello = ev.target.checked; lookChanged(); } }),
+          h("span", {}, "Show a Greeting at the Top of the Page")),
         h("input", { type: "text", maxlength: 24, value: L.helloName || "", placeholder: S.look.helloDefault || "Your name", "aria-label": "Name in the greeting",
           oninput: ev => { L.helloName = ev.target.value.replace(/\s+/g, " ").trim(); lookChanged(); } }),
         h("div", { class: "hint" }, "For example “Good evening, Brandon”, with today’s date under it. Leave the name empty to use the name of the account the panel runs as. The greeting and the quick launch icons appear after Save.")),
       h("div", { class: "field" }, h("div", { class: "lab" }, "Quick Launch"),
-        h("div", { class: "chips" }, [["auto", "Automatic"], ["custom", "Choose Cards"], ["off", "Off"]].map(([k, t]) => chip(mode === k, t, () => { L.dockMode = k; }))),
-        h("div", { class: "hint" }, "A row of icons next to the tabs that opens a service with one click. Automatic shows the first six cards that have a link. Choose Cards lets you pick up to 12 (the order is the order you tick them). It is not shown on a phone.")),
+        h("div", { class: "chips" }, [["auto", "Most Visited"], ["custom", "Choose Cards"], ["off", "Off"]].map(([k, t]) => chip(mode === k, t, () => { L.dockMode = k; }))),
+        h("div", { class: "hint" }, "A row of icons in the bar under the header that opens a service with one click. Most Visited starts with Jellyfin, Immich, Nextcloud, FileBrowser and Portainer, then moves the services you open most often to the front (counted in this browser only). Choose Cards lets you pick up to 12 (the order is the order you tick them). It is not shown on a phone.")),
+      h("div", { class: "field" }, h("div", { class: "lab" }, "Jellyfin"),
+        h("div", { class: "chips" }, [["card", "Card Only"], ["beside", "Library Beside Navidrome"]].map(([k, t]) => chip((L.jellyfinView || "card") === k, t, () => { L.jellyfinView = k; }))),
+        h("div", { class: "hint" }, "Library Beside Navidrome puts the Jellyfin card to the right of the music player and shows Jellyfin’s own movies and shows library inside it. Sign in to Jellyfin once in that box. On a narrow window the two cards stack. The Songs count is left out of the Jellyfin card either way.")),
       mode === "custom" ? h("div", { class: "grid cols2" }, cards.map(c => {
         const on = picked.includes(c.id);
         return h("label", { class: "row check" }, h("input", { type: "checkbox", checked: on, "aria-label": c.name, onchange: ev => {
