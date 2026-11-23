@@ -61,9 +61,9 @@ From the terminal:
 
 The nightly backup is the first task in the Backups card of the Drives screen. It copies the Main pool and the lab's settings, keeps changed or deleted files as older versions for 30 days (1 to 3650 when you edit the task) and dumps the Nextcloud database. Immich's own database backups are copied too.
 
-- The backup goes to the Backup pool when a backup drive is connected. Until then it goes to a folder on the boot drive, which doesn't protect you if that drive fails.
+- The backup goes to the Backup pool and runs only while a backup drive is connected. Until then it waits, and the Backups section of the Drives tab says "Waiting for a backup drive". Nothing is copied to the boot drive. An earlier install saved its copy in `~/boot-drive-files/backup-interim`. That folder is not removed for you and can be deleted when you no longer need it (it is owned by root, so use `sudo`).
 - Backup times in the panel, in `homelab` and on the dashboard use the dashboard's time zone (for example 02:56 EST). A task's own schedule is set in the server's time, and the panel says so.
-- To see whether it ran, check the bell, which warns if a backup failed or is more than a day old. `sudo drives status` shows the last result, and `sudo tail -20 /var/log/homelab-backup.log` shows why one failed.
+- To see whether it ran, check the bell, which warns if a backup failed or is more than a day old (it does not warn about age while the backup waits for a drive). `sudo drives status` shows the last result, and `sudo tail -20 /var/log/homelab-backup.log` shows why one failed.
 - Every night the backup compares a sample of what it copied (up to 2 GB) byte for byte with the originals. A wrong copy makes the run fail and the bell warn. `sudo homelab-backup verify` compares everything, and `verify --repair` copies wrong files again. A file that changed on Main after the backup isn't wrong, and the next backup picks it up.
 - A backup needs room for a copy of Main plus a tenth of the drive (at most 20 GB), so `sudo drives connect` warns you when a drive is too small.
 - To get files back, open a task in the Backups card, browse its versions and restore. For a backup on a drive of this computer, Download saves a single file, or a folder as a `.zip`, to your device. FileBrowser shows the Backup pool too.
@@ -96,7 +96,7 @@ The services never wait for a drive. The boot drive is the storage until a drive
 
 The copy never replaces a file that's already on the drive. If both places have a different version, the drive's version is kept, the boot-drive copy stays and a message tells you. **Move the Files to the Drive** (or `sudo drives moveboot`) does the copy and check at any time, and removes the old copies only after every file checks out. Only the small files that kept the services running are involved, not your photos or documents.
 
-Two caveats. The boot drive has to have the room, since a big photo library saved there while the drive is away can fill it. And backups still need a drive of their own, because a backup on the boot drive doesn't help if the boot drive fails.
+Two caveats. The boot drive has to have the room, since a big photo library saved there while the drive is away can fill it. And backups need a drive of their own, because a backup on the boot drive doesn't help if the boot drive fails.
 
 ## If a data drive fails or goes missing
 
@@ -122,7 +122,7 @@ Other tools for the same situation:
 | `sudo drives remount` | Mounts the pools, runs the Immich and Nextcloud check above and starts the containers. With a Main drive missing, the services run from the boot drive |
 | `sudo drives moveboot` | Copies the files saved on the boot drive onto the Main pool, checks them and asks before removing the old copies |
 
-A drive in the Backup pool is what makes all of this possible. If the backup was only on the boot drive, the data on the failed drive is gone, and **Start on Empty Folders** is the only way to get the apps running again.
+A drive in the Backup pool is what makes all of this possible. Without one there is no backup of the Main pool, so the data on a failed drive is gone, and **Start on Empty Folders** is the only way to get the apps running again.
 
 Restored folders and the `<time>-replaced` folder of replaced files belong to your user, so you can delete them without `sudo`. The empty `_restored` folder itself needs `sudo rmdir`, because it sits in a folder that belongs to root.
 
@@ -143,7 +143,7 @@ This is the plan for the day the drive with Linux on it dies. GitHub has the too
 
 1. Preview the saved settings with `sudo homelab-restore-configs check`, then check everything with `sudo homelab-setup verify`.
 
-If the backup was only on the boot drive, the settings and the Nextcloud database are gone, but the photos and files on the data drive are still there. This is why I want a backup drive.
+If there is no backup, the settings and the Nextcloud database are gone, but the photos and files on the data drive are still there. This is why I want a backup drive.
 
 ## If the setup state file is damaged
 
