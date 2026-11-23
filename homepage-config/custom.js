@@ -1096,7 +1096,6 @@
       var items = all(".information-widget-resource", w);
       if (/network/i.test(w.textContent) && wi > 0) {
         if (items.length >= 2) { spark(items[0], [{ vals: D.rx, color: "#22d3ee", rate: true }]); spark(items[1], [{ vals: D.tx, color: "#a78bfa", rate: true }]); }
-        else if (items.length === 1) spark(items[0], [{ vals: D.rx, color: "#22d3ee", rate: true }, { vals: D.tx, color: "#a78bfa", rate: true }]);
       } else if (wi === 0) {
         if (items[0]) spark(items[0], [{ vals: D.cpu, color: "#4ade80", span: 8, cap: 100 }]);
         if (items[1]) spark(items[1], [{ vals: D.mem, color: "#22d3ee", span: 3, cap: 100 }]);
