@@ -164,7 +164,7 @@ Downloads videos from a link, and a small web page shows the queue. Everything l
 
 The server for movies and TV shows. It plays what is in the `movies` and `shows` folders on the Main pool, in a browser, in the Jellyfin app on a phone, and on a TV or streaming stick. Both folders are mounted read-only, so Jellyfin can never change or delete a file. The folders belong to your server login, so you can copy files into them from another computer with `scp` or any SFTP app. Jellyfin finds new files on its next scan.
 
-The installer sets up the service, the folders and the login. When the Homepage widget is set up, it finishes Jellyfin's first-time setup with your admin name and the shared admin password, so you sign in with those. Then open Jellyfin (port 8096) and add the libraries: a Movies library at `/media/movies` and a TV Shows library at `/media/shows`. Jellyfin finds titles by file name, so name them the usual way:
+The installer sets up the service, the folders and the login. When the Homepage widget is set up, it finishes Jellyfin's first-time setup with your admin name and the shared admin password, so you sign in with those. A later step, "Jellyfin look", then adds a Movies library at `/media/movies` and a Shows library at `/media/shows` when no library uses those folders yet. Open Jellyfin (port 8096) and sign in. Jellyfin finds titles by file name, so name them the usual way:
 
 - Movies: `Movie Name (2019)/Movie Name (2019).mkv`
 - Shows: `Show Name/Season 01/Show Name - S01E01.mkv`
@@ -176,6 +176,15 @@ The installer sets up the service, the folders and the login. When the Homepage 
 **Settings and backup.** Jellyfin's settings, users and watch history are in the `jellyfin` folder of the home folder. The nightly backup copies `jellyfin/config`. The picture and conversion cache in `jellyfin/cache` is left out because Jellyfin rebuilds it.
 
 **Updates.** The stack uses the `12` image tag, so `sudo homelab-update` installs newer 12.x releases. A new major version is a change to `stacks/jellyfin.yaml`, and Jellyfin recommends a backup before such an upgrade.
+
+**Look.** The "Jellyfin look" step gives Jellyfin a theme and a slideshow, so a new server does not start with the plain default. It does four things through Jellyfin's own settings, using the key made for the dashboard widget:
+
+- It fills the Custom CSS box (Dashboard, Branding) with the [Jellyfish](https://github.com/n00bcodr/Jellyfish) theme in the Jellyflix colors, plus its add-ons for progress bars, watched badges, card buttons, button labels, scrollbars and the Streamberry logo. The theme files load from the jsDelivr CDN, so a computer that cannot reach the internet shows Jellyfin's normal look. The box is only filled when it is empty. CSS you wrote yourself is never replaced.
+- It adds the plugin repository `https://www.iamparadox.dev/jellyfin/plugins/manifest.json` and installs the plugins File Transformation and Media Bar, which give the slideshow at the top of the home page. Jellyfin is restarted once so the plugins load. Plugins are built for one Jellyfin version at a time. If there is no build for the installed version, the step says so, leaves the slideshow out, and tries again after Jellyfin has been updated.
+- It adds the Movies and Shows libraries, unless a library already uses those folders.
+- It turns on Backdrops and Details Banner for the admin's display settings. Jellyfin may keep these per browser. If the picture backgrounds are missing, turn them on under your profile, Settings, Display.
+
+The theme works in the browser and in the Jellyfin card on the dashboard. The phone and TV apps do not load it. Hard refresh the page (Ctrl+Shift+R) after the step has run. To skip the step, run `sudo homelab-setup skip jellyfin-look`. To remove the theme later, clear the Custom CSS box in Jellyfin and save.
 
 **Dashboard widget.** The Jellyfin card on the dashboard shows the number of movies and shows and what is playing now. The installer makes the widget's API key (named `homepage`) after it has the Jellyfin login. The widget needs the card to be on the dashboard first. The card is added automatically within five minutes of Jellyfin starting, and the next `sudo homelab-setup refresh` then sets up the widget. If Jellyfin already has a login that the installer did not make, it cannot create the key. In that case open Jellyfin, go to Dashboard, API Keys, press `+`, name the key `homepage`, then run `sudo homelab-setup fill` and paste the key.
 

@@ -62,7 +62,7 @@ class JellyfinStack(StackStep):
             run([P("/usr/local/sbin/homelab-cards"), "sync"], timeout=120)
         if first:
             out("      Jellyfin is at %s. Its login is made with your admin name and password when the dashboard widget is set up." % url("jellyfin"))
-            out("      Add the libraries there: Movies is the folder /media/movies and TV shows is /media/shows.")
+            out("      The Movies and Shows libraries (the folders /media/movies and /media/shows), a theme and a slideshow are added later by the Jellyfin look step.")
             if jellyfin_graphics() is not None:
                 out("      This machine has a graphics chip and Jellyfin can use it. In Jellyfin open Dashboard, Playback, Transcoding and choose Intel QuickSync (or VAAPI).")
 
