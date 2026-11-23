@@ -1319,6 +1319,9 @@ html[data-hl-fit="1440"] #information-widgets { zoom: 0.80; }
 #hl-jf-frame { display: none; }
 html.hl-jf-side #inner_wrapper #jellyfin-card { display: flex; flex-direction: column; }
 html.hl-jf-side #inner_wrapper #jellyfin-card .service-card { flex: 1 1 auto; display: flex; flex-direction: column; height: auto !important; }
+html.hl-jf-side #inner_wrapper #jellyfin-card .service-card > * { order: 2; }
+html.hl-jf-side #inner_wrapper #jellyfin-card .service-card > .service-title, html.hl-jf-side #inner_wrapper #jellyfin-card .service-card > :has(.service-title) { order: 0; }
+html.hl-jf-side #inner_wrapper #jellyfin-card .service-card > #hl-jf-frame { order: 1; }
 html.hl-jf-side #hl-jf-frame { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 340px; margin-top: 8px; border-radius: 10px; overflow: hidden; background: #0a0f19; }
 html.hl-jf-side #hl-jf-frame iframe { flex: 1 1 auto; display: block; width: 100%; min-height: 320px; border: 0; background: #0a0f19; }
 html.hl-jf-side #hl-jf-frame .hl-jf-open { flex: 0 0 auto; padding: 6px 12px; font-size: 12px; text-align: right; color: var(--lk-muted); text-decoration: none; background: rgba(0, 0, 0, 0.35); }
@@ -1333,7 +1336,11 @@ html.hl-jf-side #hl-jf-frame .hl-jf-open:hover { color: var(--lk-hi, #fff); }
   html.hl-jf-side #inner_wrapper #layout-groups:has(#navidrome-card) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   html.hl-jf-side #inner_wrapper #layout-groups:has(#navidrome-card) > .services-group { grid-column: auto; grid-row: auto; }
   html.hl-jf-side #inner_wrapper #layout-groups:has(#navidrome-card) > .services-group:has(#navidrome-card) { grid-column: 1 / -1; grid-row: 1; }
-  html.hl-jf-side #inner_wrapper #layout-groups:has(#navidrome-card) > .services-group:has(li[id^="cal-"]) { grid-column: 1 / -1; grid-row: auto; }
+  html.hl-jf-side #inner_wrapper #layout-groups:has(#navidrome-card) > .services-group:has(li[id^="cal-"]) { grid-column: auto; grid-row: auto; align-self: start; }
+  html.hl-jf-side #inner_wrapper .services-group:has(li[id^="cal-"]) .services-list { grid-template-columns: minmax(0, 1fr) !important; }
+}
+@media (min-width: 1800px) {
+  html.hl-jf-side #inner_wrapper .services-group:has(li[id^="cal-"]) .services-list { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) !important; }
 }
 @media (min-width: 2200px) {
   html.hl-jf-side #inner_wrapper #layout-groups:has(#navidrome-card) { grid-template-columns: repeat(3, minmax(0, 1fr)); }

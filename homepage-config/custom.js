@@ -446,7 +446,7 @@
     var lg = document.getElementById("layout-groups");
     if (!lg) return;
     var cal = lg.querySelector(":scope > .services-group:has(li[id^='cal-'])"), media = lg.querySelector(":scope > .services-group:has(#navidrome-card)");
-    var off = !cal || !media || !window.matchMedia("(min-width: 1500px)").matches;
+    var off = !cal || !media || !window.matchMedia("(min-width: 1500px)").matches || document.documentElement.classList.contains("hl-jf-side");
     if (off) {
       if (lg.classList.contains("hl-cal-a") || lg.classList.contains("hl-cal-b")) { lg.classList.remove("hl-cal-a", "hl-cal-b"); lg.style.removeProperty("--hl-cal-h"); lg.style.removeProperty("--hl-cal-cell"); }
       return;
