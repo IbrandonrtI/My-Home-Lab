@@ -8,6 +8,7 @@ The dashboard is the front door of the lab. It's a [Homepage](https://gethomepag
 - [The four tabs](#the-four-tabs)
 - [The notification bell](#the-notification-bell)
 - [The progress ring](#the-progress-ring)
+- [Motion, graphs and search](#motion-graphs-and-search)
 - [On a phone](#on-a-phone)
 - [The Customize panel](#the-customize-panel)
 - [Keeping it simple](#keeping-it-simple)
@@ -106,6 +107,21 @@ It covers the last install steps that finish in the background (for example `6 o
 
 The ring turns amber when an install step failed, is waiting for something you need to do, or hasn't changed for about 20 minutes. The list then names the step and the command to run, `sudo homelab-setup status`. Work of unknown size, such as an upload, gets no ring. The bell says that files are being written instead.
 
+## Motion, graphs and search
+
+A few touches make the page feel alive. All of them follow the theme and can be turned down or off under **Look → Motion, Icons and Greeting**.
+
+- Cards lift a little when you point at them, and a soft light follows the pointer across the glass.
+- A slow glow drifts behind the cards, tinted with the colors of the theme.
+- The small status dot on a card pulses green while the service is up and red when it is down.
+- Numbers count up to their value when they first show, and glide to a new value when it changes.
+- Behind CPU, memory, temperature and network in the top bar is a small graph of the last hour. The control panel keeps the history in `homepage-config/images/trends.json` (about 3 KB, a new point every 30 seconds).
+- While the page is new, or Homepage has just restarted, a tile that cannot reach its service yet shows a moving placeholder instead of a red "API Error". If the error is still there after about 25 seconds, it shows as before.
+- Above the tabs is a greeting such as "Good evening, Brandon" with today's date. A row of small icons next to the tabs opens your favorite services with one click.
+- Press `Ctrl+K` (or the magnifier next to the tabs) to search every card, bookmark and tab, then `Enter` to open it. This is in addition to the Quick Launch that starts when you type.
+
+Motion is Subtle by default. A device that is set to reduce motion always gets none of the movement. The greeting, the quick launch row and the magnifier are hidden on a phone.
+
 ## On a phone
 
 On a phone the cards stack in one column. It's the same dashboard, so the services and the player work the same way.
@@ -121,6 +137,8 @@ The Customize tab is a small control panel. It uses the admin password you chose
 Everything about how the dashboard looks.
 
 - Themes: there are ten ready-made looks: Pastel Night, Violet Glow, Arctic Slate, City Lights, Retro Amber, Deep Teal, Frosted Wave, Mica Blue, Crystal Glass (light, clear glass with raised edges and dark text) and Crystal Night (the same glass in a dark version). Several are based on well-known color schemes (Catppuccin Mocha, Dracula, Nord, Tokyo Night, Gruvbox and Solarized Dark). A theme sets the colors, the glass, the shapes, the text style, the background picture and the panel itself. A look saved with an older theme keeps working until another theme is chosen.
+- Day and Night: the dashboard switches to one theme by day and another at night, for everyone who has it open. It uses sunrise and sunset at the weather city (or two fixed times). The switch is made by the control panel, so it works while no browser is open. Names, the logo, motion and quick launch are never changed by it, and a theme you choose yourself stays until the next switch. Its settings are in `homepage-config/.panel-schedule.json`.
+- Motion, Icons and Greeting: Off, Subtle or Lively motion; every icon on the same glass tile or shown as it is; the greeting and its name; and which cards are in the quick launch row (the first six cards with a link, or up to 12 that you choose).
 - Your own themes: *Make a Theme from These Settings* saves the current look under *Your Themes*, optionally with the background, the layout and the list of cards. Choosing one asks first, and Undo reverts the layout and cards in one step. A theme never overwrites a card's address or widget settings. Custom themes live in `homepage-config/.panel-themes.json`, so a backup of that folder keeps them.
 - Shape and colors: sliders for rounded corners, glass clarity and blur, the shine and the raised edge of the glass, a glow around the cards, and how dark the layer over the picture is, with a live preview. A Light or Dark choice and a text style (Apple, Windows, monospace or rounded, using fonts already on the device) are there too. You can set one color for everything or a different color for a single card, tile, bookmark or group label.
 - Names and Logo: your own names for the server and the drives, and a logo at the top left.

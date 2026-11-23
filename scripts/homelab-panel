@@ -23,12 +23,14 @@ Written with the Python standard library only (PyYAML is used when it is install
 """
 import base64
 import binascii
+import datetime
 import getpass
 import glob
 import hashlib
 import hmac
 import http.client
 import json
+import math
 import mimetypes
 import os
 import re
@@ -403,9 +405,16 @@ def number(v, what, lo, hi):
 
 SHIPPED_TAB_COLORS = {"Stats": "#5ed6a4", "Links": "#bea0ff"}
 LOOK_DEFAULT = {"accent": "#8ab4ff", "glass": "#0d121e", "glassOpacity": 56, "glassClear": False, "glassLevel": 70, "radius": 16, "edge": 7.5,
-                "side": 70, "glassBlur": 14, "glassSat": 125, "glassRim": 0, "glassBevel": 0, "glow": 0, "veil": 100, "tone": "dark", "font": "default", "glassTint": True, "cardDepth": 0, "text": "#eef2f9", "muted": "#a9b4c7", "theme": "calm", "playerHeight": 600, "paintStrength": 10, "paintStyle": "gradient", "labelIcon": "plain", "tabs": {}, "paintAll": "", "cards": {}, "links": {}, "labels": {}, "names": {}, "logo": {}}
+                "side": 70, "glassBlur": 14, "glassSat": 125, "glassRim": 0, "glassBevel": 0, "glow": 0, "veil": 100, "tone": "dark", "font": "default", "motion": "subtle", "iconStyle": "plate", "hello": True, "helloName": "", "dockMode": "auto", "dock": [], "glassTint": True, "cardDepth": 0, "text": "#eef2f9", "muted": "#a9b4c7", "theme": "calm", "playerHeight": 600, "paintStrength": 10, "paintStyle": "gradient", "labelIcon": "plain", "tabs": {}, "paintAll": "", "cards": {}, "links": {}, "labels": {}, "names": {}, "logo": {}}
 LABEL_ICONS = ("plain", "circle", "square", "ring")
 TONES = ("dark", "light")
+MOTIONS = {"off": "--lk-mo: 0; --lk-lift: 0px; --lk-spot: 0; --lk-aur-op: 0; --lk-aur-dur: 0s;",
+           "subtle": "--lk-mo: 1; --lk-lift: 2px; --lk-spot: 0.55; --lk-aur-op: 0.4; --lk-aur-dur: 70s;",
+           "lively": "--lk-mo: 1.3; --lk-lift: 5px; --lk-spot: 1; --lk-aur-op: 0.7; --lk-aur-dur: 38s;"}
+ICON_STYLES = ("plate", "none")
+DOCK_MODES = ("auto", "custom", "off")
+# What a day or night theme must not overwrite, because it belongs to the person and not to a theme.
+PERSONAL_KEYS = ("names", "logo", "labels", "labelIcon", "motion", "iconStyle", "hello", "helloName", "dockMode", "dock")
 FONTS = {"default": "inherit",
          "apple": '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", Arial, sans-serif',
          "windows": '"Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif',
@@ -579,6 +588,35 @@ def logo_clean(raw):
     return out
 
 
+def hello_name(val):
+    val = re.sub(r"\s+", " ", val.strip()) if isinstance(val, str) else ""
+    if len(val) > 24:
+        raise Fail("The name in the greeting can have up to 24 characters.")
+    if re.search(r"[\x00-\x1f\x7f\"\\<>{}`]", val):
+        raise Fail("The name in the greeting cannot have these characters:  \" \\ < > { } `  or line breaks.")
+    return val
+
+
+def hello_default():
+    """The name in the greeting when none is set: the name of the account the panel runs as (not for root)."""
+    name = re.sub(r"[^A-Za-z0-9 ._-]", "", os.path.basename(HOME.rstrip("/")))
+    return "" if name in ("", "root") else name[:24].capitalize()
+
+
+def dock_ids(val):
+    if val in (None, ""):
+        return []
+    if not isinstance(val, list) or len(val) > 12:
+        raise Fail("The quick launch list can have up to 12 cards.")
+    out = []
+    for x in val:
+        if not isinstance(x, str) or not re.fullmatch(r"[A-Za-z0-9_-]{1,60}", x):
+            raise Fail("A card in the quick launch list is not valid.")
+        if x not in out:
+            out.append(x)
+    return out
+
+
 def look_clean(raw):
     """Validate the requested look and keep only the values that differ from the default."""
     if not isinstance(raw, dict):
@@ -628,6 +666,24 @@ def look_clean(raw):
         if raw["font"] not in FONTS:
             raise Fail("The text style is not valid.")
         out["font"] = raw["font"]
+    if "motion" in raw:
+        if raw["motion"] not in MOTIONS:
+            raise Fail("The motion setting is not valid.")
+        out["motion"] = raw["motion"]
+    if "iconStyle" in raw:
+        if raw["iconStyle"] not in ICON_STYLES:
+            raise Fail("The icon style is not valid.")
+        out["iconStyle"] = raw["iconStyle"]
+    if "hello" in raw:
+        out["hello"] = bool(raw["hello"])
+    if "helloName" in raw:
+        out["helloName"] = hello_name(raw["helloName"])
+    if "dockMode" in raw:
+        if raw["dockMode"] not in DOCK_MODES:
+            raise Fail("The quick launch setting is not valid.")
+        out["dockMode"] = raw["dockMode"]
+    if "dock" in raw:
+        out["dock"] = dock_ids(raw["dock"])
     if "theme" in raw:
         if raw["theme"] not in THEME_IDS and raw["theme"] not in LEGACY_THEME_IDS and not MYTHEME_ID.match(str(raw["theme"])):
             raise Fail("The theme is not understood.")
@@ -719,9 +775,9 @@ def rim_shadow(level, bevel=0, tone="dark"):
 
 
 TONE_TOKENS = {"dark": {"--lk-ink": "255, 255, 255", "--lk-hi": "#fff", "--lk-shadow": "0, 0, 0", "--lk-deepbase": "#070a12", "--lk-popbase": "#0b101c",
-                        "--lk-popmuted": "#bcc6d6", "color-scheme": "dark"},
+                        "--lk-popmuted": "#bcc6d6", "--lk-spotk": "1", "--lk-platek": "1", "color-scheme": "dark"},
                "light": {"--lk-ink": "22, 38, 64", "--lk-hi": "#0f1a2e", "--lk-shadow": "52, 74, 112", "--lk-deepbase": "#eaf1fb", "--lk-popbase": "#f4f8ff",
-                         "--lk-popmuted": "#52627c", "color-scheme": "light"}}
+                         "--lk-popmuted": "#52627c", "--lk-spotk": "2.6", "--lk-platek": "3.4", "color-scheme": "light"}}
 
 
 def glass_alpha(v):
@@ -911,6 +967,14 @@ def look_css(custom, full=False, saved=None, css=""):
     if not full:
         for k, val in sorted((custom.get("names") or {}).items()):
             tok.append('--hl-name-%s: "%s";' % (k, val))
+        if custom.get("hello") is False:
+            tok.append('--hl-hello: "off";')
+        elif custom.get("helloName") or hello_default():
+            tok.append('--hl-hello: "%s";' % (custom.get("helloName") or hello_default()))
+        if custom.get("dockMode") == "off":
+            tok.append('--hl-dock: "off";')
+        elif custom.get("dockMode") == "custom":
+            tok.append('--hl-dock: "%s";' % ",".join(custom.get("dock") or []) if custom.get("dock") else '--hl-dock: "none";')
         lg = custom.get("logo") or {}
         if lg.get("src") and not lg.get("off"):
             tok.append('--hl-logo-src: "%s";' % lg["src"])
@@ -919,8 +983,20 @@ def look_css(custom, full=False, saved=None, css=""):
             tok.append("--hl-logo-size: %spx;" % num(lg.get("size", 48)))
     if tok:
         rules.append("html body #inner_wrapper { %s }" % " ".join(tok))
+    body_tok = []
     if full or "veil" in custom:
-        rules.append("html body { --lk-veilk: %s; }" % num(v["veil"] / 100.0))
+        body_tok.append("--lk-veilk: %s;" % num(v["veil"] / 100.0))
+    if full or "motion" in custom:
+        body_tok.append(MOTIONS[v["motion"]])
+    if full or "iconStyle" in custom:
+        body_tok.append("--lk-plate: %d;" % (1 if v["iconStyle"] == "plate" else 0))
+    if full or "accent" in custom or "tabs" in custom:
+        body_tok.append("--lk-aur-1: %d, %d, %d; --lk-aur-2: %d, %d, %d; --lk-aur-3: %d, %d, %d;" % (
+            hex_rgb(v["accent"]) + hex_rgb(v["tabs"].get("Links", SHIPPED_TAB_COLORS["Links"])) + hex_rgb(v["tabs"].get("Stats", SHIPPED_TAB_COLORS["Stats"]))))
+    if full or "tone" in custom:
+        body_tok.append("--lk-aur-blend: %s;" % ("soft-light" if v["tone"] == "light" else "screen"))
+    if body_tok:
+        rules.append("html body { %s }" % " ".join(body_tok))
     tabs = v["tabs"] if full else (custom.get("tabs") or {})
     for name in sorted(tabs):
         rules.append('html[data-tab="%s"] body #inner_wrapper { --lk-accent: %d, %d, %d; }' % ((name,) + hex_rgb(tabs[name])))
@@ -1023,7 +1099,29 @@ def look_version(custom):
 def look_state():
     custom = look_get()
     return {"version": look_version(custom), "custom": custom, "values": look_full(custom), "defaults": look_full({}), "themes": LOOK_THEMES,
-            "tabNames": look_tab_names()}
+            "tabNames": look_tab_names(), "helloDefault": hello_default()}
+
+
+def look_regen():
+    """A new version can change what a saved look writes into custom.css. This writes it again from the saved settings, when they differ."""
+    with LOCK:
+        css = read(CSS)
+        custom = look_get(css)
+        if not custom:
+            return False
+        new = css_with_look(css, custom)
+        if new == css:
+            return False
+        tx = Tx("Look written again by a new version")
+        tx.put(CSS, new)
+        return tx.commit()
+
+
+def look_regen_safe():
+    try:
+        look_regen()
+    except Exception as e:
+        sys.stderr.write("look: %r\n" % (e,))
 
 
 def api_look_save(body):
@@ -2761,9 +2859,9 @@ def widget_block(text, key):
     return (m.start(2), m.end(2)) if m else None
 
 
-def location_state():
+def location_state(zones=True):
     text = read(WIDGETS)
-    out = {"timeZone": "", "city": "", "lat": None, "lon": None, "zones": sorted(zoneinfo.available_timezones())}
+    out = {"timeZone": "", "city": "", "lat": None, "lon": None, "zones": sorted(zoneinfo.available_timezones()) if zones else []}
     b = widget_block(text, "datetime")
     if b:
         m = re.search(r"\n\s+timeZone:\s*(\S+)", text[b[0]:b[1]])
@@ -2844,7 +2942,7 @@ def api_location_save(body):
 
 def full_state():
     h = history_last()
-    return {"version": VERSION, "look": look_state(), "background": bg_state(), "layout": layout_state(), "services": services_state(), "hlcards": hl_state(), "mythemes": mythemes_state(),
+    return {"version": VERSION, "look": look_state(), "background": bg_state(), "layout": layout_state(), "services": services_state(), "hlcards": hl_state(), "mythemes": mythemes_state(), "schedule": schedule_state(),
             "links": marks_state(), "linksVersion": marks_version(), "location": location_state(), "paint": paint_state(), "undo": (h[1]["label"] if h else ""), "automatic": sorted(AUTOMATIC), "protected": sorted(PROTECTED)}
 
 
@@ -4324,7 +4422,7 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/location/search":
                 return self.send(200, dict(api_location_search(body), ok=True))
             routes = {"/api/location": api_location_save, "/api/look": api_look_save, "/api/look/css": api_look_css, "/api/look/reset": api_look_reset, "/api/background": api_bg_save, "/api/background/reset": api_bg_reset,
-                      "/api/layout": api_layout_save, "/api/card": api_card, "/api/hlcards/restore": api_hl_restore, "/api/mytheme": api_mytheme, "/api/link": api_link, "/api/group": api_group,
+                      "/api/layout": api_layout_save, "/api/card": api_card, "/api/hlcards/restore": api_hl_restore, "/api/mytheme": api_mytheme, "/api/schedule": api_schedule, "/api/link": api_link, "/api/group": api_group,
                       "/api/undo": lambda b: {"undone": undo()}}
             fn = routes.get(path)
             if not fn:
@@ -4431,11 +4529,289 @@ def job_status_loop():
         time.sleep(JOBSTATUS_SECS)
 
 
+# ---- Day and night: the server switches the theme at sunrise and sunset ----
+SCHEDULE = os.path.join(HP, ".panel-schedule.json")
+SCHEDULE_SECS = float(os.environ.get("HLP_SCHEDULE_SECS") or 60)
+SCHEDULE_DEFAULT = {"enabled": False, "mode": "sun", "dayAt": "07:00", "nightAt": "19:00", "phase": ""}
+TIME_HM = re.compile(r"^([01]\d|2[0-3]):([0-5]\d)$")
+
+
+def now_utc():
+    t = os.environ.get("HLP_NOW")
+    return datetime.datetime.fromtimestamp(float(t), datetime.timezone.utc) if t else datetime.datetime.now(datetime.timezone.utc)
+
+
+def sun_events(lat, lon, date):
+    """Sunrise and sunset of a calendar date at a place, as UTC times (None in polar day or night). Accurate to a few minutes, which is plenty for switching a theme."""
+    n = date.timetuple().tm_yday
+    lng_hour = lon / 15.0
+    base = datetime.datetime(date.year, date.month, date.day, tzinfo=datetime.timezone.utc)
+    noon = base + datetime.timedelta(hours=12 - lng_hour)
+    out = []
+    for rising in (True, False):
+        t = n + ((6 if rising else 18) - lng_hour) / 24.0
+        m = 0.9856 * t - 3.289
+        l = (m + 1.916 * math.sin(math.radians(m)) + 0.020 * math.sin(math.radians(2 * m)) + 282.634) % 360
+        ra = math.degrees(math.atan(0.91764 * math.tan(math.radians(l)))) % 360
+        ra = (ra + math.floor(l / 90) * 90 - math.floor(ra / 90) * 90) / 15.0
+        sin_dec = 0.39782 * math.sin(math.radians(l))
+        cos_dec = math.cos(math.asin(sin_dec))
+        cos_h = (math.cos(math.radians(90.833)) - sin_dec * math.sin(math.radians(lat))) / (cos_dec * math.cos(math.radians(lat)))
+        if cos_h > 1 or cos_h < -1:
+            return None
+        h = (360 - math.degrees(math.acos(cos_h))) if rising else math.degrees(math.acos(cos_h))
+        ut = (h / 15.0 + ra - 0.06571 * t - 6.622 - lng_hour) % 24
+        cands = [base + datetime.timedelta(hours=ut + 24 * k) for k in (-1, 0, 1)]
+        # The sun rises about 6 hours before local solar noon at the equinox and sets about 6 hours after it. This picks the right one of the three days.
+        out.append(min(cands, key=lambda c: abs((c - noon).total_seconds() - (-6 if rising else 6) * 3600)))
+    return out[0], out[1]
+
+
+def hm_minutes(text):
+    return int(text[:2]) * 60 + int(text[3:])
+
+
+def schedule_zone(loc):
+    try:
+        return zoneinfo.ZoneInfo(loc.get("timeZone")) if loc.get("timeZone") else datetime.datetime.now().astimezone().tzinfo
+    except (zoneinfo.ZoneInfoNotFoundError, ValueError):
+        return datetime.datetime.now().astimezone().tzinfo
+
+
+def schedule_phase(sch, loc, now=None):
+    """('day' or 'night', (sunrise, sunset) in UTC or None) for the schedule at this moment."""
+    now = now or now_utc()
+    local = now.astimezone(schedule_zone(loc))
+    if sch.get("mode", "sun") == "sun" and loc.get("lat") is not None and loc.get("lon") is not None:
+        ev = sun_events(loc["lat"], loc["lon"], local.date())
+        if ev:
+            return ("day" if ev[0] <= now < ev[1] else "night"), ev
+    mins = local.hour * 60 + local.minute
+    d, n = hm_minutes(sch.get("dayAt") or "07:00"), hm_minutes(sch.get("nightAt") or "19:00")
+    day = (d <= mins < n) if d < n else (mins >= d or mins < n)
+    return ("day" if day else "night"), None
+
+
+def schedule_read():
+    try:
+        d = json.loads(read(SCHEDULE) or "{}")
+    except ValueError:
+        d = {}
+    return d if isinstance(d, dict) else {}
+
+
+def schedule_write(sch):
+    write_atomic(SCHEDULE, json.dumps(sch, indent=1, sort_keys=True), 0o644)
+
+
+def schedule_package(raw, what):
+    """Check what the page sends for the day or the night: the theme (one of the built-in ones), its look and its picture sliders."""
+    if not isinstance(raw, dict):
+        raise Fail("Choose the %s theme first." % what)
+    t = next((x for x in LOOK_THEMES if x["id"] == raw.get("theme")), None)
+    if not t:
+        raise Fail("The %s theme must be one of the built-in themes." % what)
+    sliders = raw.get("bg") if isinstance(raw.get("bg"), dict) else {}
+    sliders = {k: sliders[k] for k in ("blur", "saturate", "brightness", "opacity") if k in sliders}
+    bg_numbers(sliders, "")
+    look = look_clean(raw.get("look"))
+    for k in PERSONAL_KEYS:
+        look.pop(k, None)
+    return {"theme": t["id"], "look": look, "bg": sliders}
+
+
+def schedule_apply(sch, phase):
+    pkg = sch.get(phase)
+    if not isinstance(pkg, dict):
+        return False
+    with LOCK:
+        cur = look_get()
+        new = dict(look_clean(pkg.get("look") or {}))
+        for k in PERSONAL_KEYS:
+            if k in cur:
+                new[k] = cur[k]
+        new["theme"] = pkg["theme"]
+        tx = Tx("Day and night: the %s theme" % phase)
+        tx.put(CSS, css_with_look(tx.get(CSS), look_clean(new)))
+        t = next((x for x in LOOK_THEMES if x["id"] == pkg["theme"]), None)
+        if t and t.get("background"):
+            have = theme_file(t["id"])
+            tx.put(SETTINGS, bg_numbers(pkg.get("bg") or {}, bg_set(tx.get(SETTINGS), "image", "/images/" + have if have else t["background"]["url"])))
+        return tx.commit()
+
+
+def schedule_tick(force=False):
+    with LOCK:
+        sch = schedule_read()
+        if not sch.get("enabled") or not isinstance(sch.get("day"), dict) or not isinstance(sch.get("night"), dict):
+            return False
+        phase, _ = schedule_phase(sch, location_state(False))
+        if phase == sch.get("phase") and not force:
+            return False
+        schedule_apply(sch, phase)
+        sch["phase"] = phase
+        sch["applied"] = int(time.time())
+        schedule_write(sch)
+        return True
+
+
+def schedule_loop():
+    while True:
+        try:
+            schedule_tick()
+        except Exception as e:
+            sys.stderr.write("day and night: %r\n" % (e,))
+        time.sleep(SCHEDULE_SECS)
+
+
+def local_hm(dt, loc):
+    return dt.astimezone(schedule_zone(loc)).strftime("%H:%M")
+
+
+def schedule_state():
+    sch = schedule_read()
+    loc = location_state(False)
+    out = {k: sch.get(k, v) for k, v in SCHEDULE_DEFAULT.items()}
+    out["dayTheme"] = (sch.get("day") or {}).get("theme", "")
+    out["nightTheme"] = (sch.get("night") or {}).get("theme", "")
+    out["city"] = loc.get("city") or ""
+    out["hasPlace"] = loc.get("lat") is not None and loc.get("lon") is not None
+    out["timeZone"] = loc.get("timeZone") or ""
+    now = now_utc()
+    phase, ev = schedule_phase(sch, loc, now)
+    out["now"] = phase
+    out["sunrise"] = local_hm(ev[0], loc) if ev else ""
+    out["sunset"] = local_hm(ev[1], loc) if ev else ""
+    return out
+
+
+def api_schedule(body):
+    op = body.get("op")
+    sch = schedule_read()
+    if op == "off":
+        sch["enabled"] = False
+        schedule_write(sch)
+        return {}
+    if op != "save":
+        raise Fail("That request is not understood.")
+    mode = body.get("mode")
+    if mode not in ("sun", "fixed"):
+        raise Fail("Choose sunrise and sunset, or fixed times.")
+    day_at, night_at = body.get("dayAt") or SCHEDULE_DEFAULT["dayAt"], body.get("nightAt") or SCHEDULE_DEFAULT["nightAt"]
+    if not (isinstance(day_at, str) and TIME_HM.match(day_at) and isinstance(night_at, str) and TIME_HM.match(night_at)):
+        raise Fail("The times must look like 07:00 and 19:30.")
+    if day_at == night_at:
+        raise Fail("The day and night times cannot be the same.")
+    loc = location_state(False)
+    if mode == "sun" and (loc.get("lat") is None or loc.get("lon") is None):
+        raise Fail("Sunrise and sunset need a city. Choose one on the Location screen first, or use fixed times.")
+    sch.update({"enabled": True, "mode": mode, "dayAt": day_at, "nightAt": night_at, "phase": "",
+                "day": schedule_package(body.get("day"), "day"), "night": schedule_package(body.get("night"), "night")})
+    schedule_write(sch)
+    schedule_tick(True)
+    return {}
+
+
+# ---- Short history of CPU, memory, network and temperature, for the small graphs in the header ----
+TRENDS_FILE = os.path.join(IMAGES, "trends.json")
+TRENDS_SECS = float(os.environ.get("HLP_TRENDS_SECS") or 30)
+TRENDS_POINTS = 120
+PROC = os.environ.get("HLP_PROC") or "/proc"
+SYS = os.environ.get("HLP_SYS") or "/sys"
+TRENDS_SERIES = ("cpu", "mem", "rx", "tx", "temp")
+
+
+def proc_cpu():
+    with open(os.path.join(PROC, "stat")) as f:
+        v = [int(x) for x in f.readline().split()[1:9]]
+    return sum(v) - v[3] - v[4], sum(v)
+
+
+def proc_mem():
+    d = {}
+    with open(os.path.join(PROC, "meminfo")) as f:
+        for line in f:
+            k, _, rest = line.partition(":")
+            if k in ("MemTotal", "MemAvailable"):
+                d[k] = int(rest.split()[0])
+    return 100.0 * (d["MemTotal"] - d["MemAvailable"]) / d["MemTotal"]
+
+
+def proc_net():
+    rx = tx = 0
+    with open(os.path.join(PROC, "net", "dev")) as f:
+        for line in f.readlines()[2:]:
+            name, _, rest = line.partition(":")
+            name = name.strip()
+            if not rest or name == "lo" or name.startswith(("docker", "veth", "br-", "virbr", "tailscale", "wg", "tun", "zt")):
+                continue
+            c = rest.split()
+            rx += int(c[0])
+            tx += int(c[8])
+    return rx, tx
+
+
+def sys_temp():
+    best = None
+    for pat in ("class/hwmon/hwmon*/temp*_input", "class/thermal/thermal_zone*/temp"):
+        for p in glob.glob(os.path.join(SYS, pat)):
+            try:
+                with open(p) as f:
+                    c = int(f.read().strip()) / 1000.0
+            except (OSError, ValueError):
+                continue
+            if 1 < c < 130 and (best is None or c > best):
+                best = c
+        if best is not None:
+            break
+    return best
+
+
+def trends_load():
+    try:
+        d = json.loads(read(TRENDS_FILE) or "{}")
+    except ValueError:
+        d = {}
+    if not isinstance(d, dict) or time.time() - (d.get("updated") or 0) > 600:
+        return {k: [] for k in TRENDS_SERIES}
+    return {k: [x for x in (d.get(k) or []) if x is None or isinstance(x, (int, float))][-TRENDS_POINTS:] for k in TRENDS_SERIES}
+
+
+def trends_loop():
+    data = trends_load()
+    prev_cpu = prev_net = prev_t = None
+    while True:
+        try:
+            now = time.time()
+            cpu = proc_cpu()
+            net = proc_net()
+            row = {"mem": round(proc_mem(), 1), "temp": None, "cpu": None, "rx": None, "tx": None}
+            t = sys_temp()
+            row["temp"] = round(t, 1) if t is not None else None
+            if prev_cpu and cpu[1] > prev_cpu[1]:
+                row["cpu"] = round(100.0 * (cpu[0] - prev_cpu[0]) / (cpu[1] - prev_cpu[1]), 1)
+            if prev_net and now > prev_t:
+                row["rx"] = max(0, int((net[0] - prev_net[0]) / (now - prev_t)))
+                row["tx"] = max(0, int((net[1] - prev_net[1]) / (now - prev_t)))
+            prev_cpu, prev_net, prev_t = cpu, net, now
+            if row["cpu"] is not None:
+                for k in TRENDS_SERIES:
+                    data[k] = (data[k] + [row[k]])[-TRENDS_POINTS:]
+                if os.path.isdir(IMAGES):
+                    write_atomic(TRENDS_FILE, json.dumps(dict(data, version=1, updated=int(now), step=TRENDS_SECS), separators=(",", ":")), 0o644)
+        except Exception as e:
+            sys.stderr.write("trends: %r\n" % (e,))
+        time.sleep(TRENDS_SECS)
+
+
 def cmd_serve():
     ThreadingHTTPServer.request_queue_size = 64
     srv = ThreadingHTTPServer((BIND, PORT), Handler)
     srv.daemon_threads = True
     threading.Thread(target=job_status_loop, daemon=True).start()
+    threading.Thread(target=look_regen_safe, daemon=True).start()
+    threading.Thread(target=trends_loop, daemon=True).start()
+    threading.Thread(target=schedule_loop, daemon=True).start()
     if not NO_DOCKER:
         threading.Thread(target=prefetch_theme_pictures, daemon=True).start()
     sys.stderr.write("homelab-panel %s listening on http://%s:%d (files in %s)\n" % (VERSION, BIND, PORT, HP))

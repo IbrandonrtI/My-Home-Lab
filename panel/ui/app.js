@@ -16,7 +16,7 @@ const framed = window.parent !== window;
 })();
 let S = null;
 let view = "look";
-let lookW = null, bgW = null, layW = null, linkW = null, linkBase = "";
+let lookW = null, bgW = null, layW = null, linkW = null, linkBase = "", schedW = null;
 const root = document.getElementById("app");
 const LOOKVIEWS = ["look"];
 const BLURS = ["none", "sm", "md", "lg", "xl", "2xl", "3xl"];
@@ -114,7 +114,7 @@ function afterChange(reload) {
   return api("GET", "/api/state").then(s => {
     const y = window.scrollY;
     S = s;
-    lookW = bgW = layW = linkW = null;
+    lookW = bgW = layW = linkW = schedW = null;
     clearDraft();
     render();
     window.scrollTo(0, y);
@@ -1843,12 +1843,13 @@ async function bkRestore(t) {
 function rgb(hex) { const m = /^#?([0-9a-f]{6})$/i.exec(hex || ""); const n = m ? parseInt(m[1], 16) : 0; return [n >> 16 & 255, n >> 8 & 255, n & 255]; }
 let lookBarEl = null, pvTimer = null, pvSeq = 0;
 
-function lookOut() {
-  const out = clone(lookW);
+function cleanOut(look) {
+  const out = clone(look);
   out.tabs = {};
-  for (const [n, c] of Object.entries(lookW.tabs)) if (c !== S.look.defaults.tabs[n]) out.tabs[n] = c;
+  for (const [n, c] of Object.entries(look.tabs)) if (c !== S.look.defaults.tabs[n]) out.tabs[n] = c;
   return out;
 }
+function lookOut() { return cleanOut(lookW); }
 function rimShadow(level, bevel, tone) {
   const r = Math.max(0, Math.min(100, Number(level) || 0)) / 100, bv = Math.max(0, Math.min(100, Number(bevel) || 0)) / 100;
   const n = x => String(Math.round(x * 1000) / 1000), parts = [];
@@ -2148,13 +2149,19 @@ function themeBg(t) {
 }
 function savedBg() { const b = S.background; return { url: "", blur: b.blur || "none", saturate: b.saturate, brightness: b.brightness, opacity: b.opacity }; }
 function previewBg() { const B = bgW || savedBg(), b = S.background; send({ type: "bg", image: B.url || b.image, blur: B.blur, saturate: B.saturate, brightness: B.brightness, opacity: B.opacity }); }
-function chooseTheme(t) {
+// What belongs to the person and not to a theme: a theme never changes these.
+const PERSONAL = ["labels", "labelIcon", "names", "logo", "motion", "iconStyle", "hello", "helloName", "dockMode", "dock"];
+function themeLook(t) {
   const def = S.look.defaults;
   const base = clone(def); base.tabs = Object.assign({}, def.tabs);
-  for (const k of ["labels", "labelIcon", "names", "logo"]) base[k] = clone(lookW[k]);
   const pl = clone(t.look); const tabs = Object.assign({}, base.tabs, pl.tabs || {}); delete pl.tabs;
   const col = themeColors(t);
-  lookW = Object.assign(base, pl, { tabs, theme: t.id, cards: col.cards, links: col.links, paintAll: col.paintAll });
+  return Object.assign(base, pl, { tabs, theme: t.id, cards: col.cards, links: col.links, paintAll: col.paintAll });
+}
+function chooseTheme(t) {
+  const next = themeLook(t);
+  for (const k of PERSONAL) next[k] = clone(lookW[k]);
+  lookW = next;
   bgW = (t.id !== S.look.values.theme && themeBg(t)) || null;
   render(); lookChanged(); previewBg();
   toast(lookDirty() || bgDirty() ? t.name + " is a draft. Press Save to keep it, or Discard Changes to revert." : t.name + " is already in use.");
@@ -2267,6 +2274,100 @@ function themesCard() {
     h("p", { class: "muted small" }, "Each theme has a matching background picture. When the box is selected, the picture and its sliders change when a theme is chosen. Clear the box to keep the current picture. Names and the logo are never changed. Colors set for single cards are replaced by the theme’s colors. Any setting below can still be changed after choosing a theme."));
 }
 
+// Motion, icons, greeting and quick launch.
+function polishCard() {
+  const L = lookW;
+  const box = h("div", {});
+  const chip = (on, text, set) => h("button", { class: "chip", "aria-pressed": String(on), onclick: () => { set(); lookChanged(); draw(); } }, text);
+  function draw() {
+    const cards = (S.paint.cards || []).filter(c => c.id !== "navidrome-card");
+    const mode = L.dockMode || "auto";
+    const picked = Array.isArray(L.dock) ? L.dock : [];
+    put(box,
+      h("div", { class: "field" }, h("div", { class: "lab" }, "Motion"),
+        h("div", { class: "chips" }, [["off", "Off"], ["subtle", "Subtle"], ["lively", "Lively"]].map(([k, t]) => chip((L.motion || "subtle") === k, t, () => { L.motion = k; }))),
+        h("div", { class: "hint" }, "Cards lift when pointed at, a soft light follows the pointer, a slow glow drifts behind the cards, status dots pulse and numbers count up. Lively makes all of it larger and slower. Off turns all of it off. A device that is set to reduce motion always gets Off.")),
+      h("div", { class: "field" }, h("div", { class: "lab" }, "Icons"),
+        h("div", { class: "chips" }, chip((L.iconStyle || "plate") === "plate", "Glass Plates", () => { L.iconStyle = "plate"; }), chip(L.iconStyle === "none", "Plain", () => { L.iconStyle = "none"; })),
+        h("div", { class: "hint" }, "Glass Plates puts every icon on the same rounded glass tile, so icons of different shapes and colors look like a set. Plain shows the icons as they are.")),
+      h("div", { class: "field" }, h("div", { class: "lab" }, "Greeting"),
+        h("label", { class: "row check" }, h("input", { type: "checkbox", checked: L.hello !== false, "aria-label": "Show a greeting above the tabs", onchange: ev => { L.hello = ev.target.checked; lookChanged(); } }),
+          h("span", {}, "Show a Greeting Above the Tabs")),
+        h("input", { type: "text", maxlength: 24, value: L.helloName || "", placeholder: S.look.helloDefault || "Your name", "aria-label": "Name in the greeting",
+          oninput: ev => { L.helloName = ev.target.value.replace(/\s+/g, " ").trim(); lookChanged(); } }),
+        h("div", { class: "hint" }, "For example “Good evening, Brandon”, with today’s date under it. Leave the name empty to use the name of the account the panel runs as. The greeting and the quick launch icons appear after Save.")),
+      h("div", { class: "field" }, h("div", { class: "lab" }, "Quick Launch"),
+        h("div", { class: "chips" }, [["auto", "Automatic"], ["custom", "Choose Cards"], ["off", "Off"]].map(([k, t]) => chip(mode === k, t, () => { L.dockMode = k; }))),
+        h("div", { class: "hint" }, "A row of icons next to the tabs that opens a service with one click. Automatic shows the first six cards that have a link. Choose Cards lets you pick up to 12 (the order is the order you tick them). It is not shown on a phone.")),
+      mode === "custom" ? h("div", { class: "grid cols2" }, cards.map(c => {
+        const on = picked.includes(c.id);
+        return h("label", { class: "row check" }, h("input", { type: "checkbox", checked: on, "aria-label": c.name, onchange: ev => {
+          const cur = Array.isArray(L.dock) ? L.dock.slice() : [];
+          if (ev.target.checked) { if (cur.length >= 12) { ev.target.checked = false; return toast("Up to 12 cards can be in quick launch.", true); } cur.push(c.id); }
+          else cur.splice(cur.indexOf(c.id), 1);
+          L.dock = cur; lookChanged();
+        } }), h("span", {}, c.name, h("span", { class: "muted small" }, "  " + c.group)));
+      })) : null);
+  }
+  draw();
+  return h("div", { class: "card" }, h("h2", {}, "Motion, Icons and Greeting"), box);
+}
+
+// Day and night: the server changes the theme at sunrise and sunset.
+function scheduleCard() {
+  const sc = S.schedule || {};
+  if (!schedW) schedW = { mode: sc.mode || "sun", dayAt: sc.dayAt || "07:00", nightAt: sc.nightAt || "19:00", day: sc.dayTheme || "liquid", night: sc.nightTheme || "crystalnight" };
+  const W = schedW, themes = S.look.themes;
+  const box = h("div", {});
+  const pick = (label, key) => {
+    const sel = h("select", { "aria-label": label, onchange: ev => { W[key] = ev.target.value; } }, themes.map(t => h("option", { value: t.id }, t.name)));
+    sel.value = W[key];
+    return h("div", { class: "field" }, h("div", { class: "lab" }, label), sel);
+  };
+  const timeBox = (label, key) => {
+    const inp = h("input", { type: "time", value: W[key], "aria-label": label, onchange: ev => { if (ev.target.value) W[key] = ev.target.value; } });
+    return h("div", { class: "field" }, h("div", { class: "lab" }, label), inp);
+  };
+  function draw() {
+    const sun = W.mode === "sun";
+    const now = sc.now ? (sc.now === "day" ? "daytime" : "night") : "";
+    put(box,
+      h("div", { class: "grid cols2" }, pick("Theme by Day", "day"), pick("Theme at Night", "night")),
+      h("div", { class: "field" }, h("div", { class: "lab" }, "When to Switch"),
+        h("div", { class: "chips" }, h("button", { class: "chip", "aria-pressed": String(sun), onclick: () => { W.mode = "sun"; draw(); } }, "Sunrise and Sunset"),
+          h("button", { class: "chip", "aria-pressed": String(!sun), onclick: () => { W.mode = "fixed"; draw(); } }, "Fixed Times")),
+        sun
+          ? h("div", { class: "hint" }, sc.hasPlace
+            ? "Uses the city of the weather card" + (sc.city ? " (" + sc.city + ")" : "") + (sc.sunrise ? ". Today: sunrise " + sc.sunrise + ", sunset " + sc.sunset + "." : ".")
+            : "No city is set for the weather card yet. Choose one under Location first, or use fixed times.")
+          : h("div", { class: "grid cols2" }, timeBox("Day Starts At", "dayAt"), timeBox("Night Starts At", "nightAt"))),
+      h("div", { class: "row" },
+        h("button", { class: "primary", onclick: save }, sc.enabled ? "Save and Switch Now" : "Turn On and Switch Now"),
+        sc.enabled ? h("button", { onclick: off }, "Turn Off") : null),
+      h("p", { class: "muted small" }, sc.enabled
+        ? "On. It is " + now + " now" + (sc.phase ? ", and the " + (sc.phase === "day" ? "day" : "night") + " theme is in place." : ".") + " A theme you choose yourself stays until the next switch."
+        : "Off. Nothing changes by itself."));
+  }
+  async function save() {
+    const pk = id => {
+      const t = themes.find(x => x.id === id), g = t.background || {};
+      return { theme: t.id, look: cleanOut(themeLook(t)), bg: g.url ? { blur: g.blur, saturate: g.saturate, brightness: g.brightness, opacity: g.opacity } : {} };
+    };
+    try {
+      await api("POST", "/api/schedule", { op: "save", mode: W.mode, dayAt: W.dayAt, nightAt: W.nightAt, day: pk(W.day), night: pk(W.night) });
+      toast("Saved. The dashboard changes theme at " + (W.mode === "sun" ? "sunrise and sunset." : W.dayAt + " and " + W.nightAt + "."));
+      await afterChange(true);
+    } catch (e) { fail(e); }
+  }
+  async function off() {
+    try { await api("POST", "/api/schedule", { op: "off" }); toast("Day and night switching is off. The current theme stays."); await afterChange(false); } catch (e) { fail(e); }
+  }
+  draw();
+  return h("div", { class: "card" }, h("h2", {}, "Day and Night"),
+    h("p", { class: "muted" }, "Switch the whole dashboard to one theme by day and another at night. It changes for everyone who has the dashboard open. Names, the logo, motion and quick launch stay as they are. It has its own button and does not wait for Save."),
+    box);
+}
+
 // The Look screen: colors, background, logo and names.
 function viewLook() {
   if (!lookW) lookW = startLook();
@@ -2338,6 +2439,8 @@ h("div", { class: "card" }, h("h2", {}, "Color Strength"),
   lookSlider("Card Depth", "cardDepth", 0, 100, 1, "%", "A darker shade of each card's own color under the bright color. A higher value makes the text stand out more and the colors look fuller. 0% turns it off."));
   return h("div", {},
     themesCard(),
+    scheduleCard(),
+    polishCard(),
     previewCard,
     colorsCard,
     strengthCard,

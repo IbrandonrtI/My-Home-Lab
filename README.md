@@ -24,7 +24,7 @@ This is the home server I run, plus the installer and tools I use to build it an
 
 ## What it does
 
-- A [Homepage](https://gethomepage.dev) dashboard with a card for every service, live numbers, ten themes and a music player built in.
+- A [Homepage](https://gethomepage.dev) dashboard with a card for every service, live numbers, ten themes that can switch between day and night, gentle motion, small graphs, a search palette and a music player built in.
 - The Customize tab is a control panel. It changes the look, manages drives, runs and restores backups, uploads photos and songs, and installs updates.
 - A bell lists what needs attention (a service that's down, an update waiting, a backup that failed) and links to the screen that fixes it. A small ring shows how far long jobs have got.
 - No port is forwarded on the router. Each service gets its own HTTPS address on my Tailscale network.

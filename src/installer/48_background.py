@@ -14,7 +14,7 @@ def clean_stale_temp_files():
     except OSError:
         return
     for n in names:
-        if ".tmp-" not in n or n.split(".tmp-")[0] not in ("install-status.json", "job-status.json"):
+        if ".tmp-" not in n or n.split(".tmp-")[0] not in ("install-status.json", "job-status.json", "trends.json"):
             continue
         path = os.path.join(folder, n)
         try:
