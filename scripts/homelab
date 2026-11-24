@@ -328,6 +328,8 @@ commands() {
   cmd "sudo homelab-cards ignore NAME" "never make a card for this container"
   cmd "sudo homelab-cards list"        "the cards it made, and what it waits for"
   cmd "sudo homelab-cards move NAME SECTION" "put a card in another section"
+  cmd "sudo homelab-rename"            "rename movie and show files the way Jellyfin reads them (shows the list first)"
+  cmd "sudo homelab-rename undo"       "put the files of the last rename back"
   if command -v homelab-setup >/dev/null 2>&1; then
     section "Setup checklist"
     cmd "sudo homelab-setup"             "the checklist: what is done and what is left"

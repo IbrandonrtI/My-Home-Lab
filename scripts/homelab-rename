@@ -1,0 +1,458 @@
+#!/usr/bin/env python3
+"""homelab-rename - renames the movie and show files of the Jellyfin libraries to the names Jellyfin reads best.
+
+  sudo homelab-rename                 show every change, then ask before doing it
+  sudo homelab-rename --dry-run       show every change and change nothing
+  sudo homelab-rename --yes           do it without asking
+  sudo homelab-rename undo            put the files of the last run back where they were
+  homelab-rename version | help
+
+  --only movies | shows               work on one library only
+  --movies FOLDER, --shows FOLDER     use other folders (the default is the movies and shows folders of the Main pool)
+
+The new layout:
+  movies/Movie Name (2019)/Movie Name (2019).mkv
+  shows/Show Name (2019)/Season 01/Show Name S01E02.mkv      (two episodes in one file: Show Name S01E02-E03.mkv)
+
+What it does:
+  - reads the title, the year and the season and episode number from the file name (and from the folder when the file name lacks them),
+    and drops the rest: resolution, source, codec, audio, release group and the dots
+  - moves subtitle files (.srt, .ass, .sub, ...) that sit next to a video together with it
+  - removes a folder only when it is empty after the move
+  - keeps a list of every move in /var/lib/homelab/rename-undo, so that `undo` can reverse the last run
+What it never does: change a file's content, delete a file, or overwrite a file that already has the new name (those are listed and skipped).
+Files it cannot name (no season and episode number, for example) are listed and left as they are. Trailers, samples and extras folders are left alone.
+"""
+import argparse
+import json
+import os
+import re
+import shutil
+import sys
+import time
+
+VERSION = "1.0"
+MAIN_POOL = os.environ.get("HOMELAB_MAIN_POOL", "/mnt/storage")
+MOVIES = os.environ.get("HOMELAB_MOVIES_DIR", os.path.join(MAIN_POOL, "movies"))
+SHOWS = os.environ.get("HOMELAB_SHOWS_DIR", os.path.join(MAIN_POOL, "shows"))
+UNDO_DIR = os.path.join(os.environ.get("HOMELAB_STATE_DIR", "/var/lib/homelab"), "rename-undo")
+
+VIDEO = {".mkv", ".mp4", ".m4v", ".avi", ".mov", ".wmv", ".mpg", ".mpeg", ".ts", ".m2ts", ".webm", ".flv"}
+SUBTITLE = {".srt", ".ass", ".ssa", ".sub", ".idx", ".vtt", ".sup"}
+EXTRAS = {"extras", "extra", "featurettes", "behind the scenes", "trailers", "samples", "sample", "subs", "subtitles", "scenes", "shorts", "interviews"}
+
+STRONG = re.compile(r"(\d{3,4}[pi]|4k|uhd|bluray|blu-ray|bdrip|brrip|bdremux|remux|web-dl|webdl|webrip|web-rip|hdtv|pdtv|dvdrip|dvdscr|hdrip|hdcam|"
+                    r"x26[45]|h26[45]|hevc|xvid|divx|av1|aac\d*|ac3|eac3|dts|dts-hd|ddp?\d?|truehd|atmos|10bit|8bit|hdr10\+?|proper|repack)")
+WEAK = re.compile(r"(web|dv|hdr|nf|amzn|dsnp|hmax|atvp|hulu|ma|dvd|cam|ts|extended|unrated|uncut|remastered|imax|internal|limited|multi|dual|subbed|dubbed|complete)")
+SEASON_WORD = re.compile(r"(?:s\d{1,2}(?:e\d{1,3})?(?:-s?\d{1,2})?|seasons?|complete|series)")
+EP_CODE = re.compile(r"[Ss](\d{1,2})[ ._-]?[Ee](\d{1,3})((?:-?[Ee]\d{1,3})*)")
+EP_X = re.compile(r"(?<!\d)(\d{1,2})x(\d{2,3})(?!\d)")
+EP_WORDS = re.compile(r"[Ss]eason[ ._-]?(\d{1,2})[ ._-]*[Ee]pisode[ ._-]?(\d{1,3})")
+EP_ONLY = re.compile(r"(?:^|[ ._-])(?:[Ee]p?|[Ee]pisode)[ ._-]?(\d{1,3})(?!\d)")
+EP_LEAD = re.compile(r"^(\d{1,3})(?=[ ._-])")
+PART = re.compile(r"[\s._-]+(?:cd|disc|disk|part|pt)[\s._-]?(\d)\s*$", re.I)
+SEASON_DIR = re.compile(r"^(?:season|series|s)[ ._-]*(\d{1,2})$", re.I)
+BAD_CHARS = re.compile(r'[<>:"/\\|?*]')
+
+
+def tokens(text):
+    text = re.sub(r"[\(\[](\d{4})[\)\]]", r" \1 ", text)
+    text = re.sub(r"\[[^\]]*\]|\{[^}]*\}", " ", text)
+    text = re.sub(r"\((US|UK|AU|CA|NZ)\)", r" @@\1@@ ", text)  # a country mark such as (US) is part of a show's name
+    text = text.replace("(", " ").replace(")", " ")
+    return [re.sub(r"@@(\w+)@@", r"(\1)", t) for t in re.sub(r"[._]+", " ", text).split()]
+
+
+def is_junk(tok, weak):
+    low = tok.lower()
+    for part in (low, low.split("-")[0]):
+        if part and (STRONG.fullmatch(part) or (weak and WEAK.fullmatch(part))):
+            return True
+    return False
+
+
+def tidy(text):
+    text = BAD_CHARS.sub("", text)
+    text = re.sub(r"\s+", " ", text).strip(" -.")
+    if text and (text.islower() or text.isupper()):
+        text = " ".join(w[:1].upper() + w[1:].lower() for w in text.split(" "))
+    return text
+
+
+def is_year(tok):
+    return bool(re.fullmatch(r"(19|20)\d\d", tok)) and int(tok) <= time.localtime().tm_year + 1
+
+
+def split_name(toks, season_words=False):
+    """Return (title, year) from the words of a file or folder name; the title ends before the year or the first technical word."""
+    cut = len(toks)
+    for i, t in enumerate(toks):
+        if (i > 0 or season_words) and (is_junk(t, False) or (season_words and SEASON_WORD.fullmatch(t.lower()))):
+            cut = i
+            break
+    year, at = None, None
+    for i in range(1, cut):
+        if is_year(toks[i]):
+            year, at = int(toks[i]), i
+    if year is not None:
+        return tidy(" ".join(toks[:at])), year
+    end = cut
+    for i in range(1, cut):
+        if is_junk(toks[i], True):
+            end = i
+            break
+    return tidy(" ".join(toks[:end])), None
+
+
+def movie_name(stem, folder):
+    """Title and year of a movie from its file name, or from its folder when the file name has no year."""
+    part = ""
+    m = PART.search(stem)
+    if m:
+        part, stem = " - part%s" % m.group(1), stem[:m.start()]
+    title, year = split_name(tokens(stem))
+    if year is None and folder:
+        t2, y2 = split_name(tokens(folder))
+        if y2 is not None and t2:
+            title, year = t2, y2
+    return title, year, part
+
+
+def episode_info(stem, season_dir):
+    """Return (season, [episodes], text before the number) or None."""
+    m = EP_CODE.search(stem)
+    if m:
+        eps = [int(m.group(2))] + [int(x) for x in re.findall(r"\d+", m.group(3))]
+        return int(m.group(1)), eps, stem[:m.start()]
+    m = EP_X.search(stem)
+    if m and int(m.group(1)) <= 40:
+        return int(m.group(1)), [int(m.group(2))], stem[:m.start()]
+    m = EP_WORDS.search(stem)
+    if m:
+        return int(m.group(1)), [int(m.group(2))], stem[:m.start()]
+    if season_dir is not None:
+        m = EP_ONLY.search(stem)
+        if m:
+            return season_dir, [int(m.group(1))], stem[:m.start()]
+        m = EP_LEAD.match(stem)
+        if m:
+            return season_dir, [int(m.group(1))], ""
+    return None
+
+
+def season_of_dir(name):
+    if re.fullmatch(r"specials?", name, re.I):
+        return 0
+    m = SEASON_DIR.match(name)
+    return int(m.group(1)) if m else None
+
+
+def video_files(root):
+    """Yield (path, relative parts) of the video files below root, leaving out extras, samples, trailers and hidden folders."""
+    for base, dirs, files in os.walk(root):
+        dirs[:] = sorted(d for d in dirs if not d.startswith(".") and d != "lost+found" and d.lower() not in EXTRAS)
+        for name in sorted(files):
+            stem, ext = os.path.splitext(name)
+            if ext.lower() not in VIDEO or name.startswith("."):
+                continue
+            if re.search(r"(^|[ ._-])(sample|trailer)([ ._-]|$)", stem, re.I):
+                continue
+            rel = os.path.relpath(os.path.join(base, name), root).split(os.sep)
+            yield os.path.join(base, name), rel
+
+
+def sidecars(path):
+    """Subtitle files next to a video that start with its name: [(old path, ending such as .en.srt)]."""
+    base, name = os.path.split(path)
+    stem = os.path.splitext(name)[0]
+    found = []
+    try:
+        names = sorted(os.listdir(base))
+    except OSError:
+        return found
+    for other in names:
+        if other.startswith(stem + ".") and os.path.splitext(other)[1].lower() in SUBTITLE:
+            found.append((os.path.join(base, other), other[len(stem):]))
+    return found
+
+
+def entry(src, dst, root):
+    return {"src": src, "dst": dst, "root": root, "subs": sidecars(src)}
+
+
+def plan_movies(root):
+    items, skipped = [], []
+    for path, rel in video_files(root):
+        stem, ext = os.path.splitext(rel[-1])
+        folder = rel[-2] if len(rel) > 1 else ""
+        title, year, part = movie_name(stem, folder)
+        if not title:
+            skipped.append((path, "no title could be read from the name"))
+            continue
+        name = "%s (%d)" % (title, year) if year else title
+        items.append(entry(path, os.path.join(root, name, name + part + ext.lower()), root))
+    return items, skipped
+
+
+def plan_shows(root):
+    found, skipped = [], []
+    for path, rel in video_files(root):
+        stem, ext = os.path.splitext(rel[-1])
+        season_dir = None
+        for d in reversed(rel[:-1]):
+            season_dir = season_of_dir(d)
+            if season_dir is not None:
+                break
+        info = episode_info(stem, season_dir)
+        if info is None:
+            skipped.append((path, "no season and episode number found in the name"))
+            continue
+        season, eps, before = info
+        title, year = "", None
+        if len(rel) > 1:
+            title, year = split_name(tokens(rel[0]), True)
+        file_title, file_year = split_name(tokens(before), True) if before else ("", None)
+        if not title or season_of_dir(rel[0]) is not None:
+            title, year = file_title, file_year
+        elif year is None:
+            year = file_year
+        if not title:
+            skipped.append((path, "no show name could be read from the file or its folder"))
+            continue
+        found.append({"title": title, "year": year, "season": season, "eps": eps, "path": path, "ext": ext.lower()})
+    years = {}
+    for f in found:
+        if f["year"] and f["title"].lower() not in years:
+            years[f["title"].lower()] = f["year"]
+    items = []
+    for f in found:
+        year = f["year"] or years.get(f["title"].lower())
+        folder = "%s (%d)" % (f["title"], year) if year else f["title"]
+        code = "S%02dE%02d" % (f["season"], f["eps"][0]) + "".join("-E%02d" % e for e in f["eps"][1:])
+        dst = os.path.join(root, folder, "Season %02d" % f["season"], "%s %s%s" % (f["title"], code, f["ext"]))
+        items.append(entry(f["path"], dst, root))
+    return items, skipped
+
+
+def settle(items):
+    """Sort the planned moves into: to do, already right, and left alone (the new name is taken or two files would get it)."""
+    todo, same, held, taken = [], [], [], {}
+    for it in items:
+        if os.path.normpath(it["src"]) == os.path.normpath(it["dst"]):
+            same.append(it)
+            taken[it["dst"]] = it
+            continue
+        if os.path.lexists(it["dst"]):
+            held.append((it, "a file with the new name already exists"))
+        elif it["dst"] in taken:
+            held.append((it, "another file would get the same name (%s)" % os.path.relpath(taken[it["dst"]]["src"], it["root"])))
+        else:
+            todo.append(it)
+            taken[it["dst"]] = it
+    return todo, same, held
+
+
+def show_group(title, root, todo, same, held, skipped):
+    print("%s: %d to rename, %d already right, %d left alone" % (title, len(todo), len(same), len(held) + len(skipped)))
+    for it in todo:
+        print("  " + os.path.relpath(it["src"], root))
+        print("    -> " + os.path.relpath(it["dst"], root))
+        for _old, ending in it["subs"]:
+            print("       with its subtitle %s" % ending)
+    for it, why in held:
+        print("  left alone: %s (%s)" % (os.path.relpath(it["src"], root), why))
+    for path, why in skipped:
+        print("  left alone: %s (%s)" % (os.path.relpath(path, root), why))
+
+
+def owner_of(path):
+    try:
+        st = os.stat(path)
+        return st.st_uid, st.st_gid
+    except OSError:
+        return None
+
+
+def make_dirs(folder, root, made, owner):
+    missing = []
+    while folder and not os.path.isdir(folder) and os.path.normpath(folder) != os.path.normpath(root):
+        missing.append(folder)
+        folder = os.path.dirname(folder)
+    for d in reversed(missing):
+        os.mkdir(d)
+        made.append(d)
+        if owner and os.geteuid() == 0:
+            os.chown(d, *owner)
+
+
+def move(src, dst):
+    try:
+        os.rename(src, dst)
+    except OSError:
+        shutil.move(src, dst)
+
+
+def prune(folder, root, removed):
+    """Remove a folder that the move left empty (or holding only empty folders), then the empty folders above it, never the library folder itself."""
+    if os.path.normpath(folder) == os.path.normpath(root):
+        return
+    for base, dirs, files in os.walk(folder, topdown=False):
+        if not files and not dirs:
+            try:
+                os.rmdir(base)
+                removed.append(base)
+            except OSError:
+                pass
+    folder = os.path.dirname(folder) if not os.path.isdir(folder) else folder
+    while os.path.normpath(folder) != os.path.normpath(root) and folder.startswith(root) and os.path.isdir(folder):
+        try:
+            os.rmdir(folder)
+        except OSError:
+            break
+        removed.append(folder)
+        folder = os.path.dirname(folder)
+
+
+def save_log(path, moves, made, removed):
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
+        json.dump({"time": time.strftime("%Y-%m-%d %H:%M"), "moves": moves, "made": made, "removed": removed}, f)
+    os.replace(tmp, path)
+
+
+def apply(todo_by_root):
+    os.makedirs(UNDO_DIR, exist_ok=True)
+    log = os.path.join(UNDO_DIR, "undo-%s.json" % time.strftime("%Y%m%d-%H%M%S"))
+    moves, made, removed, failed, done, sources = [], [], [], [], 0, []
+    try:
+        for root, todo in todo_by_root:
+            owner = owner_of(root)
+            sources = []
+            for it in todo:
+                try:
+                    make_dirs(os.path.dirname(it["dst"]), root, made, owner)
+                    move(it["src"], it["dst"])
+                    moves.append([it["src"], it["dst"]])
+                    for old, ending in it["subs"]:
+                        new = os.path.splitext(it["dst"])[0] + ending
+                        if not os.path.lexists(new):
+                            move(old, new)
+                            moves.append([old, new])
+                    done += 1
+                    sources.append(os.path.dirname(it["src"]))
+                except OSError as e:
+                    failed.append("%s (%s)" % (it["src"], e.strerror or e))
+                if moves and len(moves) % 50 == 0:
+                    save_log(log, moves, made, removed)
+            for folder in sorted(set(sources), key=len, reverse=True):
+                prune(folder, root, removed)
+    finally:
+        if moves:
+            save_log(log, moves, made, removed)
+    return done, failed, log if moves else ""
+
+
+def undo():
+    logs = sorted(f for f in os.listdir(UNDO_DIR) if f.endswith(".json")) if os.path.isdir(UNDO_DIR) else []
+    if not logs:
+        print("There is nothing to undo.")
+        return 0
+    path = os.path.join(UNDO_DIR, logs[-1])
+    with open(path, encoding="utf-8") as f:
+        data = json.load(f)
+    owner = None
+    back, failed = 0, []
+    for d in sorted(data.get("removed", []), key=len):
+        os.makedirs(d, exist_ok=True)
+    for src, dst in reversed(data["moves"]):
+        try:
+            if not os.path.lexists(dst):
+                continue
+            if os.path.lexists(src):
+                failed.append("%s (a file is already there)" % src)
+                continue
+            folder = os.path.dirname(src)
+            missing = []
+            while not os.path.isdir(folder):
+                missing.append(folder)
+                folder = os.path.dirname(folder)
+            for d in reversed(missing):
+                os.mkdir(d)
+                owner = owner or owner_of(folder)
+                if owner and os.geteuid() == 0:
+                    os.chown(d, *owner)
+            move(dst, src)
+            back += 1
+        except OSError as e:
+            failed.append("%s (%s)" % (dst, e.strerror or e))
+    for d in sorted(data.get("made", []), key=len, reverse=True):
+        try:
+            os.rmdir(d)
+        except OSError:
+            pass
+    os.replace(path, path[:-5] + ".undone")
+    print("Put %d file(s) back (run of %s)." % (back, data.get("time", "?")))
+    for line in failed:
+        print("  not moved back: " + line)
+    return 1 if failed else 0
+
+
+def main(argv):
+    ap = argparse.ArgumentParser(prog="homelab-rename", add_help=False)
+    ap.add_argument("command", nargs="?", choices=["undo", "version", "help"])
+    ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--yes", action="store_true")
+    ap.add_argument("--only", choices=["movies", "shows"])
+    ap.add_argument("--movies", default=MOVIES)
+    ap.add_argument("--shows", default=SHOWS)
+    ap.add_argument("-h", "--help", action="store_true")
+    try:
+        a = ap.parse_args(argv)
+    except SystemExit:
+        print("homelab-rename: not understood. Nothing was changed. For help: homelab-rename help", file=sys.stderr)
+        return 2
+    if a.help or a.command == "help":
+        print(__doc__)
+        return 0
+    if a.command == "version":
+        print("homelab-rename " + VERSION)
+        return 0
+    if a.command == "undo":
+        return undo()
+    groups = []
+    for title, root, planner, on in (("Movies", a.movies, plan_movies, a.only in (None, "movies")), ("Shows", a.shows, plan_shows, a.only in (None, "shows"))):
+        if not on:
+            continue
+        if not os.path.isdir(root):
+            print("%s: the folder %s does not exist, skipped." % (title, root))
+            continue
+        items, skipped = planner(root)
+        todo, same, held = settle(items)
+        show_group(title, root, todo, same, held, skipped)
+        groups.append((root, todo))
+    total = sum(len(t) for _r, t in groups)
+    if not total:
+        print("\nNothing needs renaming.")
+        return 0
+    if a.dry_run:
+        print("\n%d file(s) would be renamed. Nothing was changed." % total)
+        return 0
+    if not a.yes:
+        if not sys.stdin.isatty():
+            print("\nNothing was changed. Run it in a terminal, or add --yes.", file=sys.stderr)
+            return 1
+        if input("\nRename %d file(s) as listed above? Type yes to continue: " % total).strip().lower() not in ("y", "yes"):
+            print("Nothing was changed.")
+            return 0
+    done, failed, log = apply(groups)
+    print("\nRenamed %d file(s)." % done)
+    if log:
+        print("To put them back: sudo homelab-rename undo")
+    for line in failed:
+        print("  could not rename: " + line)
+    print("In Jellyfin, open Dashboard, Libraries and choose Scan All Libraries, so it reads the new names.")
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

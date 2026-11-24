@@ -165,7 +165,9 @@ The server for movies and TV shows. It plays what is in the `movies` and `shows`
 The installer sets up the service, the folders and the login. When the Homepage widget is set up, it finishes Jellyfin's first-time setup with your admin name and the shared admin password, so you sign in with those. A later step, "Jellyfin look", then adds a Movies library at `/media/movies` and a Shows library at `/media/shows` when no library uses those folders yet. Open Jellyfin (port 8096) and sign in. Jellyfin finds titles by file name, so name them the usual way:
 
 - Movies: `Movie Name (2019)/Movie Name (2019).mkv`
-- Shows: `Show Name/Season 01/Show Name - S01E01.mkv`
+- Shows: `Show Name (2019)/Season 01/Show Name S01E01.mkv`
+
+**Renaming files that are already there.** `sudo homelab-rename` reads the title, the year and the season and episode number from each name (and from its folder when the name lacks them), drops the resolution, source, codec and release group, and moves the file to the layout above. It shows the full list first and asks before it changes anything. `sudo homelab-rename --dry-run` only shows the list. Subtitle files next to a video move with it. A file whose new name is already taken, trailers, samples and extras folders, and files without a season and episode number are listed and left as they are. Nothing is deleted or overwritten, and `sudo homelab-rename undo` puts the files of the last run back. Afterwards, choose Scan All Libraries in Jellyfin (Dashboard, Libraries). The command reads names only, so check the list for a title it got wrong (for example a title with dots in it, such as S.W.A.T.) before you answer yes.
 
 **TVs and streaming sticks.** Port 8096 is open on the home network, so any device at home reaches the server at `http://` followed by the machine's address and `:8096`. The server also answers the apps' automatic search (UDP port 7359). Away from home, use the Tailscale address on Jellyfin's dashboard card.
 

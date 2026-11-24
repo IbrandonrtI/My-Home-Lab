@@ -1,6 +1,6 @@
 SCRIPTS = [("drives", "/usr/local/sbin"), ("homelab-backup", "/usr/local/sbin"), ("homelab-backup-tasks", "/usr/local/sbin"), ("homelab-update", "/usr/local/sbin"),
            ("homelab-restore-configs", "/usr/local/sbin"), ("homelab-sample", "/usr/local/sbin"), ("homelab-stats", "/usr/local/sbin"), ("homelab-alerts", "/usr/local/sbin"),
-           ("homelab-calendar", "/usr/local/bin"), ("homelab-cards", "/usr/local/sbin"), ("homelab-selftest", "/usr/local/sbin"),
+           ("homelab-calendar", "/usr/local/bin"), ("homelab-cards", "/usr/local/sbin"), ("homelab-selftest", "/usr/local/sbin"), ("homelab-rename", "/usr/local/sbin"),
            ("homelab", "/usr/local/bin"), ("homelab-repocheck", "/usr/local/bin"), ("homelab-panel", "/usr/local/sbin")]
 RETIRED_SCRIPTS = ["/usr/local/bin/hdd-recover", "/usr/local/bin/homelab-check"]
 
