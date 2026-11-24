@@ -1731,7 +1731,7 @@ function bkEdit(t) {
   };
   const form = [h("h2", {}, t ? "Edit " + t.name : "New Backup Task"),
     bkField("Name", h("input", { type: "text", value: f.name, maxlength: 40, placeholder: "My documents", oninput: e => { f.name = e.target.value; } }))];
-  const FOLDER_NAMES = { immich: "Photos and videos (Immich)", nextcloud: "Files and documents (Nextcloud)", music: "Music (Navidrome and Downtify)" };
+  const FOLDER_NAMES = { immich: "Photos and videos (Immich)", nextcloud: "Files and documents (Nextcloud)", music: "Music (Navidrome and Downtify)", videos: "Videos saved by MeTube", movies: "Movies (Jellyfin)", shows: "TV shows (Jellyfin)" };
   const folders = h("div", { class: "field" });
   const drawFolders = () => {
     const skip = new Set(f.skip || []), names = f.folders || [];
