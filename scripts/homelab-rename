@@ -47,7 +47,7 @@ WEAK = re.compile(r"(web|dv|hdr|nf|amzn|dsnp|hmax|atvp|hulu|ma|dvd|cam|ts|extend
 SEASON_WORD = re.compile(r"(?:s\d{1,2}(?:e\d{1,3})?(?:-s?\d{1,2})?|seasons?|complete|series)")
 EP_CODE = re.compile(r"[Ss](\d{1,2})[ ._-]?[Ee](\d{1,3})((?:-?[Ee]\d{1,3})*)")
 EP_X = re.compile(r"(?<!\d)(\d{1,2})x(\d{2,3})(?!\d)")
-EP_WORDS = re.compile(r"[Ss]eason[ ._-]?(\d{1,2})[ ._-]*[Ee]pisode[ ._-]?(\d{1,3})")
+EP_WORDS = re.compile(r"[Ss]eason[ ._-]*(\d{1,2})[ ._-]*[Ee](?:p|pisode)?[ ._-]*(\d{1,3})(?!\d)")
 EP_ONLY = re.compile(r"(?:^|[ ._-])(?:[Ee]p?|[Ee]pisode)[ ._-]?(\d{1,3})(?!\d)")
 EP_LEAD = re.compile(r"^(\d{1,3})(?=[ ._-])")
 PART = re.compile(r"[\s._-]+(?:cd|disc|disk|part|pt)[\s._-]?(\d)\s*$", re.I)

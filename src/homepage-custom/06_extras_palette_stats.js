@@ -320,6 +320,8 @@
       if (box.children[i] !== t.node) box.insertBefore(t.node, box.children[i] || null);
     });
     Object.keys(GT).forEach(function (k) { if (!seen[k]) { if (GT[k].node.parentNode) GT[k].node.parentNode.removeChild(GT[k].node); delete GT[k]; } });
+    /* The plain header is hidden by the style sheet until the gauges hold real numbers (it shows anyway after 4 seconds). */
+    if (!document.documentElement.classList.contains("hl-ready") && /\d/.test(box.textContent)) document.documentElement.classList.add("hl-ready");
   }
 
   /* Numbers count up to their value when they first show, and glide to a new value when it changes. */

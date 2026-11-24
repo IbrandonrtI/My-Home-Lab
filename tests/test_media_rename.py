@@ -107,6 +107,16 @@ class RenameTests(unittest.TestCase):
             "The Office (US)/Season 02/The Office (US) S02E05.mkv", "The Office (US)/Season 02/The Office (US) S02E06.mkv",
             "Doctor Who (2005)/Season 01/Doctor Who S01E01-E02.mkv", "Show X/Season 00/Show X S00E01.mkv"})
 
+    def test_season_and_episode_written_out_in_words(self):
+        self.touch(self.shows, "Frieren Beyond Journey's End", "Frieren Beyond Journey's End Season 2 - E01 (Dub).mp4")
+        self.touch(self.shows, "Frieren Beyond Journey's End", "Frieren Beyond Journey's End Season 2 - E10 (Dub).mp4")
+        self.touch(self.shows, "Show Y", "Show Y Season 3 Episode 4.mkv")
+        self.do()
+        self.assertEqual(self.tree(self.shows), {
+            "Frieren Beyond Journey's End/Season 02/Frieren Beyond Journey's End S02E01.mp4",
+            "Frieren Beyond Journey's End/Season 02/Frieren Beyond Journey's End S02E10.mp4",
+            "Show Y/Season 03/Show Y S03E04.mkv"})
+
     def test_the_year_found_in_one_episode_names_the_whole_show(self):
         self.touch(self.shows, "Doctor.Who.2005.S01E01.mkv")
         self.touch(self.shows, "Doctor.Who.S01E02.mkv")

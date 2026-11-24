@@ -2,7 +2,8 @@
 (function () {
   var box = null, frame = null, src = "", queued = false;
   var style = document.createElement("style");
-  style.textContent = "#hl-player-box{position:absolute;z-index:5;overflow:hidden;border-radius:10px;}" +
+  style.textContent = "#hl-player-box{position:absolute;z-index:5;overflow:hidden;border-radius:10px;transition:opacity 0.3s ease;}" +
+    "#hl-player-box[data-hl-wait]{opacity:0;}" +
     "#hl-player-box.hl-away{left:-10000px !important;pointer-events:none;}" +
     "#hl-player{display:block;width:calc(100% + 32px);height:100%;border:0;}";
   document.head.appendChild(style);
@@ -28,6 +29,11 @@
     frame.id = "hl-player";
     frame.setAttribute("allow", "autoplay; fullscreen");
     frame.src = u;
+    /* The player stays invisible while Navidrome starts up, so its sign-in screen does not flash before the saved sign-in is used. */
+    box.setAttribute("data-hl-wait", "");
+    var reveal = function () { box.removeAttribute("data-hl-wait"); };
+    frame.addEventListener("load", function () { window.setTimeout(reveal, 900); });
+    window.setTimeout(reveal, 3500);
     box.appendChild(frame);
     document.body.appendChild(box);
   }
