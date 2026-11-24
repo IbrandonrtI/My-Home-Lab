@@ -1444,7 +1444,8 @@
       line.style.left = (n > 1 ? j / (n - 1) * 100 : 0) + "%"; line.hidden = tip.hidden = false;
       tip.textContent = "";
       tip.appendChild(el("b", "", when.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) + "  ·  " + fmt(totals[j])));
-      names.slice().reverse().forEach(function (nm) {
+      /* Biggest first, so the list reads from the container using the most down to the least. */
+      names.slice().sort(function (x, y) { return ((c.series[y] || [])[j] || 0) - ((c.series[x] || [])[j] || 0); }).forEach(function (nm) {
         var v = (c.series[nm] || [])[j] || 0, row = el("div", "hl-dk-row"), dot = el("i");
         dot.style.background = dkColor(d, nm);
         row.appendChild(dot); row.appendChild(el("span", "", nm)); row.appendChild(el("em", "", fmt(v)));
