@@ -11,7 +11,7 @@ installed, a file that is not there yet) and then it is skipped. It changes noth
 
 The file is images/alerts.json in the Homepage folder (the same place as stats.json). Each item has an id, a level (bad, warn or info), a title,
 a detail and an action the bell can offer ("update", "restart" or ""). Settings by environment (for tests): HOMELAB_STATE_DIR, HOMELAB_ALERTS_OUT,
-HOMELAB_STATS_IN, HOMELAB_DOCKER, HOMELAB_TAILSCALE, HOMELAB_APT_GET, HOMELAB_REBOOT_FILE, HOMELAB_ROOT_PATH, HOMELAB_TEMP_WARN, HOMELAB_TEMP_BAD, HOMELAB_BUSY (none or any text), HOMELAB_POOL_DEVS, HOMELAB_SYS_BLOCK, HOMELAB_BUSY_SECS, HOMELAB_FSTAB, HOMELAB_BACKUP_POOL, HOMELAB_VERIFY_STATUS, HOMELAB_PAGE_HOST, HOMELAB_SERVICE_PORTS (JSON)."""
+HOMELAB_STATS_IN, HOMELAB_DOCKER, HOMELAB_TAILSCALE, HOMELAB_APT_GET, HOMELAB_REBOOT_FILE, HOMELAB_ROOT_PATH, HOMELAB_TEMP_WARN, HOMELAB_TEMP_BAD, HOMELAB_BUSY (none or any text), HOMELAB_POOL_DEVS, HOMELAB_SYS_BLOCK, HOMELAB_BUSY_SECS, HOMELAB_FSTAB, HOMELAB_BACKUP_POOL, HOMELAB_VERIFY_STATUS, HOMELAB_SNAPRAID_STATUS, HOMELAB_PAGE_HOST, HOMELAB_SERVICE_PORTS (JSON)."""
 import json
 import os
 import tempfile
@@ -36,6 +36,7 @@ FSTAB = os.environ.get("HOMELAB_FSTAB", "/etc/fstab")
 BACKUP_CONF = os.environ.get("HOMELAB_BACKUP_CONF", "/etc/homelab-backup.conf")
 BACKUP_POOL = os.environ.get("HOMELAB_BACKUP_POOL", "/mnt/backup")
 VERIFY_STATUS = os.environ.get("HOMELAB_VERIFY_STATUS", os.path.join(os.path.dirname(BACKUP_STATUS), "last-verify"))
+SNAPRAID_STATUS = os.environ.get("HOMELAB_SNAPRAID_STATUS", "/var/lib/homelab-drives/snapraid-last")
 PAGE_HOST = os.environ.get("HOMELAB_PAGE_HOST", "127.0.0.1")
 PAGE_RETRY_SECONDS = float(os.environ.get("HOMELAB_PAGE_RETRY_SECONDS", "12"))
 DOWNTIFY_PORT = int(os.environ.get("HOMELAB_DOWNTIFY_PORT", "8000"))
@@ -273,6 +274,19 @@ def check_backup_verify():
     return [item("backup:verify", "warn", "Backup copies differ from the originals", "%s file(s) in the backup did not match when checked on %s.%s To copy them again: sudo homelab-backup verify --repair" % (differ or "Some", shown_stamp(stamp), where), "drives")]
 
 
+def check_snapraid():
+    """The last nightly SnapRAID update (written by `drives snapraid nightly`: time|result|detail). The update stops by itself when too many files were deleted, and a stopped or failed update stays on the bell until a later one succeeds."""
+    f = (read(SNAPRAID_STATUS).strip().splitlines() or [""])[0].split("|", 2) + ["", ""]
+    stamp, result, detail = f[:3]
+    result = result.strip().lower()
+    if not stamp.strip().isdigit() or result in ("", "ok"):
+        return []
+    when = shown_stamp(time.strftime("%Y-%m-%d %H:%M", time.localtime(int(stamp))))
+    if result == "aborted":
+        return [item("snapraid:aborted", "warn", "The SnapRAID update did not run", "%s (%s). Nothing was changed. If the deletions are meant, run: sudo drives snapraid sync" % (detail.strip().rstrip(".") or "Many files were deleted", when), "")]
+    return [item("snapraid:failed", "warn", "The SnapRAID update failed", "%s (%s). The log is /var/log/homelab-snapraid.log" % (detail.strip().rstrip(".") or "It stopped with an error", when), "")]
+
+
 def page_status(port, timeout=4):
     try:
         with urllib.request.urlopen("http://%s:%d/" % (PAGE_HOST, port), timeout=timeout) as r:
@@ -460,7 +474,7 @@ def check_busy():
     return [item("storage:busy", "info", "Files are being written to a storage pool", "Probably an upload or a setup. Its size is not known, so there is no finish time. Updates and drive changes wait until it stops.", "")]
 
 
-CHECKS = (check_containers, check_panel, check_pages, check_downtify_login, check_updates, stats_items, check_backup_drive, check_backup_verify, check_space, check_tailscale, check_temps, check_busy)
+CHECKS = (check_containers, check_panel, check_pages, check_downtify_login, check_updates, stats_items, check_backup_drive, check_backup_verify, check_snapraid, check_space, check_tailscale, check_temps, check_busy)
 
 
 def collect():

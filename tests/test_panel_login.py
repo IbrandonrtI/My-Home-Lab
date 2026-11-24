@@ -1,6 +1,7 @@
 """The Customize panel's password and login rules: hashing, wrong-password lockout, session lifetime."""
 import os
 import stat
+import time
 import unittest
 from unittest import mock
 
@@ -14,7 +15,7 @@ class PanelLoginTests(unittest.TestCase):
 
     def setUp(self):
         self.p.SESSIONS.clear()
-        self.p.FAILS.update(count=0, until=0.0)
+        self.p.FAILS.clear()
         if os.path.exists(self.p.PASSFILE):
             os.remove(self.p.PASSFILE)
 
@@ -56,17 +57,38 @@ class PanelLoginTests(unittest.TestCase):
         with self.assertRaises(self.p.Fail) as ctx:
             self.p.login("correct horse battery")
         self.assertEqual(ctx.exception.code, 429)
-        self.assertGreater(self.p.FAILS["until"], 0)
+        self.assertGreater(self.p.FAILS["-"]["until"], 0)
 
     def test_lockout_clears_after_the_wait_and_a_good_login_resets_the_count(self):
         self.p.set_password("correct horse battery")
         for _ in range(4):
             with self.assertRaises(self.p.Fail):
                 self.p.login("wrong wrong wrong")
-        later = self.p.FAILS["until"] + 1
+        later = self.p.FAILS["-"]["until"] + 1
         with mock.patch.object(self.p.time, "time", return_value=later):
             self.p.login("correct horse battery")
-        self.assertEqual(self.p.FAILS["count"], 0)
+        self.assertEqual(self.p.FAILS, {})
+
+    def test_one_address_cannot_lock_the_owner_out_from_another(self):
+        self.p.set_password("correct horse battery")
+        for _ in range(6):
+            with self.assertRaises(self.p.Fail):
+                self.p.login("wrong wrong wrong", "203.0.113.9")
+        with self.assertRaises(self.p.Fail) as ctx:
+            self.p.login("correct horse battery", "203.0.113.9")
+        self.assertEqual(ctx.exception.code, 429)
+        self.assertTrue(self.p.session_ok(self.p.login("correct horse battery", "192.168.1.20")))
+
+    def test_old_wrong_guesses_are_forgotten_after_fifteen_minutes(self):
+        self.p.set_password("correct horse battery")
+        for _ in range(3):
+            with self.assertRaises(self.p.Fail):
+                self.p.login("wrong wrong wrong", "192.168.1.20")
+        later = time.time() + 15 * 60 + 5
+        with mock.patch.object(self.p.time, "time", return_value=later):
+            with self.assertRaises(self.p.Fail):
+                self.p.login("wrong wrong wrong", "192.168.1.20")   # counted as a first guess again
+            self.assertEqual(self.p.FAILS["192.168.1.20"]["count"], 1)
 
     def test_changing_the_password_ends_every_session(self):
         self.p.set_password("correct horse battery")

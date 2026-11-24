@@ -54,9 +54,17 @@ drain_branch_run() {
   fi
   if ! target_lock "$target"; then ABORTED=1; space_release "$mp"; note "Stopped before copying. Nothing was changed."; return 1; fi
   if abort_requested; then ABORTED=1; space_release "$mp"; note "Stopped before copying. Nothing was changed."; return 1; fi
+  progress 3 "Checking $(branch_name "$target") for files that are already there"
+  local conflicts crc=0
+  conflicts=$(copy_conflicts "$mp/" "$target/" --exclude=/lost+found) || crc=$?
+  if [ "$crc" -ne 0 ]; then
+    space_release "$mp"
+    if [ "$crc" = 1 ]; then copy_conflict_stop "$(branch_name "$target")" "$conflicts"; else warn "Could not compare the drives. Nothing was copied or changed."; fi
+    return 1
+  fi
   say "Copying $(human "$used") from $(branch_name "$mp") to $(branch_name "$target") (pass 1, services keep running)..."
   progress 5 "Copying files to $(branch_name "$target")"
-  if ! rsync_run 5 60 "Copying files" -aH --numeric-ids --exclude=/lost+found "$mp/" "$target/"; then
+  if ! rsync_run 5 60 "Copying files" -aH --update --numeric-ids --exclude=/lost+found "$mp/" "$target/"; then
     space_release "$mp"
     if abort_requested; then ABORTED=1; note "Stopped while copying. Nothing was removed. The files copied so far stay as extra copies on $(branch_name "$target")."; else warn "Copy failed"; fi
     return 1
@@ -71,11 +79,11 @@ drain_branch_run() {
   stop_containers "$pool"
   say "Pass 2 (catching changes made during the first pass)..."
   progress 66 "Copying the last changes"
-  if ! rsync_run 66 74 "Copying the last changes" -aH --numeric-ids --exclude=/lost+found "$mp/" "$target/"; then
+  if ! rsync_run 66 74 "Copying the last changes" -aH --update --numeric-ids --exclude=/lost+found "$mp/" "$target/"; then
     if abort_requested; then ABORTED=1; note "Stopped. Nothing was removed."; else warn "Second copy failed"; fi
     start_containers; crit_release; return 1
   fi
-  if rsync -aHn --numeric-ids --itemize-changes --exclude=/lost+found "$mp/" "$target/" | grep -q '^>f'; then
+  if ! copy_check "$mp/" "$target/" --exclude=/lost+found >/dev/null; then
     warn "Verification found files that are not copied yet. Nothing was removed."
     start_containers
     crit_release

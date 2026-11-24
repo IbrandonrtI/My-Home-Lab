@@ -45,8 +45,12 @@ absorb_plain_pool() {
   [ -n "$(ls -A "$pool" 2>/dev/null)" ] || return 0
   [ "$role" = main ] && ! boot_has_files "$pool" && real=0
   [ "$real" = 1 ] && say "$pool already holds files on the boot drive ($(human "$(du -sb "$pool" 2>/dev/null | awk '{print $1}')")). They are copied onto the new drive first."
-  rsync -aH --numeric-ids --ignore-existing --exclude=/lost+found "$pool/" "$drive/" || { warn "Copying the files to the new drive failed. Nothing was removed."; return 1; }
-  if rsync -aHn --numeric-ids --ignore-existing --itemize-changes --exclude=/lost+found "$pool/" "$drive/" | grep -q '^[>c]'; then
+  local conflicts crc=0
+  conflicts=$(copy_conflicts "$pool/" "$drive/" --exclude=/lost+found) || crc=$?
+  if [ "$crc" = 1 ]; then copy_conflict_stop "the new drive" "$conflicts"; return 1; fi
+  if [ "$crc" != 0 ]; then warn "Could not compare the folder with the new drive. Nothing was copied or removed."; return 1; fi
+  rsync -aH --update --numeric-ids --exclude=/lost+found "$pool/" "$drive/" || { warn "Copying the files to the new drive failed. Nothing was removed."; return 1; }
+  if ! copy_check "$pool/" "$drive/" --exclude=/lost+found >/dev/null; then
     warn "Not every file reached the new drive. Nothing was removed from the boot drive."
     return 1
   fi

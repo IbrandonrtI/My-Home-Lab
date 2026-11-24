@@ -19,7 +19,7 @@ chosen_name_put() {
     fi
     printf '%s=%s\n' "$1" "$2"
   } >"$tmp"
-  cat "$tmp" >"$DRIVE_NAMES_FILE" || { rm -f "$tmp"; die "Could not write $DRIVE_NAMES_FILE"; }
+  replace_file "$DRIVE_NAMES_FILE" <"$tmp" || { rm -f "$tmp"; die "Could not write $DRIVE_NAMES_FILE"; }
   chmod 644 "$DRIVE_NAMES_FILE" 2>/dev/null || true
   rm -f "$tmp"
 }
@@ -28,7 +28,7 @@ chosen_name_del() {
   [ -r "$DRIVE_NAMES_FILE" ] || return 0
   local tmp; tmp=$(mktemp) || return 0
   awk -v k="$1" '{ key = $0; sub(/=.*/, "", key); gsub(/^[ \t]+|[ \t]+$/, "", key) } !(key == k && $0 !~ /^[ \t]*#/)' "$DRIVE_NAMES_FILE" >"$tmp"
-  cat "$tmp" >"$DRIVE_NAMES_FILE" || true
+  replace_file "$DRIVE_NAMES_FILE" <"$tmp" || true
   rm -f "$tmp"
 }
 

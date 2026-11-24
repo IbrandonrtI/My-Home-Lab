@@ -109,6 +109,42 @@ rsync_bytes_run() {
   return "${rc:-1}"
 }
 
+# Shared copy checks. FROM and TO end in a slash, the rest are rsync options (for example --exclude, or --files-from).
+# copy_check: list what a copy would still have to transfer, without writing anything. A file that is newer on TO is not pending
+# (--update), so a change a service made during the copy is never replaced by the older copy. Returns 0 when nothing is pending,
+# 1 when something is (the lines are printed), 2 when the check itself failed.
+copy_check() {
+  local out rc=0
+  out=$(LC_ALL=C rsync -aHn --numeric-ids --update --itemize-changes "${@:3}" "$1" "$2" 2>/dev/null) || rc=$?
+  if [ "$rc" -ne 0 ] && [ "$rc" -ne 24 ]; then return 2; fi
+  out=$(grep -E '^[<>ch][fLDS]' <<<"$out")
+  [ -z "$out" ] && return 0
+  printf '%s\n' "$out"
+  return 1
+}
+
+# copy_conflicts: list files that exist on both sides but are different. A copy would overwrite the one on TO.
+# Returns 0 and prints nothing when there is no conflict, 1 and the file names when there are, 2 when the check failed.
+copy_conflicts() {
+  local out rc=0
+  out=$(LC_ALL=C rsync -aHn --numeric-ids --itemize-changes "${@:3}" "$1" "$2" 2>/dev/null) || rc=$?
+  if [ "$rc" -ne 0 ] && [ "$rc" -ne 24 ]; then return 2; fi
+  out=$(grep -E '^[<>c][fLDS]' <<<"$out" | grep -Ev '^[<>c][fLDS]\+{9} ' | sed -E 's/^[^ ]+ //')
+  [ -z "$out" ] && return 0
+  printf '%s\n' "$out"
+  return 1
+}
+
+# copy_conflict_stop NAME: tell the person which files are in the way. Nothing has been copied at this point.
+copy_conflict_stop() {
+  local to=$1 list=$2 n
+  n=$(wc -l <<<"$list" | tr -d ' ')
+  warn "$to already has $n file(s) at the same path with different content. Copying would overwrite them, so nothing was copied or changed."
+  head -10 <<<"$list" | sed 's/^/  /'
+  [ "$n" -gt 10 ] && say "  ... and $((n - 10)) more."
+  say "Decide which version to keep and delete the other one, then run this again."
+}
+
 abort_requested() {
   [ "$ABORT_IGNORE" = 1 ] && return 1
   [ -e "$ABORT_FILE" ]

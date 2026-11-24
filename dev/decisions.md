@@ -47,14 +47,33 @@ Choices that are costly to undo, or easy to undo by mistake, and the reason for 
 **Why.** It can change files and reach the drives tool, so it must not be open to the home network.
 **Source.** `scripts/homelab-panel`, the opening description, and `docs/homepage.md`.
 
-## Four files are built from pieces
+## Seven files are built from pieces
 
-**Decision.** `installer/homelab-setup`, `scripts/drives`, `scripts/homelab` and `scripts/homelab-update` are generated from `src/` by `tools/build.py`. The GitHub Action fails when a built file differs from its pieces.
-**Why.** Not recorded. The effect is that each of these large files is edited as small numbered pieces.
+**Decision.** `installer/homelab-setup`, `scripts/drives`, `scripts/homelab`, `scripts/homelab-update`, `scripts/homelab-panel`, `panel/ui/app.js` and `homepage-config/custom.js` are generated from `src/` by `tools/build.py`. The GitHub Action fails when a built file differs from its pieces. The built files stay in the repository, so uploading and installing work as before.
+**Why.** The first four were already large. The panel script (about 5,000 lines) and the two page scripts (3,000 and 1,750 lines) became too long to read in one piece, so they were split at the same kind of boundaries: whole functions, never the inside of one. The pieces of the two page scripts are not complete scripts on their own (a piece can start inside the wrapper function that the next piece finishes), so only the built file is run or checked.
 **Source.** `tools/build.py`, `.github/workflows/checks.yml`.
 
 ## Some images follow a moving tag
 
 **Decision.** Most images are pinned to an exact version. These are not: Downtify and MeTube (`latest`), Immich (`release`), Netdata (`stable`), Portainer (`latest`, set by the installer), Redis in the Nextcloud stack (`alpine`).
 **Why.** Not recorded. The pinned ones follow the rule in the entry on Jellyfin. `homelab-update` compares image digests, so it still notices a newer image behind a moving tag.
-**Consequence.** `docs/maintenance.md` says the stack files pin every image. That is not exactly true for the images above. `tests/test_repo_consistency.py` fails when a new image without a fixed version is added, unless it is listed on purpose.
+**Consequence.** `docs/maintenance.md` says which images follow a moving name. `tests/test_repo_consistency.py` fails when a new image without a fixed version is added, unless it is listed on purpose.
+
+## Navidrome allows being shown inside the dashboard
+
+**Decision.** `stacks/navidrome.yaml` sets `ND_HTTPHEADERS_FRAMEOPTIONS: "ALLOWALL"`.
+**Why.** The Navidrome card on the dashboard shows Navidrome in a frame. Navidrome refuses that by default, and its setting has no value that means "only this dashboard", so the frame would stay blank.
+**Consequence.** Any page can show Navidrome in a frame. Navidrome is reachable only on the private network, and a page that frames it still needs the Navidrome login. Tightening it needs a reverse proxy that sets a `Content-Security-Policy: frame-ancestors` header for the dashboard address only.
+**Source.** `stacks/navidrome.yaml`.
+
+## A copy between drives never replaces a different file
+
+**Decision.** The copies in the drives tool that are followed by removing the originals share two checks, `copy_conflicts` and `copy_check`. Drain, balance and adding a drive that finds files in the plain pool folder stop before copying when a file exists on both sides with different content, and name it. Their copies and final checks use `--update`, so a file that a service changed during the copy is not replaced by the older copy, and the final check counts everything still waiting, including links. Restore uses `copy_check` for its final check. Moving files saved on the boot drive keeps the pool's version and reports the difference.
+**Why.** There were six separate copy-and-check routines of different strictness. Tests on loop devices showed that two of them could replace newer data with older data (a drain or balance while a service wrote to the pool) and that adding a drive could delete a boot-drive file that differed from the file on the drive.
+**Source.** `src/drives/10_helpers.sh`, `tests/drives/`.
+
+## The drives tool is tested on loop devices
+
+**Decision.** `tests/drives/` builds real ext4 drives out of files (loop devices) and a real mergerfs pool in a temporary folder, using the tool's own test mode, and runs the flows on them. `tests/test_drives_loop.py` runs every scenario when it can (root, loop devices, FUSE, mergerfs, rsync, parted) and skips otherwise.
+**Why.** The tool moves people's files and could only be tried on a real server.
+**Source.** `tests/drives/lab.sh`.

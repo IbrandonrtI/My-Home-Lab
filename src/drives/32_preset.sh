@@ -93,7 +93,7 @@ disk_size_bytes() { lsblk -dnbo SIZE "$1" 2>/dev/null | head -1 | tr -d ' '; }
 
 parity_mounts() { fstab_active | awk -v d="$DISKS_DIR/$PARITY_PREFIX" '$2 ~ "^" d "[0-9]+$" {print $2}' | sort -V; }
 preset_current() { [ -r "$PRESET_FILE" ] && awk -F'|' 'NR == 1 {print $1}' "$PRESET_FILE"; return 0; }
-preset_record() { printf '%s|%s|%s\n' "$1" "$(date +%F)" "$2" >"$PRESET_FILE"; }
+preset_record() { printf '%s|%s|%s\n' "$1" "$(date +%F)" "$2" | replace_file "$PRESET_FILE"; }
 snapraid_active() { case "$(preset_current)" in snapraid1|snapraid2) return 0 ;; *) return 1 ;; esac; }
 
 # Write the SnapRAID settings: the protection drives, the content files and the data drives.
@@ -113,23 +113,24 @@ snapraid_conf_write() {
     done
     for mp in $(branches_of main); do
       is_boot_section "$mp" && continue
-      echo "data $(basename "$mp" | tr 'A-Z' 'a-z') $mp"
+      echo "data $(basename "$mp" | tr '[:upper:]' '[:lower:]') $mp"
     done
     echo "exclude /lost+found/"
     echo "exclude /tmp/"
     echo "exclude *.unrecoverable"
     echo "exclude .Trash-*/"
-  } >"$SNAPRAID_CONF"
+  } | replace_file "$SNAPRAID_CONF"
 }
 
 snapraid_cron_write() {
   mkdir -p "$(dirname "$SNAPRAID_CRON")" 2>/dev/null || true
-  cat >"$SNAPRAID_CRON" <<EOF
+  replace_file "$SNAPRAID_CRON" <<EOF
 # SnapRAID (written by 'sudo drives preset'): update the protection data every night at 04:00,
 # and check a part of the files on the 1st of every month. The results are in $SNAPRAID_LOG
+# The nightly update stops, and the bell says so, when more than $SNAPRAID_DELETE_LIMIT files were deleted since the last one.
 SHELL=/bin/sh
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-0 4 * * * root snapraid -c $SNAPRAID_CONF sync -q >>$SNAPRAID_LOG 2>&1
+0 4 * * * root $SNAPRAID_NIGHTLY >>$SNAPRAID_LOG 2>&1
 0 5 1 * * root snapraid -c $SNAPRAID_CONF scrub -p 5 -o 30 -q >>$SNAPRAID_LOG 2>&1
 EOF
   chmod 644 "$SNAPRAID_CRON" 2>/dev/null || true
@@ -139,15 +140,59 @@ snapraid_forget() {
   rm -f "$SNAPRAID_CONF" "$SNAPRAID_CRON" "$PRESET_FILE"
 }
 
+# snapraid_result RESULT [DETAIL...]: remember how the last update went. The bell reads this file: "ok" clears it, anything else is shown.
+snapraid_result() {
+  local result=$1; shift
+  printf '%s|%s|%s\n' "$(date +%s)" "$result" "$*" | replace_file "$SNAPRAID_STATUS" || true
+}
+
+# The nightly update. SnapRAID cannot tell a deleted file from a lost drive, so before it updates the protection data it counts what was deleted since the last update. Above the limit it does nothing, because the update would make those files unrecoverable. Run `sudo drives snapraid sync` yourself once you know the deletions are meant.
+snapraid_nightly() {
+  local out rc=0 removed
+  snapraid_active || return 0
+  command -v snapraid >/dev/null 2>&1 || { snapraid_result failed "SnapRAID is not installed"; return 1; }
+  out=$(snapraid -c "$SNAPRAID_CONF" diff 2>&1) || rc=$?
+  if [ "$rc" -ne 0 ] && [ "$rc" -ne 2 ]; then
+    snapraid_result failed "Could not compare the drives with the protection data (exit $rc)"
+    note "SnapRAID could not look at the drives (exit $rc). Nothing was changed."
+    return 1
+  fi
+  removed=$(printf '%s\n' "$out" | awk '$2 == "removed" && $1 ~ /^[0-9]+$/ {print $1; exit}')
+  if ! [[ "${removed:-}" =~ ^[0-9]+$ ]]; then
+    snapraid_result failed "Could not read the number of deleted files"
+    note "SnapRAID's answer could not be read. Nothing was changed."
+    return 1
+  fi
+  if [ "$removed" -gt "$SNAPRAID_DELETE_LIMIT" ]; then
+    snapraid_result aborted "$removed files were deleted since the last update, and the limit is $SNAPRAID_DELETE_LIMIT"
+    note "SnapRAID update stopped: $removed files were deleted since the last one (the limit is $SNAPRAID_DELETE_LIMIT). If that is right, run:  sudo drives snapraid sync"
+    log "snapraid nightly stopped: $removed removed, limit $SNAPRAID_DELETE_LIMIT"
+    return 3
+  fi
+  if snapraid -c "$SNAPRAID_CONF" sync -q; then snapraid_result ok "$removed files deleted since the last update"; return 0; fi
+  rc=$?
+  snapraid_result failed "The update stopped with an error (exit $rc)"
+  return "$rc"
+}
+
 snapraid_flow() {
-  local what=${1:-status}
+  local what=${1:-status} rc=0
   case "$what" in
-    status|diff|sync|scrub) ;;
-    *) note "Unknown SnapRAID action: $what"; note "Use one of: status (is the parity up to date?), diff (what changed since the last sync), sync (update the parity now), scrub (check part of the files)."; return 1 ;;
+    status|diff|sync|scrub|nightly|schedule) ;;
+    *) note "Unknown SnapRAID action: $what"; note "Use one of: status (is the parity up to date?), diff (what changed since the last sync), sync (update the parity now), scrub (check part of the files), schedule (write the nightly schedule again)."; return 1 ;;
   esac
+  [ "$what" = nightly ] && { snapraid_nightly; return $?; }
+  if [ "$what" = schedule ]; then
+    snapraid_active || { note "There is no SnapRAID setup. Build one with:  sudo drives preset snapraid1"; return 1; }
+    dry_gate "Write the nightly SnapRAID schedule to $SNAPRAID_CRON" && return 0
+    snapraid_cron_write && say "The nightly schedule is written. The update now stops by itself when more than $SNAPRAID_DELETE_LIMIT files were deleted since the last one."
+    return $?
+  fi
   snapraid_active || { note "There is no SnapRAID setup. Build one with:  sudo drives preset snapraid1"; return 1; }
   command -v snapraid >/dev/null 2>&1 || { note "SnapRAID is not installed. Install it with:  sudo apt install -y snapraid"; return 1; }
   dry_gate "Run:  snapraid -c $SNAPRAID_CONF $what" && return 0
-  snapraid -c "$SNAPRAID_CONF" "$what"
+  snapraid -c "$SNAPRAID_CONF" "$what" || rc=$?
+  [ "$what" = sync ] && [ "$rc" -eq 0 ] && snapraid_result ok "Updated by hand"
+  return "$rc"
 }
 

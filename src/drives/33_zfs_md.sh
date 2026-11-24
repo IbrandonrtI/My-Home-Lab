@@ -47,7 +47,7 @@ array_health_text() {
 zfs_scrub_cron_write() {
   [ -e "$ZFS_SYSTEM_SCRUB" ] && return 0
   mkdir -p "$(dirname "$ZFS_SCRUB_CRON")" 2>/dev/null || true
-  printf '# ZFS (written by '"'"'sudo drives preset'"'"'): check all the data of the pool on the 1st of every month at 03:00.\n0 3 1 * * root zpool scrub %s\n' "$ZFS_POOL_NAME" >"$ZFS_SCRUB_CRON"
+  printf '# ZFS (written by '"'"'sudo drives preset'"'"'): check all the data of the pool on the 1st of every month at 03:00.\n0 3 1 * * root zpool scrub %s\n' "$ZFS_POOL_NAME" | replace_file "$ZFS_SCRUB_CRON"
   chmod 644 "$ZFS_SCRUB_CRON" 2>/dev/null || true
 }
 
@@ -112,15 +112,15 @@ zfs_build() {
 }
 
 md_conf_forget() {
-  [ -w "$MDADM_CONF" ] && sed -i "/^ARRAY .*$MD_NAME/d" "$MDADM_CONF"
+  [ -w "$MDADM_CONF" ] && { grep -v "^ARRAY .*$MD_NAME" "$MDADM_CONF"; true; } | replace_file "$MDADM_CONF"
   return 0
 }
 md_conf_write() {
   mkdir -p "$(dirname "$MDADM_CONF")"; touch "$MDADM_CONF"
   md_conf_forget
-  mdadm --detail --scan "$MD_DEVICE" >>"$MDADM_CONF" 2>/dev/null || true
+  { cat "$MDADM_CONF"; mdadm --detail --scan "$MD_DEVICE" 2>/dev/null; true; } | replace_file "$MDADM_CONF" || true
 }
-crypttab_forget() { [ -w "$CRYPTTAB" ] && sed -i "/^$MD_CRYPT /d" "$CRYPTTAB"; return 0; }
+crypttab_forget() { [ -w "$CRYPTTAB" ] && { grep -v "^$MD_CRYPT " "$CRYPTTAB"; true; } | replace_file "$CRYPTTAB"; return 0; }
 md_undo() {
   local m
   if command -v cryptsetup >/dev/null 2>&1; then cryptsetup close "$MD_CRYPT" >/dev/null 2>&1 || true; fi
@@ -152,7 +152,7 @@ md_build() {
   if [ "$enc" = 1 ]; then
     [ -n "$luks" ] || { md_undo "$@"; warn "Could not read the UUID of the encrypted array."; return 1; }
     mkdir -p "$(dirname "$CRYPTTAB")"; touch "$CRYPTTAB"; crypttab_forget
-    printf '%s UUID=%s %s luks,nofail\n' "$MD_CRYPT" "$luks" "$key" >>"$CRYPTTAB"
+    { cat "$CRYPTTAB"; printf '%s UUID=%s %s luks,nofail\n' "$MD_CRYPT" "$luks" "$key"; } | replace_file "$CRYPTTAB"
   fi
   fstab_snapshot
   fstab_add "UUID=$uuid  $mnt  ext4  $opts  0  2"
@@ -165,7 +165,7 @@ md_build() {
 
 preset_record_add() {
   local tmp; tmp=$(mktemp)
-  awk -F'|' -v OFS='|' -v t="$1" 'NR == 1 {$3 = $3 " " t} {print}' "$PRESET_FILE" >"$tmp" && cat "$tmp" >"$PRESET_FILE"
+  awk -F'|' -v OFS='|' -v t="$1" 'NR == 1 {$3 = $3 " " t} {print}' "$PRESET_FILE" >"$tmp" && replace_file "$PRESET_FILE" <"$tmp"
   rm -f "$tmp"
 }
 array_can_spare() { case "$1" in zfs-mirror|zfs-raidz1|zfs-raidz2|zfs-raidz3|md-raid1|md-raid5|md-raid6|md-raid10) return 0 ;; *) return 1 ;; esac; }
@@ -353,10 +353,9 @@ rest_drives() {
 }
 
 # preset_flow ID: build a ready-made setup (single, mirror, RAID, ZFS or SnapRAID) on empty drives.
-preset_flow() {
-  local id d i n=0 usable total=0 mp label par s hint smallest biggest enc=0 spare_dev="" cache_dev="" key_path="" bk_dev="" used_b kept_n=0 force migrate=0 main_used=0 main_need=0
-  local -a devs=() sizes=() order=() main_devs=() par_devs=() ids=() rest=() erase_list=()
-  local quick=0
+# The steps of `preset_flow`. Each runs inside it and uses its variables (bash lets a called function see the caller's local variables).
+# preset_preflight: is the setup known, are the tools there, may a new setup be built on the current state of the pools?
+preset_preflight() {
   id=$(preset_alias "${1:-}")
   if ! preset_known "$id"; then
     note "There is no setup called '${1:-}'. The setups are: $PRESET_IDS"
@@ -413,6 +412,11 @@ preset_flow() {
     [ "$id" = mirror ] && { pool_can_grow backup "these drives" || return 1; }
   fi
 
+  return 0
+}
+
+# preset_pick: choose the drives, split them into their roles and check that the files will fit.
+preset_pick() {
   mapfile -t devs < <(preset_pick_drives "$id") || return 1
   [ ${#devs[@]} -gt 0 ] || return 1
   for d in "${devs[@]}"; do
@@ -471,6 +475,11 @@ preset_flow() {
     fi
   fi
 
+  return 0
+}
+
+# preset_extras: hot spare, SSD cache and encryption for the array setups, then the list of drives that will be erased.
+preset_extras() {
   if preset_is_array "$id"; then
     mapfile -t rest < <(rest_drives "${devs[@]}")
     if [ "$WANT_SPARE" = 1 ] && ! array_can_spare "$id"; then note "$(preset_title "$id") has no redundancy for a spare to take over, so a hot spare would have no effect. Leave out --spare."; return 1; fi
@@ -509,6 +518,11 @@ preset_flow() {
   [ -z "$spare_dev" ] || refuse_unsafe_disk "$spare_dev"
   [ -z "$cache_dev" ] || refuse_unsafe_disk "$cache_dev"
 
+  return 0
+}
+
+# preset_show: print what will be built and ask for the confirmations.
+preset_show() {
   say ""
   say "Setup: $(preset_title "$id")"
   say "$(preset_blurb "$id")"
@@ -582,70 +596,77 @@ preset_flow() {
     typed_enter "$id" "Press Enter to continue with this setup, or type another setup name" || { say "Cancelled. Nothing was changed."; return 1; }
     [ ${#erase_list[@]} -eq 0 ] || typed "ERASE" "Type ERASE in capital letters to confirm: " || { say "Cancelled. Nothing was changed."; return 1; }
   fi
-  if preset_is_array "$id"; then
-    pre_change "Erase the ${#erase_list[@]} drives and build the $(preset_title "$id") array on them." \
-               "$([ "$migrate" = 1 ] && echo "Stop the containers that use the Main pool while its files are copied into the new array, check the copy, then let the array take over $MAIN_POOL and release the old Main drives (their files stay)." || echo "Stop the containers that use the Main pool for a minute.")" \
-               "$([ "$(preset_kind "$id")" = zfs ] && echo "Create the ZFS pool '$ZFS_POOL_NAME'$([ "$enc" = 1 ] && echo ", encrypted with a new key file,") and mount it at $MAIN_POOL." || echo "Create the RAID array$([ "$enc" = 1 ] && echo ", encrypt it with a new key file,"), format it and mount it at $MAIN_POOL (and write it into fstab and mdadm.conf).")" \
-               "$([ -n "$spare_dev$cache_dev" ] && echo "Add the $([ -n "$spare_dev" ] && echo "hot spare")$([ -n "$spare_dev" ] && [ -n "$cache_dev" ] && echo " and the ")$([ -n "$cache_dev" ] && echo "read cache").")" \
-               "Start the containers again." && return 0
-    PRESET_TOUCHED=1
-    PROG_ALL=(); for d in "${devs[@]}"; do PROG_ALL+=("$(basename "$d")"); done
-    progress 3 "Getting ready"
-    for d in "${devs[@]}"; do refuse_unsafe_disk "$d"; ids+=("$(disk_stable_name "$d")"); done
-    stop_containers "$MAIN_POOL"
-    progress 8 "Building the new setup"
-    [ "$migrate" != 1 ] || ARRAY_MOUNT=$MIGRATE_DIR
-    if [ "$(preset_kind "$id")" = zfs ]; then
-      zfs_build "$id" "$enc" "${ids[@]}" || { ARRAY_MOUNT=""; start_containers; warn "The ZFS pool could not be created. Look at the messages above.$(hint " See: sudo drives status" "")"; return 1; }
-    else
-      md_build "$id" "$enc" "${ids[@]}" || { ARRAY_MOUNT=""; start_containers; warn "The RAID array could not be built. Look at the messages above.$(hint " See: sudo drives status" "")"; return 1; }
-    fi
-    ARRAY_MOUNT=""
-    progress 18 "New setup is ready"
-    if [ "$migrate" = 1 ]; then
-      local mig_ok=0
-      MIGRATE_STOPPED=0
-      if abort_requested; then MIGRATE_STOPPED=1
-      elif migrate_copy; then progress 95 "Switching over"; migrate_switch "$id" && mig_ok=1
-      fi
-      if [ "$mig_ok" != 1 ]; then
-        migrate_discard "$id" "${ids[@]}"
-        PROG_ALL=()
-        start_containers
-        if [ "$MIGRATE_STOPPED" = 1 ]; then
-          ABORTED=1
-          say "Stopped. Nothing was changed: the Main pool is as it was and its files are untouched. The new setup was removed again and its drives are empty."
-          return 4
-        fi
-        warn "The move to the new setup did not finish. The Main pool is as it was and its files are untouched. The new setup was removed again and its drives are empty."
-        return 1
-      fi
-    fi
-    PROG_ALL=()
-    preset_record "$id" "${ids[*]}$([ "$enc" = 1 ] && echo " encrypted")"
-    if [ -n "$spare_dev" ]; then
-      d=$(disk_stable_name "$spare_dev")
-      if array_add_spare "$d"; then preset_record_add "spare=$d"; say "Hot spare added: $(disk_base_name "$spare_dev")."
-      else warn "The hot spare could not be added. The array works without it. Add it later with:  sudo drives spare"; fi
-    fi
-    if [ -n "$cache_dev" ]; then
-      d=$(disk_stable_name "$cache_dev")
-      if array_add_cache "$d"; then preset_record_add "cache=$d"; say "Read cache added: $(disk_base_name "$cache_dev")."
-      else warn "The read cache could not be added. The array works without it. Add it later with:  sudo drives cache"; fi
-    fi
-    array_service_folders
-    start_containers
-    log "preset $id built on ${#devs[@]} drives: ${ids[*]}"
-    say ""
-    say "Done. $(preset_title "$id") is ready at $MAIN_POOL: about $(pretty_size "$usable") usable."
-    [ "$migrate" != 1 ] || say "The files of the old Main pool were copied over. Its drives are now spare drives. Their files remain on them until they are used or erased."
-    [ "$enc" != 1 ] || say "Important: copy the key file $key_path to a safe place now (for example a USB stick). Without it, the files cannot be read."
-    case "$id" in
-      md-*) say "Background build progress:  cat /proc/mdstat      Health:  sudo drives status" ;;
-      zfs-*) say "Health:  sudo drives status      Details:  zpool status $ZFS_POOL_NAME" ;;
-    esac
-    return 0
+  return 0
+}
+
+# preset_build_array: build a ZFS or RAID array, copy the old Main pool into it when there is one, and let it take over.
+preset_build_array() {
+  pre_change "Erase the ${#erase_list[@]} drives and build the $(preset_title "$id") array on them." \
+             "$([ "$migrate" = 1 ] && echo "Stop the containers that use the Main pool while its files are copied into the new array, check the copy, then let the array take over $MAIN_POOL and release the old Main drives (their files stay)." || echo "Stop the containers that use the Main pool for a minute.")" \
+             "$([ "$(preset_kind "$id")" = zfs ] && echo "Create the ZFS pool '$ZFS_POOL_NAME'$([ "$enc" = 1 ] && echo ", encrypted with a new key file,") and mount it at $MAIN_POOL." || echo "Create the RAID array$([ "$enc" = 1 ] && echo ", encrypt it with a new key file,"), format it and mount it at $MAIN_POOL (and write it into fstab and mdadm.conf).")" \
+             "$([ -n "$spare_dev$cache_dev" ] && echo "Add the $([ -n "$spare_dev" ] && echo "hot spare")$([ -n "$spare_dev" ] && [ -n "$cache_dev" ] && echo " and the ")$([ -n "$cache_dev" ] && echo "read cache").")" \
+             "Start the containers again." && return 0
+  PRESET_TOUCHED=1
+  PROG_ALL=(); for d in "${devs[@]}"; do PROG_ALL+=("$(basename "$d")"); done
+  progress 3 "Getting ready"
+  for d in "${devs[@]}"; do refuse_unsafe_disk "$d"; ids+=("$(disk_stable_name "$d")"); done
+  stop_containers "$MAIN_POOL"
+  progress 8 "Building the new setup"
+  [ "$migrate" != 1 ] || ARRAY_MOUNT=$MIGRATE_DIR
+  if [ "$(preset_kind "$id")" = zfs ]; then
+    zfs_build "$id" "$enc" "${ids[@]}" || { ARRAY_MOUNT=""; start_containers; warn "The ZFS pool could not be created. Look at the messages above.$(hint " See: sudo drives status" "")"; return 1; }
+  else
+    md_build "$id" "$enc" "${ids[@]}" || { ARRAY_MOUNT=""; start_containers; warn "The RAID array could not be built. Look at the messages above.$(hint " See: sudo drives status" "")"; return 1; }
   fi
+  ARRAY_MOUNT=""
+  progress 18 "New setup is ready"
+  if [ "$migrate" = 1 ]; then
+    local mig_ok=0
+    MIGRATE_STOPPED=0
+    if abort_requested; then MIGRATE_STOPPED=1
+    elif migrate_copy; then progress 95 "Switching over"; migrate_switch "$id" && mig_ok=1
+    fi
+    if [ "$mig_ok" != 1 ]; then
+      migrate_discard "$id" "${ids[@]}"
+      PROG_ALL=()
+      start_containers
+      if [ "$MIGRATE_STOPPED" = 1 ]; then
+        ABORTED=1
+        say "Stopped. Nothing was changed: the Main pool is as it was and its files are untouched. The new setup was removed again and its drives are empty."
+        return 4
+      fi
+      warn "The move to the new setup did not finish. The Main pool is as it was and its files are untouched. The new setup was removed again and its drives are empty."
+      return 1
+    fi
+  fi
+  PROG_ALL=()
+  preset_record "$id" "${ids[*]}$([ "$enc" = 1 ] && echo " encrypted")"
+  if [ -n "$spare_dev" ]; then
+    d=$(disk_stable_name "$spare_dev")
+    if array_add_spare "$d"; then preset_record_add "spare=$d"; say "Hot spare added: $(disk_base_name "$spare_dev")."
+    else warn "The hot spare could not be added. The array works without it. Add it later with:  sudo drives spare"; fi
+  fi
+  if [ -n "$cache_dev" ]; then
+    d=$(disk_stable_name "$cache_dev")
+    if array_add_cache "$d"; then preset_record_add "cache=$d"; say "Read cache added: $(disk_base_name "$cache_dev")."
+    else warn "The read cache could not be added. The array works without it. Add it later with:  sudo drives cache"; fi
+  fi
+  array_service_folders
+  start_containers
+  log "preset $id built on ${#devs[@]} drives: ${ids[*]}"
+  say ""
+  say "Done. $(preset_title "$id") is ready at $MAIN_POOL: about $(pretty_size "$usable") usable."
+  [ "$migrate" != 1 ] || say "The files of the old Main pool were copied over. Its drives are now spare drives. Their files remain on them until they are used or erased."
+  [ "$enc" != 1 ] || say "Important: copy the key file $key_path to a safe place now (for example a USB stick). Without it, the files cannot be read."
+  case "$id" in
+    md-*) say "Background build progress:  cat /proc/mdstat      Health:  sudo drives status" ;;
+    zfs-*) say "Health:  sudo drives status      Details:  zpool status $ZFS_POOL_NAME" ;;
+  esac
+  return 0
+}
+
+# preset_build_pools: build the plain pool, mirror and SnapRAID setups one drive at a time.
+preset_build_pools() {
   PRESET_TOUCHED=1
   pre_change "$([ "$kept_n" -gt 0 ] && echo "Format ${#erase_list[@]} drive(s) and keep the files on the other $kept_n." || echo "Format the ${#devs[@]} drives.")" \
              "Stop the containers that use the storage while each drive is added (once per drive), then start them again." \
@@ -683,6 +704,20 @@ preset_flow() {
   esac
   return 0
 }
+
+# Build one of the ready-made setups (`sudo drives preset ID`). The work is split into the steps above.
+preset_flow() {
+  local id d i n=0 usable total=0 mp label par s hint smallest biggest enc=0 spare_dev="" cache_dev="" key_path="" bk_dev="" used_b kept_n=0 force migrate=0 main_used=0 main_need=0
+  local -a devs=() sizes=() order=() main_devs=() par_devs=() ids=() rest=() erase_list=()
+  local quick=0
+  preset_preflight "$@" || return 1
+  preset_pick || return 1
+  preset_extras || return 1
+  preset_show || return 1
+  if preset_is_array "$id"; then preset_build_array; return $?; fi
+  preset_build_pools
+}
+
 
 # extra_drive_flow spare|cache: add one more empty drive to the existing ZFS or RAID array.
 extra_drive_flow() {

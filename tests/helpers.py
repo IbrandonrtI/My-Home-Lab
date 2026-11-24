@@ -37,3 +37,8 @@ def panel():
     return load_script("homelab_panel", "scripts/homelab-panel",
                        {"HLP_HOME": base, "HLP_STATE": os.path.join(base, "state"), "HLP_UI": os.path.join(base, "ui"),
                         "HLP_NO_DOCKER": "1"})
+
+
+def alerts():
+    """The alerts script (it reads files and asks Docker only when its checks run)."""
+    return load_script("homelab_alerts", "scripts/homelab-alerts")

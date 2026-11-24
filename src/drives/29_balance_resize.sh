@@ -100,7 +100,7 @@ balance_main() {
   for i in "${!steps[@]}"; do
     [ "${cnt[$i]}" -gt 0 ] || continue
     say "Copying $(human "${nbytes[$i]}") from $(branch_name "${mps[${gs[$i]}]}") to $(branch_name "${mps[${rs[$i]}]}") (pass 1, services keep running)..."
-    rsync -aH --numeric-ids --from0 --files-from="${lists[$i]}" --ignore-missing-args "${mps[${gs[$i]}]}/" "${mps[${rs[$i]}]}/"
+    rsync -aH --update --numeric-ids --from0 --files-from="${lists[$i]}" --ignore-missing-args "${mps[${gs[$i]}]}/" "${mps[${rs[$i]}]}/"
     n=$?
     if [ "$n" -ne 0 ] && [ "$n" -ne 24 ]; then
       warn "Copy failed (code $n). The old copies were not removed."
@@ -116,10 +116,10 @@ balance_main() {
     while IFS= read -r -d '' rel; do
       [ -e "${mps[${gs[$i]}]}/$rel" ] || rm -f -- "${mps[${rs[$i]}]:?}/$rel"
     done <"${lists[$i]}"
-    rsync -aH --numeric-ids --from0 --files-from="${lists[$i]}" --ignore-missing-args "${mps[${gs[$i]}]}/" "${mps[${rs[$i]}]}/"
+    rsync -aH --update --numeric-ids --from0 --files-from="${lists[$i]}" --ignore-missing-args "${mps[${gs[$i]}]}/" "${mps[${rs[$i]}]}/"
     n=$?
     if [ "$n" -ne 0 ] && [ "$n" -ne 24 ]; then bad=1; break; fi
-    if rsync -aHn --numeric-ids --itemize-changes --from0 --files-from="${lists[$i]}" --ignore-missing-args "${mps[${gs[$i]}]}/" "${mps[${rs[$i]}]}/" | grep -q '^>f'; then bad=1; break; fi
+    if ! copy_check "${mps[${gs[$i]}]}/" "${mps[${rs[$i]}]}/" --from0 --files-from="${lists[$i]}" --ignore-missing-args >/dev/null; then bad=1; break; fi
   done
   if [ "$bad" = 1 ]; then
     warn "The check found files that are not copied correctly. Nothing was removed from the old drives."
@@ -154,7 +154,7 @@ balance_flow() {
 resize_flow() {
   array_guard || return 1
   need_cmds fallocate resize2fs e2fsck truncate || return 1
-  local role idx mp img pool cur used free max lower min keep gb bytes new_gb prompt shrink=0 fs_min before_files after_files before_used
+  local role idx mp img pool cur used free max lower min keep gb bytes new_bytes prompt shrink=0 fs_min before_files after_files before_used
   local -a roles=() items=()
   for role in main backup; do
     [ -n "$(boot_section_of "$role")" ] || continue
@@ -193,7 +193,7 @@ resize_flow() {
     fi
     note "Enter a number of $BOOT_UNIT_NAME, for example 100."
   done
-  new_gb=$bytes
+  new_bytes=$bytes
   if [ "$bytes" -eq "$cur" ]; then say "It already has that size. Nothing was changed."; return 0; fi
   [ "$bytes" -lt "$cur" ] && shrink=1
   if [ "$shrink" = 1 ]; then
@@ -202,10 +202,10 @@ resize_flow() {
     say "The files in it are in the backup only if the Main pool is backed up. A section of the Backup pool has no second copy."
     typed "CONTINUE" "Type CONTINUE to continue, or press Enter to cancel: " || { say "Cancelled. Nothing was changed."; return 1; }
   fi
-  yn "Change the section from $(pretty_size "$cur") to $(pretty_size "$new_gb") now? The $role containers stop for at least a minute." || { say "Cancelled. Nothing was changed."; return 1; }
+  yn "Change the section from $(pretty_size "$cur") to $(pretty_size "$new_bytes") now? The $role containers stop for at least a minute." || { say "Cancelled. Nothing was changed."; return 1; }
   pre_change "Stop the containers that use the $role pool." \
              "Unmount the $role pool and $(branch_name "$mp"), check its file system." \
-             "$([ "$shrink" = 1 ] && echo "Shrink the file system, then the file, to $(pretty_size "$new_gb")." || echo "Make the file $(pretty_size "$new_gb") big and grow the file system into it.")" \
+             "$([ "$shrink" = 1 ] && echo "Shrink the file system, then the file, to $(pretty_size "$new_bytes")." || echo "Make the file $(pretty_size "$new_bytes") big and grow the file system into it.")" \
              "Mount everything again, compare the files, and start the containers." && return 0
   before_files=$(find "$mp" -xdev -type f 2>/dev/null | wc -l); before_used=$used
   stop_containers "$pool"
@@ -217,15 +217,15 @@ resize_flow() {
   e2fsck -fp "$img" >/dev/null 2>&1 || true
   if [ "$shrink" = 1 ]; then
     fs_min=$(resize2fs -P "$img" 2>/dev/null | awk -F: '/minimum size/ {gsub(/ /, "", $2); print $2}')
-    if [[ "$fs_min" =~ ^[0-9]+$ ]] && [ $(( fs_min * $(dumpe2fs -h "$img" 2>/dev/null | awk -F: '/^Block size/ {gsub(/ /, "", $2); print $2}') )) -gt "$new_gb" ]; then
-      back; die "The files do not fit into $(pretty_size "$new_gb"). Nothing was changed."
+    if [[ "$fs_min" =~ ^[0-9]+$ ]] && [ $(( fs_min * $(dumpe2fs -h "$img" 2>/dev/null | awk -F: '/^Block size/ {gsub(/ /, "", $2); print $2}') )) -gt "$new_bytes" ]; then
+      back; die "The files do not fit into $(pretty_size "$new_bytes"). Nothing was changed."
     fi
-    if ! resize2fs "$img" "$(( new_gb / 1024 ))K" >/dev/null 2>&1; then
+    if ! resize2fs "$img" "$(( new_bytes / 1024 ))K" >/dev/null 2>&1; then
       back; die "Shrinking the file system failed. Check it with: sudo drives check --full"
     fi
-    truncate -s "$new_gb" "$img"
+    truncate -s "$new_bytes" "$img"
   else
-    if ! fallocate -l "$new_gb" "$img" 2>/dev/null; then back; die "Could not reserve $(pretty_size "$new_gb") on the boot drive. Nothing was changed."; fi
+    if ! fallocate -l "$new_bytes" "$img" 2>/dev/null; then back; die "Could not reserve $(pretty_size "$new_bytes") on the boot drive. Nothing was changed."; fi
     if ! resize2fs "$img" >/dev/null 2>&1; then truncate -s "$cur" "$img"; back; die "Growing the file system failed. The section has its old size again."; fi
   fi
   e2fsck -fn "$img" >/dev/null 2>&1 || warn "The check after the change reports problems. Run: sudo drives check --full"
@@ -234,7 +234,7 @@ resize_flow() {
   after_files=$(find "$mp" -xdev -type f 2>/dev/null | wc -l)
   start_containers
   name_store_put "$(basename "$mp")" "$(pretty_size "$(stat -c %s "$img")") boot drive section"
-  log "resized $img: $cur -> $new_gb bytes (files $before_files -> $after_files)"
+  log "resized $img: $cur -> $new_bytes bytes (files $before_files -> $after_files)"
   say ""
   if [ "$before_files" != "$after_files" ]; then
     warn "The number of files changed ($before_files before, $after_files after). Check the section: sudo drives check --full"

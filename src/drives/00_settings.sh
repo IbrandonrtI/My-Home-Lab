@@ -68,6 +68,11 @@ else
   MAPPER_DIR="${MAPPER_DIR:-/dev/mapper}"
   ZFS_KEY_UNIT="${ZFS_KEY_UNIT:-/etc/systemd/system/homelab-zfs-key.service}"
 fi
+DRIVES_LOCK="${DRIVES_LOCK:-/var/lock/homelab-drives.lock}"
+[ "$TEST_MODE" = 1 ] && DRIVES_LOCK="${DRIVES_LOCK_TEST:-$STATE_DIR/drives.lock}"
+SNAPRAID_DELETE_LIMIT="${SNAPRAID_DELETE_LIMIT:-40}"
+SNAPRAID_STATUS="${SNAPRAID_STATUS:-$STATE_DIR/snapraid-last}"
+SNAPRAID_NIGHTLY="${SNAPRAID_NIGHTLY:-/usr/local/sbin/drives snapraid nightly}"
 ZFS_POOL_NAME="${ZFS_POOL_NAME:-tank}"
 MD_NAME="${MD_NAME:-homelab}"
 MD_DEVICE="${DRIVES_MD_DEVICE:-/dev/md/$MD_NAME}"
@@ -146,4 +151,25 @@ NAME_CACHE=""
 PENDING_NOTE=""
 FSTAB_SNAP=""
 HOLD_HINT=""
+
+# replace_file TARGET: writes standard input to TARGET without ever leaving it half written. The new text goes to a temporary file in the same folder, is flushed to disk, and is then renamed over the target, so a crash or power loss keeps either the old file or the new one. The target keeps its owner and permissions. A link is followed, so the file it points to is replaced.
+replace_file() {
+  local target tmp dir
+  target=$(readlink -f -- "$1" 2>/dev/null) || target=$1
+  [ -n "$target" ] || target=$1
+  dir=$(dirname "$target")
+  mkdir -p "$dir" 2>/dev/null || true
+  tmp=$(mktemp "$dir/.${target##*/}.XXXXXX") || return 1
+  if ! cat >"$tmp"; then rm -f "$tmp"; return 1; fi
+  if [ -e "$target" ]; then
+    chmod --reference="$target" "$tmp" 2>/dev/null || chmod 644 "$tmp" 2>/dev/null || true
+    chown --reference="$target" "$tmp" 2>/dev/null || true
+  else
+    chmod 644 "$tmp" 2>/dev/null || true
+  fi
+  sync "$tmp" 2>/dev/null || sync 2>/dev/null || true
+  if ! mv -f -- "$tmp" "$target"; then rm -f "$tmp"; return 1; fi
+  sync "$dir" 2>/dev/null || true
+  return 0
+}
 

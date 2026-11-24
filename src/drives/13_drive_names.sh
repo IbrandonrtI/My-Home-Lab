@@ -91,7 +91,7 @@ remember_name() {
   mkdir -p "$(dirname "$DRIVE_MEMORY")" 2>/dev/null || return 1
   tmp=$(mktemp) || return 1
   { [ -r "$DRIVE_MEMORY" ] && awk -F'|' -v k="$k" '$1 != k' "$DRIVE_MEMORY"; printf '%s|%s\n' "$k" "$2"; } >"$tmp" 2>/dev/null
-  cat "$tmp" >"$DRIVE_MEMORY" 2>/dev/null || { rm -f "$tmp"; return 1; }
+  replace_file "$DRIVE_MEMORY" <"$tmp" 2>/dev/null || { rm -f "$tmp"; return 1; }
   rm -f "$tmp"
   return 0
 }
@@ -101,7 +101,7 @@ forget_name() {
   local k tmp; k=$(drive_key "$1")
   [ -n "$k" ] || return 0
   tmp=$(mktemp) || return 0
-  awk -F'|' -v k="$k" '$1 != k' "$DRIVE_MEMORY" >"$tmp" 2>/dev/null; cat "$tmp" >"$DRIVE_MEMORY" 2>/dev/null || true
+  awk -F'|' -v k="$k" '$1 != k' "$DRIVE_MEMORY" >"$tmp" 2>/dev/null; replace_file "$DRIVE_MEMORY" <"$tmp" 2>/dev/null || true
   rm -f "$tmp"
   return 0
 }
@@ -132,14 +132,14 @@ name_store_put() {
   mkdir -p "$(dirname "$NAME_STORE")" 2>/dev/null || return 0
   tmp=$(mktemp) || return 0
   { [ -r "$NAME_STORE" ] && awk -F'|' -v k="$1" '$1 != k' "$NAME_STORE"; printf '%s|%s\n' "$1" "$2"; } >"$tmp" 2>/dev/null
-  cat "$tmp" >"$NAME_STORE" 2>/dev/null || true
+  replace_file "$NAME_STORE" <"$tmp" 2>/dev/null || true
   rm -f "$tmp"
 }
 
 name_store_del() {
   [ -r "$NAME_STORE" ] || return 0
   local tmp; tmp=$(mktemp) || return 0
-  awk -F'|' -v k="$1" '$1 != k' "$NAME_STORE" >"$tmp" 2>/dev/null; cat "$tmp" >"$NAME_STORE" 2>/dev/null || true
+  awk -F'|' -v k="$1" '$1 != k' "$NAME_STORE" >"$tmp" 2>/dev/null; replace_file "$NAME_STORE" <"$tmp" 2>/dev/null || true
   rm -f "$tmp"
 }
 

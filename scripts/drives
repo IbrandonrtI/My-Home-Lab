@@ -68,6 +68,11 @@ else
   MAPPER_DIR="${MAPPER_DIR:-/dev/mapper}"
   ZFS_KEY_UNIT="${ZFS_KEY_UNIT:-/etc/systemd/system/homelab-zfs-key.service}"
 fi
+DRIVES_LOCK="${DRIVES_LOCK:-/var/lock/homelab-drives.lock}"
+[ "$TEST_MODE" = 1 ] && DRIVES_LOCK="${DRIVES_LOCK_TEST:-$STATE_DIR/drives.lock}"
+SNAPRAID_DELETE_LIMIT="${SNAPRAID_DELETE_LIMIT:-40}"
+SNAPRAID_STATUS="${SNAPRAID_STATUS:-$STATE_DIR/snapraid-last}"
+SNAPRAID_NIGHTLY="${SNAPRAID_NIGHTLY:-/usr/local/sbin/drives snapraid nightly}"
 ZFS_POOL_NAME="${ZFS_POOL_NAME:-tank}"
 MD_NAME="${MD_NAME:-homelab}"
 MD_DEVICE="${DRIVES_MD_DEVICE:-/dev/md/$MD_NAME}"
@@ -146,6 +151,27 @@ NAME_CACHE=""
 PENDING_NOTE=""
 FSTAB_SNAP=""
 HOLD_HINT=""
+
+# replace_file TARGET: writes standard input to TARGET without ever leaving it half written. The new text goes to a temporary file in the same folder, is flushed to disk, and is then renamed over the target, so a crash or power loss keeps either the old file or the new one. The target keeps its owner and permissions. A link is followed, so the file it points to is replaced.
+replace_file() {
+  local target tmp dir
+  target=$(readlink -f -- "$1" 2>/dev/null) || target=$1
+  [ -n "$target" ] || target=$1
+  dir=$(dirname "$target")
+  mkdir -p "$dir" 2>/dev/null || true
+  tmp=$(mktemp "$dir/.${target##*/}.XXXXXX") || return 1
+  if ! cat >"$tmp"; then rm -f "$tmp"; return 1; fi
+  if [ -e "$target" ]; then
+    chmod --reference="$target" "$tmp" 2>/dev/null || chmod 644 "$tmp" 2>/dev/null || true
+    chown --reference="$target" "$tmp" 2>/dev/null || true
+  else
+    chmod 644 "$tmp" 2>/dev/null || true
+  fi
+  sync "$tmp" 2>/dev/null || sync 2>/dev/null || true
+  if ! mv -f -- "$tmp" "$target"; then rm -f "$tmp"; return 1; fi
+  sync "$dir" 2>/dev/null || true
+  return 0
+}
 
 log()  { { printf '%s %s\n' "$(date '+%F %T')" "$*" >>"$LOGFILE"; } 2>/dev/null || true; }
 say()  { printf '%s\n' "$*"; }
@@ -256,6 +282,42 @@ rsync_bytes_run() {
   done
   rc=$(cat "$rcfile" 2>/dev/null || echo 1); rm -f "$rcfile"
   return "${rc:-1}"
+}
+
+# Shared copy checks. FROM and TO end in a slash, the rest are rsync options (for example --exclude, or --files-from).
+# copy_check: list what a copy would still have to transfer, without writing anything. A file that is newer on TO is not pending
+# (--update), so a change a service made during the copy is never replaced by the older copy. Returns 0 when nothing is pending,
+# 1 when something is (the lines are printed), 2 when the check itself failed.
+copy_check() {
+  local out rc=0
+  out=$(LC_ALL=C rsync -aHn --numeric-ids --update --itemize-changes "${@:3}" "$1" "$2" 2>/dev/null) || rc=$?
+  if [ "$rc" -ne 0 ] && [ "$rc" -ne 24 ]; then return 2; fi
+  out=$(grep -E '^[<>ch][fLDS]' <<<"$out")
+  [ -z "$out" ] && return 0
+  printf '%s\n' "$out"
+  return 1
+}
+
+# copy_conflicts: list files that exist on both sides but are different. A copy would overwrite the one on TO.
+# Returns 0 and prints nothing when there is no conflict, 1 and the file names when there are, 2 when the check failed.
+copy_conflicts() {
+  local out rc=0
+  out=$(LC_ALL=C rsync -aHn --numeric-ids --itemize-changes "${@:3}" "$1" "$2" 2>/dev/null) || rc=$?
+  if [ "$rc" -ne 0 ] && [ "$rc" -ne 24 ]; then return 2; fi
+  out=$(grep -E '^[<>c][fLDS]' <<<"$out" | grep -Ev '^[<>c][fLDS]\+{9} ' | sed -E 's/^[^ ]+ //')
+  [ -z "$out" ] && return 0
+  printf '%s\n' "$out"
+  return 1
+}
+
+# copy_conflict_stop NAME: tell the person which files are in the way. Nothing has been copied at this point.
+copy_conflict_stop() {
+  local to=$1 list=$2 n
+  n=$(wc -l <<<"$list" | tr -d ' ')
+  warn "$to already has $n file(s) at the same path with different content. Copying would overwrite them, so nothing was copied or changed."
+  head -10 <<<"$list" | sed 's/^/  /'
+  [ "$n" -gt 10 ] && say "  ... and $((n - 10)) more."
+  say "Decide which version to keep and delete the other one, then run this again."
 }
 
 abort_requested() {
@@ -374,7 +436,7 @@ setting_put() {
   mkdir -p "$(dirname "$SETTINGS_FILE")" 2>/dev/null || die "Could not write $SETTINGS_FILE"
   tmp=$(mktemp) || die "Could not make a temporary file"
   { [ -r "$SETTINGS_FILE" ] && awk -F'|' -v k="$1" -v n="$2" '!($1 == k && $2 == n)' "$SETTINGS_FILE"; printf '%s|%s|%s\n' "$1" "$2" "$3"; } >"$tmp"
-  cat "$tmp" >"$SETTINGS_FILE" || { rm -f "$tmp"; die "Could not write $SETTINGS_FILE"; }
+  replace_file "$SETTINGS_FILE" <"$tmp" || { rm -f "$tmp"; die "Could not write $SETTINGS_FILE"; }
   rm -f "$tmp"
 }
 
@@ -382,7 +444,7 @@ setting_del() {
   [ -r "$SETTINGS_FILE" ] || return 0
   local tmp; tmp=$(mktemp) || return 0
   awk -F'|' -v k="$1" -v n="$2" '!($1 == k && $2 == n)' "$SETTINGS_FILE" >"$tmp"
-  cat "$tmp" >"$SETTINGS_FILE" || true
+  replace_file "$SETTINGS_FILE" <"$tmp" || true
   rm -f "$tmp"
 }
 
@@ -390,7 +452,7 @@ SETTINGS_SNAP=""
 settings_snapshot() { SETTINGS_SNAP=$(mktemp); SETTINGS_WAS_MISSING=0; if [ -r "$SETTINGS_FILE" ]; then cat "$SETTINGS_FILE" >"$SETTINGS_SNAP"; else : >"$SETTINGS_SNAP"; SETTINGS_WAS_MISSING=1; fi; }
 settings_rollback() {
   if [ -n "$SETTINGS_SNAP" ] && [ -f "$SETTINGS_SNAP" ]; then
-    if [ "$SETTINGS_WAS_MISSING" = 1 ]; then rm -f "$SETTINGS_FILE"; else cat "$SETTINGS_SNAP" >"$SETTINGS_FILE"; fi
+    if [ "$SETTINGS_WAS_MISSING" = 1 ]; then rm -f "$SETTINGS_FILE"; else replace_file "$SETTINGS_FILE" <"$SETTINGS_SNAP"; fi
   fi
   rm -f "$SETTINGS_SNAP"; SETTINGS_SNAP=""; return 0
 }
@@ -402,7 +464,7 @@ settings_prune() {
   labels=""; for mp in $(all_branches); do labels="$labels$(basename "$mp")"$'\n'; done
   tmp=$(mktemp) || return 0
   awk -F'|' -v L="$labels" 'BEGIN { n = split(L, a, "\n"); for (i = 1; i <= n; i++) have[a[i]] = 1 } $1 == "limit" && !($2 in have) { next } { print }' "$SETTINGS_FILE" >"$tmp"
-  cat "$tmp" >"$SETTINGS_FILE" || true
+  replace_file "$SETTINGS_FILE" <"$tmp" || true
   rm -f "$tmp"
 }
 
@@ -445,20 +507,23 @@ fstab_snapshot() {
 
 fstab_rollback() {
   if [ -n "$FSTAB_SNAP" ] && [ -f "$FSTAB_SNAP" ]; then
-    cat "$FSTAB_SNAP" >"$FSTAB" && warn "fstab restored from $FSTAB_SNAP"
+    replace_file "$FSTAB" <"$FSTAB_SNAP" && warn "fstab restored from $FSTAB_SNAP"
     ROLLED_BACK=1
     sd_reload
   fi
 }
 
-fstab_add() { printf '%s\n' "$1" >>"$FSTAB"; log "fstab add: $1"; }
+fstab_add() {
+  { cat "$FSTAB"; [ -s "$FSTAB" ] && [ -n "$(tail -c1 "$FSTAB")" ] && echo; printf '%s\n' "$1"; } | replace_file "$FSTAB" || die "Could not write $FSTAB"
+  log "fstab add: $1"
+}
 
 fstab_remove_mp() {
   local tmp; tmp=$(mktemp)
   awk -v m="$1" '
     /^# removed by drives / { next }
     !/^[[:space:]]*#/ && $2 == m { next }
-    { print }' "$FSTAB" >"$tmp" && cat "$tmp" >"$FSTAB"
+    { print }' "$FSTAB" >"$tmp" && replace_file "$FSTAB" <"$tmp"
   rm -f "$tmp"
   settings_prune
   log "fstab remove mount point: $1"
@@ -789,7 +854,7 @@ remember_name() {
   mkdir -p "$(dirname "$DRIVE_MEMORY")" 2>/dev/null || return 1
   tmp=$(mktemp) || return 1
   { [ -r "$DRIVE_MEMORY" ] && awk -F'|' -v k="$k" '$1 != k' "$DRIVE_MEMORY"; printf '%s|%s\n' "$k" "$2"; } >"$tmp" 2>/dev/null
-  cat "$tmp" >"$DRIVE_MEMORY" 2>/dev/null || { rm -f "$tmp"; return 1; }
+  replace_file "$DRIVE_MEMORY" <"$tmp" 2>/dev/null || { rm -f "$tmp"; return 1; }
   rm -f "$tmp"
   return 0
 }
@@ -799,7 +864,7 @@ forget_name() {
   local k tmp; k=$(drive_key "$1")
   [ -n "$k" ] || return 0
   tmp=$(mktemp) || return 0
-  awk -F'|' -v k="$k" '$1 != k' "$DRIVE_MEMORY" >"$tmp" 2>/dev/null; cat "$tmp" >"$DRIVE_MEMORY" 2>/dev/null || true
+  awk -F'|' -v k="$k" '$1 != k' "$DRIVE_MEMORY" >"$tmp" 2>/dev/null; replace_file "$DRIVE_MEMORY" <"$tmp" 2>/dev/null || true
   rm -f "$tmp"
   return 0
 }
@@ -830,14 +895,14 @@ name_store_put() {
   mkdir -p "$(dirname "$NAME_STORE")" 2>/dev/null || return 0
   tmp=$(mktemp) || return 0
   { [ -r "$NAME_STORE" ] && awk -F'|' -v k="$1" '$1 != k' "$NAME_STORE"; printf '%s|%s\n' "$1" "$2"; } >"$tmp" 2>/dev/null
-  cat "$tmp" >"$NAME_STORE" 2>/dev/null || true
+  replace_file "$NAME_STORE" <"$tmp" 2>/dev/null || true
   rm -f "$tmp"
 }
 
 name_store_del() {
   [ -r "$NAME_STORE" ] || return 0
   local tmp; tmp=$(mktemp) || return 0
-  awk -F'|' -v k="$1" '$1 != k' "$NAME_STORE" >"$tmp" 2>/dev/null; cat "$tmp" >"$NAME_STORE" 2>/dev/null || true
+  awk -F'|' -v k="$1" '$1 != k' "$NAME_STORE" >"$tmp" 2>/dev/null; replace_file "$NAME_STORE" <"$tmp" 2>/dev/null || true
   rm -f "$tmp"
 }
 
@@ -1390,8 +1455,12 @@ absorb_plain_pool() {
   [ -n "$(ls -A "$pool" 2>/dev/null)" ] || return 0
   [ "$role" = main ] && ! boot_has_files "$pool" && real=0
   [ "$real" = 1 ] && say "$pool already holds files on the boot drive ($(human "$(du -sb "$pool" 2>/dev/null | awk '{print $1}')")). They are copied onto the new drive first."
-  rsync -aH --numeric-ids --ignore-existing --exclude=/lost+found "$pool/" "$drive/" || { warn "Copying the files to the new drive failed. Nothing was removed."; return 1; }
-  if rsync -aHn --numeric-ids --ignore-existing --itemize-changes --exclude=/lost+found "$pool/" "$drive/" | grep -q '^[>c]'; then
+  local conflicts crc=0
+  conflicts=$(copy_conflicts "$pool/" "$drive/" --exclude=/lost+found) || crc=$?
+  if [ "$crc" = 1 ]; then copy_conflict_stop "the new drive" "$conflicts"; return 1; fi
+  if [ "$crc" != 0 ]; then warn "Could not compare the folder with the new drive. Nothing was copied or removed."; return 1; fi
+  rsync -aH --update --numeric-ids --exclude=/lost+found "$pool/" "$drive/" || { warn "Copying the files to the new drive failed. Nothing was removed."; return 1; }
+  if ! copy_check "$pool/" "$drive/" --exclude=/lost+found >/dev/null; then
     warn "Not every file reached the new drive. Nothing was removed from the boot drive."
     return 1
   fi
@@ -1655,7 +1724,7 @@ small_backup_drive_check() {
   [ "$size" -ge "$need" ] && return 0
   warn "This drive holds $(human "$size"). A full copy of Main is $(human "${used:-0}"), and a backup also needs some spare room (about $(human "$spare") here: a tenth of the drive, at most 20 GB)."
   note "It can still be used, but backups may stop with \"not enough free space\" until files are removed from Main or a bigger drive is added."
-  [ "$PANEL_MODE" = 1 ] || [ "$CONFIRM_ERASE" = 1 ] || [ "$DRY_RUN" = 1 ] || [ "$ASSUME_YES" = 1 ] || [ "$force" != 0 ] || [ "$confirmed" = 1 ] || [ ! -t 0 ] && return 0
+  { [ "$PANEL_MODE" = 1 ] || [ "$CONFIRM_ERASE" = 1 ] || [ "$DRY_RUN" = 1 ] || [ "$ASSUME_YES" = 1 ] || [ "$force" != 0 ] || [ "$confirmed" = 1 ] || [ ! -t 0 ]; } && return 0
   yn "Add this drive to the Backup pool anyway?" || { note "Nothing was changed."; return 1; }
 }
 
@@ -1837,9 +1906,17 @@ drain_branch_run() {
   fi
   if ! target_lock "$target"; then ABORTED=1; space_release "$mp"; note "Stopped before copying. Nothing was changed."; return 1; fi
   if abort_requested; then ABORTED=1; space_release "$mp"; note "Stopped before copying. Nothing was changed."; return 1; fi
+  progress 3 "Checking $(branch_name "$target") for files that are already there"
+  local conflicts crc=0
+  conflicts=$(copy_conflicts "$mp/" "$target/" --exclude=/lost+found) || crc=$?
+  if [ "$crc" -ne 0 ]; then
+    space_release "$mp"
+    if [ "$crc" = 1 ]; then copy_conflict_stop "$(branch_name "$target")" "$conflicts"; else warn "Could not compare the drives. Nothing was copied or changed."; fi
+    return 1
+  fi
   say "Copying $(human "$used") from $(branch_name "$mp") to $(branch_name "$target") (pass 1, services keep running)..."
   progress 5 "Copying files to $(branch_name "$target")"
-  if ! rsync_run 5 60 "Copying files" -aH --numeric-ids --exclude=/lost+found "$mp/" "$target/"; then
+  if ! rsync_run 5 60 "Copying files" -aH --update --numeric-ids --exclude=/lost+found "$mp/" "$target/"; then
     space_release "$mp"
     if abort_requested; then ABORTED=1; note "Stopped while copying. Nothing was removed. The files copied so far stay as extra copies on $(branch_name "$target")."; else warn "Copy failed"; fi
     return 1
@@ -1854,11 +1931,11 @@ drain_branch_run() {
   stop_containers "$pool"
   say "Pass 2 (catching changes made during the first pass)..."
   progress 66 "Copying the last changes"
-  if ! rsync_run 66 74 "Copying the last changes" -aH --numeric-ids --exclude=/lost+found "$mp/" "$target/"; then
+  if ! rsync_run 66 74 "Copying the last changes" -aH --update --numeric-ids --exclude=/lost+found "$mp/" "$target/"; then
     if abort_requested; then ABORTED=1; note "Stopped. Nothing was removed."; else warn "Second copy failed"; fi
     start_containers; crit_release; return 1
   fi
-  if rsync -aHn --numeric-ids --itemize-changes --exclude=/lost+found "$mp/" "$target/" | grep -q '^>f'; then
+  if ! copy_check "$mp/" "$target/" --exclude=/lost+found >/dev/null; then
     warn "Verification found files that are not copied yet. Nothing was removed."
     start_containers
     crit_release
@@ -2091,9 +2168,6 @@ adopt_flow() {
   log "adopted $part as $label; pool at $pool"
   say ""
   say "Done. $pool is now a pool containing $(branch_name "$mp"). Check: sudo drives status"
-  if [ "$TEST_MODE" != 1 ]; then
-    say "Reminder: replace the old STORAGE lines in root's crontab with the new one (see the guide)."
-  fi
   return 0
 }
 
@@ -2429,9 +2503,10 @@ restore_files() {
   sync_fs "${mains[@]}" "$MAIN_POOL"
   say ""
   say "Checking that every file in the backup is now in the pool..."
-  miss=$(LC_ALL=C comm -23 -z \
-    <(cd "$src/main" && find . -path ./lost+found -prune -o \( -type f -o -type l \) -print0 | LC_ALL=C sort -z) \
-    <(cd "$MAIN_POOL" && find . -path ./lost+found -prune -o \( -type f -o -type l \) -print0 | LC_ALL=C sort -z) | tr '\0' '\n')
+  local vrc=0
+  miss=$(copy_check "$base" "$MAIN_POOL/" --ignore-existing --exclude=/lost+found) || vrc=$?
+  if [ "$vrc" = 2 ]; then warn "The restored files could not be checked."; return 1; fi
+  miss=$(sed -E 's/^[^ ]+ //' <<<"$miss")
   if [ -n "$miss" ]; then
     warn "These files from the backup are still missing in the pool (first 20):"
     printf '%s\n' "$miss" | head -20 | sed 's/^/  /' >&2
@@ -3215,7 +3290,7 @@ bootsection_flow() {
   if [ -f "$img" ]; then
     old=$(stat -c %s "$img")
     say "A boot drive section of $(pretty_size "$old") that was used for the $role pool before is still saved."
-    idx=$(choose "Choose an action: " "Use it again, with its files" "Delete it and make a new one") || return 1
+    idx=$(choose "Choose an action: " "Use it again, with its files" "Delete it, with its files, and make a new one") || return 1
     [ "$idx" = 0 ] && reuse=1
   fi
 
@@ -3459,7 +3534,7 @@ balance_main() {
   for i in "${!steps[@]}"; do
     [ "${cnt[$i]}" -gt 0 ] || continue
     say "Copying $(human "${nbytes[$i]}") from $(branch_name "${mps[${gs[$i]}]}") to $(branch_name "${mps[${rs[$i]}]}") (pass 1, services keep running)..."
-    rsync -aH --numeric-ids --from0 --files-from="${lists[$i]}" --ignore-missing-args "${mps[${gs[$i]}]}/" "${mps[${rs[$i]}]}/"
+    rsync -aH --update --numeric-ids --from0 --files-from="${lists[$i]}" --ignore-missing-args "${mps[${gs[$i]}]}/" "${mps[${rs[$i]}]}/"
     n=$?
     if [ "$n" -ne 0 ] && [ "$n" -ne 24 ]; then
       warn "Copy failed (code $n). The old copies were not removed."
@@ -3475,10 +3550,10 @@ balance_main() {
     while IFS= read -r -d '' rel; do
       [ -e "${mps[${gs[$i]}]}/$rel" ] || rm -f -- "${mps[${rs[$i]}]:?}/$rel"
     done <"${lists[$i]}"
-    rsync -aH --numeric-ids --from0 --files-from="${lists[$i]}" --ignore-missing-args "${mps[${gs[$i]}]}/" "${mps[${rs[$i]}]}/"
+    rsync -aH --update --numeric-ids --from0 --files-from="${lists[$i]}" --ignore-missing-args "${mps[${gs[$i]}]}/" "${mps[${rs[$i]}]}/"
     n=$?
     if [ "$n" -ne 0 ] && [ "$n" -ne 24 ]; then bad=1; break; fi
-    if rsync -aHn --numeric-ids --itemize-changes --from0 --files-from="${lists[$i]}" --ignore-missing-args "${mps[${gs[$i]}]}/" "${mps[${rs[$i]}]}/" | grep -q '^>f'; then bad=1; break; fi
+    if ! copy_check "${mps[${gs[$i]}]}/" "${mps[${rs[$i]}]}/" --from0 --files-from="${lists[$i]}" --ignore-missing-args >/dev/null; then bad=1; break; fi
   done
   if [ "$bad" = 1 ]; then
     warn "The check found files that are not copied correctly. Nothing was removed from the old drives."
@@ -3513,7 +3588,7 @@ balance_flow() {
 resize_flow() {
   array_guard || return 1
   need_cmds fallocate resize2fs e2fsck truncate || return 1
-  local role idx mp img pool cur used free max lower min keep gb bytes new_gb prompt shrink=0 fs_min before_files after_files before_used
+  local role idx mp img pool cur used free max lower min keep gb bytes new_bytes prompt shrink=0 fs_min before_files after_files before_used
   local -a roles=() items=()
   for role in main backup; do
     [ -n "$(boot_section_of "$role")" ] || continue
@@ -3552,7 +3627,7 @@ resize_flow() {
     fi
     note "Enter a number of $BOOT_UNIT_NAME, for example 100."
   done
-  new_gb=$bytes
+  new_bytes=$bytes
   if [ "$bytes" -eq "$cur" ]; then say "It already has that size. Nothing was changed."; return 0; fi
   [ "$bytes" -lt "$cur" ] && shrink=1
   if [ "$shrink" = 1 ]; then
@@ -3561,10 +3636,10 @@ resize_flow() {
     say "The files in it are in the backup only if the Main pool is backed up. A section of the Backup pool has no second copy."
     typed "CONTINUE" "Type CONTINUE to continue, or press Enter to cancel: " || { say "Cancelled. Nothing was changed."; return 1; }
   fi
-  yn "Change the section from $(pretty_size "$cur") to $(pretty_size "$new_gb") now? The $role containers stop for at least a minute." || { say "Cancelled. Nothing was changed."; return 1; }
+  yn "Change the section from $(pretty_size "$cur") to $(pretty_size "$new_bytes") now? The $role containers stop for at least a minute." || { say "Cancelled. Nothing was changed."; return 1; }
   pre_change "Stop the containers that use the $role pool." \
              "Unmount the $role pool and $(branch_name "$mp"), check its file system." \
-             "$([ "$shrink" = 1 ] && echo "Shrink the file system, then the file, to $(pretty_size "$new_gb")." || echo "Make the file $(pretty_size "$new_gb") big and grow the file system into it.")" \
+             "$([ "$shrink" = 1 ] && echo "Shrink the file system, then the file, to $(pretty_size "$new_bytes")." || echo "Make the file $(pretty_size "$new_bytes") big and grow the file system into it.")" \
              "Mount everything again, compare the files, and start the containers." && return 0
   before_files=$(find "$mp" -xdev -type f 2>/dev/null | wc -l); before_used=$used
   stop_containers "$pool"
@@ -3576,15 +3651,15 @@ resize_flow() {
   e2fsck -fp "$img" >/dev/null 2>&1 || true
   if [ "$shrink" = 1 ]; then
     fs_min=$(resize2fs -P "$img" 2>/dev/null | awk -F: '/minimum size/ {gsub(/ /, "", $2); print $2}')
-    if [[ "$fs_min" =~ ^[0-9]+$ ]] && [ $(( fs_min * $(dumpe2fs -h "$img" 2>/dev/null | awk -F: '/^Block size/ {gsub(/ /, "", $2); print $2}') )) -gt "$new_gb" ]; then
-      back; die "The files do not fit into $(pretty_size "$new_gb"). Nothing was changed."
+    if [[ "$fs_min" =~ ^[0-9]+$ ]] && [ $(( fs_min * $(dumpe2fs -h "$img" 2>/dev/null | awk -F: '/^Block size/ {gsub(/ /, "", $2); print $2}') )) -gt "$new_bytes" ]; then
+      back; die "The files do not fit into $(pretty_size "$new_bytes"). Nothing was changed."
     fi
-    if ! resize2fs "$img" "$(( new_gb / 1024 ))K" >/dev/null 2>&1; then
+    if ! resize2fs "$img" "$(( new_bytes / 1024 ))K" >/dev/null 2>&1; then
       back; die "Shrinking the file system failed. Check it with: sudo drives check --full"
     fi
-    truncate -s "$new_gb" "$img"
+    truncate -s "$new_bytes" "$img"
   else
-    if ! fallocate -l "$new_gb" "$img" 2>/dev/null; then back; die "Could not reserve $(pretty_size "$new_gb") on the boot drive. Nothing was changed."; fi
+    if ! fallocate -l "$new_bytes" "$img" 2>/dev/null; then back; die "Could not reserve $(pretty_size "$new_bytes") on the boot drive. Nothing was changed."; fi
     if ! resize2fs "$img" >/dev/null 2>&1; then truncate -s "$cur" "$img"; back; die "Growing the file system failed. The section has its old size again."; fi
   fi
   e2fsck -fn "$img" >/dev/null 2>&1 || warn "The check after the change reports problems. Run: sudo drives check --full"
@@ -3593,7 +3668,7 @@ resize_flow() {
   after_files=$(find "$mp" -xdev -type f 2>/dev/null | wc -l)
   start_containers
   name_store_put "$(basename "$mp")" "$(pretty_size "$(stat -c %s "$img")") boot drive section"
-  log "resized $img: $cur -> $new_gb bytes (files $before_files -> $after_files)"
+  log "resized $img: $cur -> $new_bytes bytes (files $before_files -> $after_files)"
   say ""
   if [ "$before_files" != "$after_files" ]; then
     warn "The number of files changed ($before_files before, $after_files after). Check the section: sudo drives check --full"
@@ -3624,7 +3699,7 @@ chosen_name_put() {
     fi
     printf '%s=%s\n' "$1" "$2"
   } >"$tmp"
-  cat "$tmp" >"$DRIVE_NAMES_FILE" || { rm -f "$tmp"; die "Could not write $DRIVE_NAMES_FILE"; }
+  replace_file "$DRIVE_NAMES_FILE" <"$tmp" || { rm -f "$tmp"; die "Could not write $DRIVE_NAMES_FILE"; }
   chmod 644 "$DRIVE_NAMES_FILE" 2>/dev/null || true
   rm -f "$tmp"
 }
@@ -3633,7 +3708,7 @@ chosen_name_del() {
   [ -r "$DRIVE_NAMES_FILE" ] || return 0
   local tmp; tmp=$(mktemp) || return 0
   awk -v k="$1" '{ key = $0; sub(/=.*/, "", key); gsub(/^[ \t]+|[ \t]+$/, "", key) } !(key == k && $0 !~ /^[ \t]*#/)' "$DRIVE_NAMES_FILE" >"$tmp"
-  cat "$tmp" >"$DRIVE_NAMES_FILE" || true
+  replace_file "$DRIVE_NAMES_FILE" <"$tmp" || true
   rm -f "$tmp"
 }
 
@@ -4208,7 +4283,7 @@ disk_size_bytes() { lsblk -dnbo SIZE "$1" 2>/dev/null | head -1 | tr -d ' '; }
 
 parity_mounts() { fstab_active | awk -v d="$DISKS_DIR/$PARITY_PREFIX" '$2 ~ "^" d "[0-9]+$" {print $2}' | sort -V; }
 preset_current() { [ -r "$PRESET_FILE" ] && awk -F'|' 'NR == 1 {print $1}' "$PRESET_FILE"; return 0; }
-preset_record() { printf '%s|%s|%s\n' "$1" "$(date +%F)" "$2" >"$PRESET_FILE"; }
+preset_record() { printf '%s|%s|%s\n' "$1" "$(date +%F)" "$2" | replace_file "$PRESET_FILE"; }
 snapraid_active() { case "$(preset_current)" in snapraid1|snapraid2) return 0 ;; *) return 1 ;; esac; }
 
 # Write the SnapRAID settings: the protection drives, the content files and the data drives.
@@ -4228,23 +4303,24 @@ snapraid_conf_write() {
     done
     for mp in $(branches_of main); do
       is_boot_section "$mp" && continue
-      echo "data $(basename "$mp" | tr 'A-Z' 'a-z') $mp"
+      echo "data $(basename "$mp" | tr '[:upper:]' '[:lower:]') $mp"
     done
     echo "exclude /lost+found/"
     echo "exclude /tmp/"
     echo "exclude *.unrecoverable"
     echo "exclude .Trash-*/"
-  } >"$SNAPRAID_CONF"
+  } | replace_file "$SNAPRAID_CONF"
 }
 
 snapraid_cron_write() {
   mkdir -p "$(dirname "$SNAPRAID_CRON")" 2>/dev/null || true
-  cat >"$SNAPRAID_CRON" <<EOF
+  replace_file "$SNAPRAID_CRON" <<EOF
 # SnapRAID (written by 'sudo drives preset'): update the protection data every night at 04:00,
 # and check a part of the files on the 1st of every month. The results are in $SNAPRAID_LOG
+# The nightly update stops, and the bell says so, when more than $SNAPRAID_DELETE_LIMIT files were deleted since the last one.
 SHELL=/bin/sh
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-0 4 * * * root snapraid -c $SNAPRAID_CONF sync -q >>$SNAPRAID_LOG 2>&1
+0 4 * * * root $SNAPRAID_NIGHTLY >>$SNAPRAID_LOG 2>&1
 0 5 1 * * root snapraid -c $SNAPRAID_CONF scrub -p 5 -o 30 -q >>$SNAPRAID_LOG 2>&1
 EOF
   chmod 644 "$SNAPRAID_CRON" 2>/dev/null || true
@@ -4254,16 +4330,60 @@ snapraid_forget() {
   rm -f "$SNAPRAID_CONF" "$SNAPRAID_CRON" "$PRESET_FILE"
 }
 
+# snapraid_result RESULT [DETAIL...]: remember how the last update went. The bell reads this file: "ok" clears it, anything else is shown.
+snapraid_result() {
+  local result=$1; shift
+  printf '%s|%s|%s\n' "$(date +%s)" "$result" "$*" | replace_file "$SNAPRAID_STATUS" || true
+}
+
+# The nightly update. SnapRAID cannot tell a deleted file from a lost drive, so before it updates the protection data it counts what was deleted since the last update. Above the limit it does nothing, because the update would make those files unrecoverable. Run `sudo drives snapraid sync` yourself once you know the deletions are meant.
+snapraid_nightly() {
+  local out rc=0 removed
+  snapraid_active || return 0
+  command -v snapraid >/dev/null 2>&1 || { snapraid_result failed "SnapRAID is not installed"; return 1; }
+  out=$(snapraid -c "$SNAPRAID_CONF" diff 2>&1) || rc=$?
+  if [ "$rc" -ne 0 ] && [ "$rc" -ne 2 ]; then
+    snapraid_result failed "Could not compare the drives with the protection data (exit $rc)"
+    note "SnapRAID could not look at the drives (exit $rc). Nothing was changed."
+    return 1
+  fi
+  removed=$(printf '%s\n' "$out" | awk '$2 == "removed" && $1 ~ /^[0-9]+$/ {print $1; exit}')
+  if ! [[ "${removed:-}" =~ ^[0-9]+$ ]]; then
+    snapraid_result failed "Could not read the number of deleted files"
+    note "SnapRAID's answer could not be read. Nothing was changed."
+    return 1
+  fi
+  if [ "$removed" -gt "$SNAPRAID_DELETE_LIMIT" ]; then
+    snapraid_result aborted "$removed files were deleted since the last update, and the limit is $SNAPRAID_DELETE_LIMIT"
+    note "SnapRAID update stopped: $removed files were deleted since the last one (the limit is $SNAPRAID_DELETE_LIMIT). If that is right, run:  sudo drives snapraid sync"
+    log "snapraid nightly stopped: $removed removed, limit $SNAPRAID_DELETE_LIMIT"
+    return 3
+  fi
+  if snapraid -c "$SNAPRAID_CONF" sync -q; then snapraid_result ok "$removed files deleted since the last update"; return 0; fi
+  rc=$?
+  snapraid_result failed "The update stopped with an error (exit $rc)"
+  return "$rc"
+}
+
 snapraid_flow() {
-  local what=${1:-status}
+  local what=${1:-status} rc=0
   case "$what" in
-    status|diff|sync|scrub) ;;
-    *) note "Unknown SnapRAID action: $what"; note "Use one of: status (is the parity up to date?), diff (what changed since the last sync), sync (update the parity now), scrub (check part of the files)."; return 1 ;;
+    status|diff|sync|scrub|nightly|schedule) ;;
+    *) note "Unknown SnapRAID action: $what"; note "Use one of: status (is the parity up to date?), diff (what changed since the last sync), sync (update the parity now), scrub (check part of the files), schedule (write the nightly schedule again)."; return 1 ;;
   esac
+  [ "$what" = nightly ] && { snapraid_nightly; return $?; }
+  if [ "$what" = schedule ]; then
+    snapraid_active || { note "There is no SnapRAID setup. Build one with:  sudo drives preset snapraid1"; return 1; }
+    dry_gate "Write the nightly SnapRAID schedule to $SNAPRAID_CRON" && return 0
+    snapraid_cron_write && say "The nightly schedule is written. The update now stops by itself when more than $SNAPRAID_DELETE_LIMIT files were deleted since the last one."
+    return $?
+  fi
   snapraid_active || { note "There is no SnapRAID setup. Build one with:  sudo drives preset snapraid1"; return 1; }
   command -v snapraid >/dev/null 2>&1 || { note "SnapRAID is not installed. Install it with:  sudo apt install -y snapraid"; return 1; }
   dry_gate "Run:  snapraid -c $SNAPRAID_CONF $what" && return 0
-  snapraid -c "$SNAPRAID_CONF" "$what"
+  snapraid -c "$SNAPRAID_CONF" "$what" || rc=$?
+  [ "$what" = sync ] && [ "$rc" -eq 0 ] && snapraid_result ok "Updated by hand"
+  return "$rc"
 }
 
 
@@ -4276,7 +4396,7 @@ migrate_need_bytes() { local u=${1:-0}; echo $((u + u / 50 + 67108864)); }
 
 fstab_move_mp() {
   local tmp; tmp=$(mktemp)
-  awk -v o="$1" -v n="$2" '!/^[[:space:]]*#/ && $2 == o { sub(o, n) } { print }' "$FSTAB" >"$tmp" && cat "$tmp" >"$FSTAB"
+  awk -v o="$1" -v n="$2" '!/^[[:space:]]*#/ && $2 == o { sub(o, n) } { print }' "$FSTAB" >"$tmp" && replace_file "$FSTAB" <"$tmp"
   rm -f "$tmp"
   log "fstab move mount point: $1 -> $2"
 }
@@ -4291,7 +4411,11 @@ migrate_copy() {
   case $rc in 0|24) ;; *) warn "The copy stopped with an error (code $rc)."; return 1 ;; esac
   say "Checking the copy..."
   progress 91 "Checking the copy"
-  changed=$(rsync -aHAXni --numeric-ids --delete "${skip[@]}" "$MAIN_POOL"/ "$MIGRATE_DIR"/ 9>&- 2>/dev/null | grep -cE '^(>f|\*deleting|cL|hf)') || true
+  local out vrc=0
+  out=$(rsync -aHAXni --numeric-ids --delete "${skip[@]}" "$MAIN_POOL"/ "$MIGRATE_DIR"/ 9>&- 2>/dev/null) || vrc=$?
+  if abort_requested; then MIGRATE_STOPPED=1; return 1; fi
+  case $vrc in 0|24) ;; *) warn "The copy could not be checked (code $vrc)."; return 1 ;; esac
+  changed=$(grep -cE '^(>f|\*deleting|cL|hf)' <<<"$out") || true
   if abort_requested; then MIGRATE_STOPPED=1; return 1; fi
   if [ "${changed:-0}" -gt 0 ]; then warn "$changed file(s) are not the same in the copy."; return 1; fi
   say "The copy is complete and matches."
@@ -4407,7 +4531,7 @@ array_health_text() {
 zfs_scrub_cron_write() {
   [ -e "$ZFS_SYSTEM_SCRUB" ] && return 0
   mkdir -p "$(dirname "$ZFS_SCRUB_CRON")" 2>/dev/null || true
-  printf '# ZFS (written by '"'"'sudo drives preset'"'"'): check all the data of the pool on the 1st of every month at 03:00.\n0 3 1 * * root zpool scrub %s\n' "$ZFS_POOL_NAME" >"$ZFS_SCRUB_CRON"
+  printf '# ZFS (written by '"'"'sudo drives preset'"'"'): check all the data of the pool on the 1st of every month at 03:00.\n0 3 1 * * root zpool scrub %s\n' "$ZFS_POOL_NAME" | replace_file "$ZFS_SCRUB_CRON"
   chmod 644 "$ZFS_SCRUB_CRON" 2>/dev/null || true
 }
 
@@ -4472,15 +4596,15 @@ zfs_build() {
 }
 
 md_conf_forget() {
-  [ -w "$MDADM_CONF" ] && sed -i "/^ARRAY .*$MD_NAME/d" "$MDADM_CONF"
+  [ -w "$MDADM_CONF" ] && { grep -v "^ARRAY .*$MD_NAME" "$MDADM_CONF"; true; } | replace_file "$MDADM_CONF"
   return 0
 }
 md_conf_write() {
   mkdir -p "$(dirname "$MDADM_CONF")"; touch "$MDADM_CONF"
   md_conf_forget
-  mdadm --detail --scan "$MD_DEVICE" >>"$MDADM_CONF" 2>/dev/null || true
+  { cat "$MDADM_CONF"; mdadm --detail --scan "$MD_DEVICE" 2>/dev/null; true; } | replace_file "$MDADM_CONF" || true
 }
-crypttab_forget() { [ -w "$CRYPTTAB" ] && sed -i "/^$MD_CRYPT /d" "$CRYPTTAB"; return 0; }
+crypttab_forget() { [ -w "$CRYPTTAB" ] && { grep -v "^$MD_CRYPT " "$CRYPTTAB"; true; } | replace_file "$CRYPTTAB"; return 0; }
 md_undo() {
   local m
   if command -v cryptsetup >/dev/null 2>&1; then cryptsetup close "$MD_CRYPT" >/dev/null 2>&1 || true; fi
@@ -4512,7 +4636,7 @@ md_build() {
   if [ "$enc" = 1 ]; then
     [ -n "$luks" ] || { md_undo "$@"; warn "Could not read the UUID of the encrypted array."; return 1; }
     mkdir -p "$(dirname "$CRYPTTAB")"; touch "$CRYPTTAB"; crypttab_forget
-    printf '%s UUID=%s %s luks,nofail\n' "$MD_CRYPT" "$luks" "$key" >>"$CRYPTTAB"
+    { cat "$CRYPTTAB"; printf '%s UUID=%s %s luks,nofail\n' "$MD_CRYPT" "$luks" "$key"; } | replace_file "$CRYPTTAB"
   fi
   fstab_snapshot
   fstab_add "UUID=$uuid  $mnt  ext4  $opts  0  2"
@@ -4525,7 +4649,7 @@ md_build() {
 
 preset_record_add() {
   local tmp; tmp=$(mktemp)
-  awk -F'|' -v OFS='|' -v t="$1" 'NR == 1 {$3 = $3 " " t} {print}' "$PRESET_FILE" >"$tmp" && cat "$tmp" >"$PRESET_FILE"
+  awk -F'|' -v OFS='|' -v t="$1" 'NR == 1 {$3 = $3 " " t} {print}' "$PRESET_FILE" >"$tmp" && replace_file "$PRESET_FILE" <"$tmp"
   rm -f "$tmp"
 }
 array_can_spare() { case "$1" in zfs-mirror|zfs-raidz1|zfs-raidz2|zfs-raidz3|md-raid1|md-raid5|md-raid6|md-raid10) return 0 ;; *) return 1 ;; esac; }
@@ -4713,10 +4837,9 @@ rest_drives() {
 }
 
 # preset_flow ID: build a ready-made setup (single, mirror, RAID, ZFS or SnapRAID) on empty drives.
-preset_flow() {
-  local id d i n=0 usable total=0 mp label par s hint smallest biggest enc=0 spare_dev="" cache_dev="" key_path="" bk_dev="" used_b kept_n=0 force migrate=0 main_used=0 main_need=0
-  local -a devs=() sizes=() order=() main_devs=() par_devs=() ids=() rest=() erase_list=()
-  local quick=0
+# The steps of `preset_flow`. Each runs inside it and uses its variables (bash lets a called function see the caller's local variables).
+# preset_preflight: is the setup known, are the tools there, may a new setup be built on the current state of the pools?
+preset_preflight() {
   id=$(preset_alias "${1:-}")
   if ! preset_known "$id"; then
     note "There is no setup called '${1:-}'. The setups are: $PRESET_IDS"
@@ -4773,6 +4896,11 @@ preset_flow() {
     [ "$id" = mirror ] && { pool_can_grow backup "these drives" || return 1; }
   fi
 
+  return 0
+}
+
+# preset_pick: choose the drives, split them into their roles and check that the files will fit.
+preset_pick() {
   mapfile -t devs < <(preset_pick_drives "$id") || return 1
   [ ${#devs[@]} -gt 0 ] || return 1
   for d in "${devs[@]}"; do
@@ -4831,6 +4959,11 @@ preset_flow() {
     fi
   fi
 
+  return 0
+}
+
+# preset_extras: hot spare, SSD cache and encryption for the array setups, then the list of drives that will be erased.
+preset_extras() {
   if preset_is_array "$id"; then
     mapfile -t rest < <(rest_drives "${devs[@]}")
     if [ "$WANT_SPARE" = 1 ] && ! array_can_spare "$id"; then note "$(preset_title "$id") has no redundancy for a spare to take over, so a hot spare would have no effect. Leave out --spare."; return 1; fi
@@ -4869,6 +5002,11 @@ preset_flow() {
   [ -z "$spare_dev" ] || refuse_unsafe_disk "$spare_dev"
   [ -z "$cache_dev" ] || refuse_unsafe_disk "$cache_dev"
 
+  return 0
+}
+
+# preset_show: print what will be built and ask for the confirmations.
+preset_show() {
   say ""
   say "Setup: $(preset_title "$id")"
   say "$(preset_blurb "$id")"
@@ -4942,70 +5080,77 @@ preset_flow() {
     typed_enter "$id" "Press Enter to continue with this setup, or type another setup name" || { say "Cancelled. Nothing was changed."; return 1; }
     [ ${#erase_list[@]} -eq 0 ] || typed "ERASE" "Type ERASE in capital letters to confirm: " || { say "Cancelled. Nothing was changed."; return 1; }
   fi
-  if preset_is_array "$id"; then
-    pre_change "Erase the ${#erase_list[@]} drives and build the $(preset_title "$id") array on them." \
-               "$([ "$migrate" = 1 ] && echo "Stop the containers that use the Main pool while its files are copied into the new array, check the copy, then let the array take over $MAIN_POOL and release the old Main drives (their files stay)." || echo "Stop the containers that use the Main pool for a minute.")" \
-               "$([ "$(preset_kind "$id")" = zfs ] && echo "Create the ZFS pool '$ZFS_POOL_NAME'$([ "$enc" = 1 ] && echo ", encrypted with a new key file,") and mount it at $MAIN_POOL." || echo "Create the RAID array$([ "$enc" = 1 ] && echo ", encrypt it with a new key file,"), format it and mount it at $MAIN_POOL (and write it into fstab and mdadm.conf).")" \
-               "$([ -n "$spare_dev$cache_dev" ] && echo "Add the $([ -n "$spare_dev" ] && echo "hot spare")$([ -n "$spare_dev" ] && [ -n "$cache_dev" ] && echo " and the ")$([ -n "$cache_dev" ] && echo "read cache").")" \
-               "Start the containers again." && return 0
-    PRESET_TOUCHED=1
-    PROG_ALL=(); for d in "${devs[@]}"; do PROG_ALL+=("$(basename "$d")"); done
-    progress 3 "Getting ready"
-    for d in "${devs[@]}"; do refuse_unsafe_disk "$d"; ids+=("$(disk_stable_name "$d")"); done
-    stop_containers "$MAIN_POOL"
-    progress 8 "Building the new setup"
-    [ "$migrate" != 1 ] || ARRAY_MOUNT=$MIGRATE_DIR
-    if [ "$(preset_kind "$id")" = zfs ]; then
-      zfs_build "$id" "$enc" "${ids[@]}" || { ARRAY_MOUNT=""; start_containers; warn "The ZFS pool could not be created. Look at the messages above.$(hint " See: sudo drives status" "")"; return 1; }
-    else
-      md_build "$id" "$enc" "${ids[@]}" || { ARRAY_MOUNT=""; start_containers; warn "The RAID array could not be built. Look at the messages above.$(hint " See: sudo drives status" "")"; return 1; }
-    fi
-    ARRAY_MOUNT=""
-    progress 18 "New setup is ready"
-    if [ "$migrate" = 1 ]; then
-      local mig_ok=0
-      MIGRATE_STOPPED=0
-      if abort_requested; then MIGRATE_STOPPED=1
-      elif migrate_copy; then progress 95 "Switching over"; migrate_switch "$id" && mig_ok=1
-      fi
-      if [ "$mig_ok" != 1 ]; then
-        migrate_discard "$id" "${ids[@]}"
-        PROG_ALL=()
-        start_containers
-        if [ "$MIGRATE_STOPPED" = 1 ]; then
-          ABORTED=1
-          say "Stopped. Nothing was changed: the Main pool is as it was and its files are untouched. The new setup was removed again and its drives are empty."
-          return 4
-        fi
-        warn "The move to the new setup did not finish. The Main pool is as it was and its files are untouched. The new setup was removed again and its drives are empty."
-        return 1
-      fi
-    fi
-    PROG_ALL=()
-    preset_record "$id" "${ids[*]}$([ "$enc" = 1 ] && echo " encrypted")"
-    if [ -n "$spare_dev" ]; then
-      d=$(disk_stable_name "$spare_dev")
-      if array_add_spare "$d"; then preset_record_add "spare=$d"; say "Hot spare added: $(disk_base_name "$spare_dev")."
-      else warn "The hot spare could not be added. The array works without it. Add it later with:  sudo drives spare"; fi
-    fi
-    if [ -n "$cache_dev" ]; then
-      d=$(disk_stable_name "$cache_dev")
-      if array_add_cache "$d"; then preset_record_add "cache=$d"; say "Read cache added: $(disk_base_name "$cache_dev")."
-      else warn "The read cache could not be added. The array works without it. Add it later with:  sudo drives cache"; fi
-    fi
-    array_service_folders
-    start_containers
-    log "preset $id built on ${#devs[@]} drives: ${ids[*]}"
-    say ""
-    say "Done. $(preset_title "$id") is ready at $MAIN_POOL: about $(pretty_size "$usable") usable."
-    [ "$migrate" != 1 ] || say "The files of the old Main pool were copied over. Its drives are now spare drives. Their files remain on them until they are used or erased."
-    [ "$enc" != 1 ] || say "Important: copy the key file $key_path to a safe place now (for example a USB stick). Without it, the files cannot be read."
-    case "$id" in
-      md-*) say "Background build progress:  cat /proc/mdstat      Health:  sudo drives status" ;;
-      zfs-*) say "Health:  sudo drives status      Details:  zpool status $ZFS_POOL_NAME" ;;
-    esac
-    return 0
+  return 0
+}
+
+# preset_build_array: build a ZFS or RAID array, copy the old Main pool into it when there is one, and let it take over.
+preset_build_array() {
+  pre_change "Erase the ${#erase_list[@]} drives and build the $(preset_title "$id") array on them." \
+             "$([ "$migrate" = 1 ] && echo "Stop the containers that use the Main pool while its files are copied into the new array, check the copy, then let the array take over $MAIN_POOL and release the old Main drives (their files stay)." || echo "Stop the containers that use the Main pool for a minute.")" \
+             "$([ "$(preset_kind "$id")" = zfs ] && echo "Create the ZFS pool '$ZFS_POOL_NAME'$([ "$enc" = 1 ] && echo ", encrypted with a new key file,") and mount it at $MAIN_POOL." || echo "Create the RAID array$([ "$enc" = 1 ] && echo ", encrypt it with a new key file,"), format it and mount it at $MAIN_POOL (and write it into fstab and mdadm.conf).")" \
+             "$([ -n "$spare_dev$cache_dev" ] && echo "Add the $([ -n "$spare_dev" ] && echo "hot spare")$([ -n "$spare_dev" ] && [ -n "$cache_dev" ] && echo " and the ")$([ -n "$cache_dev" ] && echo "read cache").")" \
+             "Start the containers again." && return 0
+  PRESET_TOUCHED=1
+  PROG_ALL=(); for d in "${devs[@]}"; do PROG_ALL+=("$(basename "$d")"); done
+  progress 3 "Getting ready"
+  for d in "${devs[@]}"; do refuse_unsafe_disk "$d"; ids+=("$(disk_stable_name "$d")"); done
+  stop_containers "$MAIN_POOL"
+  progress 8 "Building the new setup"
+  [ "$migrate" != 1 ] || ARRAY_MOUNT=$MIGRATE_DIR
+  if [ "$(preset_kind "$id")" = zfs ]; then
+    zfs_build "$id" "$enc" "${ids[@]}" || { ARRAY_MOUNT=""; start_containers; warn "The ZFS pool could not be created. Look at the messages above.$(hint " See: sudo drives status" "")"; return 1; }
+  else
+    md_build "$id" "$enc" "${ids[@]}" || { ARRAY_MOUNT=""; start_containers; warn "The RAID array could not be built. Look at the messages above.$(hint " See: sudo drives status" "")"; return 1; }
   fi
+  ARRAY_MOUNT=""
+  progress 18 "New setup is ready"
+  if [ "$migrate" = 1 ]; then
+    local mig_ok=0
+    MIGRATE_STOPPED=0
+    if abort_requested; then MIGRATE_STOPPED=1
+    elif migrate_copy; then progress 95 "Switching over"; migrate_switch "$id" && mig_ok=1
+    fi
+    if [ "$mig_ok" != 1 ]; then
+      migrate_discard "$id" "${ids[@]}"
+      PROG_ALL=()
+      start_containers
+      if [ "$MIGRATE_STOPPED" = 1 ]; then
+        ABORTED=1
+        say "Stopped. Nothing was changed: the Main pool is as it was and its files are untouched. The new setup was removed again and its drives are empty."
+        return 4
+      fi
+      warn "The move to the new setup did not finish. The Main pool is as it was and its files are untouched. The new setup was removed again and its drives are empty."
+      return 1
+    fi
+  fi
+  PROG_ALL=()
+  preset_record "$id" "${ids[*]}$([ "$enc" = 1 ] && echo " encrypted")"
+  if [ -n "$spare_dev" ]; then
+    d=$(disk_stable_name "$spare_dev")
+    if array_add_spare "$d"; then preset_record_add "spare=$d"; say "Hot spare added: $(disk_base_name "$spare_dev")."
+    else warn "The hot spare could not be added. The array works without it. Add it later with:  sudo drives spare"; fi
+  fi
+  if [ -n "$cache_dev" ]; then
+    d=$(disk_stable_name "$cache_dev")
+    if array_add_cache "$d"; then preset_record_add "cache=$d"; say "Read cache added: $(disk_base_name "$cache_dev")."
+    else warn "The read cache could not be added. The array works without it. Add it later with:  sudo drives cache"; fi
+  fi
+  array_service_folders
+  start_containers
+  log "preset $id built on ${#devs[@]} drives: ${ids[*]}"
+  say ""
+  say "Done. $(preset_title "$id") is ready at $MAIN_POOL: about $(pretty_size "$usable") usable."
+  [ "$migrate" != 1 ] || say "The files of the old Main pool were copied over. Its drives are now spare drives. Their files remain on them until they are used or erased."
+  [ "$enc" != 1 ] || say "Important: copy the key file $key_path to a safe place now (for example a USB stick). Without it, the files cannot be read."
+  case "$id" in
+    md-*) say "Background build progress:  cat /proc/mdstat      Health:  sudo drives status" ;;
+    zfs-*) say "Health:  sudo drives status      Details:  zpool status $ZFS_POOL_NAME" ;;
+  esac
+  return 0
+}
+
+# preset_build_pools: build the plain pool, mirror and SnapRAID setups one drive at a time.
+preset_build_pools() {
   PRESET_TOUCHED=1
   pre_change "$([ "$kept_n" -gt 0 ] && echo "Format ${#erase_list[@]} drive(s) and keep the files on the other $kept_n." || echo "Format the ${#devs[@]} drives.")" \
              "Stop the containers that use the storage while each drive is added (once per drive), then start them again." \
@@ -5043,6 +5188,20 @@ preset_flow() {
   esac
   return 0
 }
+
+# Build one of the ready-made setups (`sudo drives preset ID`). The work is split into the steps above.
+preset_flow() {
+  local id d i n=0 usable total=0 mp label par s hint smallest biggest enc=0 spare_dev="" cache_dev="" key_path="" bk_dev="" used_b kept_n=0 force migrate=0 main_used=0 main_need=0
+  local -a devs=() sizes=() order=() main_devs=() par_devs=() ids=() rest=() erase_list=()
+  local quick=0
+  preset_preflight "$@" || return 1
+  preset_pick || return 1
+  preset_extras || return 1
+  preset_show || return 1
+  if preset_is_array "$id"; then preset_build_array; return $?; fi
+  preset_build_pools
+}
+
 
 # extra_drive_flow spare|cache: add one more empty drive to the existing ZFS or RAID array.
 extra_drive_flow() {
@@ -5838,7 +5997,7 @@ EOF
     disconnect) cat <<'EOF'
 sudo drives disconnect [--dry-run] [--yes] [--confirm-erase] [--now]
   Removes one drive from its pool. Its files can be copied to the other drives of the same storage first (checked file by
-  file). The data on the drive is not erased. The last Main drive cannot be removed. The containers stop briefly.
+  file). The data on the drive is not erased. Removing the last Main drive leaves the Main pool empty and needs you to type REMOVE. The containers stop briefly.
 EOF
     ;;
     move) cat <<'EOF'
@@ -6030,11 +6189,12 @@ sudo drives cache [--dry-run]
 EOF
     ;;
     snapraid) cat <<'EOF'
-sudo drives snapraid [status|diff|sync|scrub] [--dry-run]
+sudo drives snapraid [status|diff|sync|scrub|schedule] [--dry-run]
   Manual SnapRAID commands, for a setup built with  sudo drives preset snapraid1  (or snapraid2).
     status  is the parity up to date?        diff   what changed since the last sync
     sync    update the parity now             scrub  check part of the files against it
-  The same sync runs automatically every night at 04:00, and a scrub on the 1st of the month. Without an argument, the status is shown.
+    schedule  write the nightly schedule again (a setup built before the delete limit existed needs this once)
+  The same sync runs automatically every night at 04:00, and a scrub on the 1st of the month. The nightly sync stops when more than 40 files were deleted since the last one, and the bell says so. Without an argument, the status is shown.
 EOF
     ;;
     wipe) cat <<'EOF'
@@ -6307,12 +6467,26 @@ panel_batch_report() {
   return 0
 }
 
+# batch_rsyncs PID: the rsync processes that PID started, directly or through other programs. An rsync that something else started (the nightly backup, for example) is never in the list.
+batch_rsyncs() {
+  local -a todo=("$1")
+  local p c
+  while [ ${#todo[@]} -gt 0 ]; do
+    p=${todo[0]}; todo=("${todo[@]:1}")
+    for c in $(pgrep -P "$p" 2>/dev/null); do
+      [ "$(cat "/proc/$c/comm" 2>/dev/null)" = rsync ] && echo "$c"
+      todo+=("$c")
+    done
+  done
+}
+
 panel_abort() {
   local pid
   pid=$(cat "$BATCH_PID_FILE" 2>/dev/null)
   if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null; then
     : >"$ABORT_FILE"
-    pkill -TERM -f -- '--info=progress2 --no-inc-recursive' 2>/dev/null || true
+    local r
+    for r in $(batch_rsyncs "$pid"); do kill -TERM "$r" 2>/dev/null || true; done
     say "Stop requested. The drives stop at the next safe point."
     return 0
   fi
@@ -6576,7 +6750,7 @@ run_changing() {
 
 take_lock() {
   mkdir -p "$(dirname "$LOGFILE")" 2>/dev/null || true
-  { exec 9>"/var/lock/homelab-drives.lock"; } 2>/dev/null || exec 9>"/tmp/homelab-drives.lock"
+  { exec 9>"$DRIVES_LOCK"; } 2>/dev/null || die "Could not open the lock file $DRIVES_LOCK. Nothing was done."
   flock -n 9 || die "Another drives command is running."
 }
 

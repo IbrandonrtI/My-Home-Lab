@@ -65,7 +65,7 @@ small_backup_drive_check() {
   [ "$size" -ge "$need" ] && return 0
   warn "This drive holds $(human "$size"). A full copy of Main is $(human "${used:-0}"), and a backup also needs some spare room (about $(human "$spare") here: a tenth of the drive, at most 20 GB)."
   note "It can still be used, but backups may stop with \"not enough free space\" until files are removed from Main or a bigger drive is added."
-  [ "$PANEL_MODE" = 1 ] || [ "$CONFIRM_ERASE" = 1 ] || [ "$DRY_RUN" = 1 ] || [ "$ASSUME_YES" = 1 ] || [ "$force" != 0 ] || [ "$confirmed" = 1 ] || [ ! -t 0 ] && return 0
+  { [ "$PANEL_MODE" = 1 ] || [ "$CONFIRM_ERASE" = 1 ] || [ "$DRY_RUN" = 1 ] || [ "$ASSUME_YES" = 1 ] || [ "$force" != 0 ] || [ "$confirmed" = 1 ] || [ ! -t 0 ]; } && return 0
   yn "Add this drive to the Backup pool anyway?" || { note "Nothing was changed."; return 1; }
 }
 

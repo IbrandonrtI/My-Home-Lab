@@ -11,7 +11,7 @@ setting_put() {
   mkdir -p "$(dirname "$SETTINGS_FILE")" 2>/dev/null || die "Could not write $SETTINGS_FILE"
   tmp=$(mktemp) || die "Could not make a temporary file"
   { [ -r "$SETTINGS_FILE" ] && awk -F'|' -v k="$1" -v n="$2" '!($1 == k && $2 == n)' "$SETTINGS_FILE"; printf '%s|%s|%s\n' "$1" "$2" "$3"; } >"$tmp"
-  cat "$tmp" >"$SETTINGS_FILE" || { rm -f "$tmp"; die "Could not write $SETTINGS_FILE"; }
+  replace_file "$SETTINGS_FILE" <"$tmp" || { rm -f "$tmp"; die "Could not write $SETTINGS_FILE"; }
   rm -f "$tmp"
 }
 
@@ -19,7 +19,7 @@ setting_del() {
   [ -r "$SETTINGS_FILE" ] || return 0
   local tmp; tmp=$(mktemp) || return 0
   awk -F'|' -v k="$1" -v n="$2" '!($1 == k && $2 == n)' "$SETTINGS_FILE" >"$tmp"
-  cat "$tmp" >"$SETTINGS_FILE" || true
+  replace_file "$SETTINGS_FILE" <"$tmp" || true
   rm -f "$tmp"
 }
 
@@ -27,7 +27,7 @@ SETTINGS_SNAP=""
 settings_snapshot() { SETTINGS_SNAP=$(mktemp); SETTINGS_WAS_MISSING=0; if [ -r "$SETTINGS_FILE" ]; then cat "$SETTINGS_FILE" >"$SETTINGS_SNAP"; else : >"$SETTINGS_SNAP"; SETTINGS_WAS_MISSING=1; fi; }
 settings_rollback() {
   if [ -n "$SETTINGS_SNAP" ] && [ -f "$SETTINGS_SNAP" ]; then
-    if [ "$SETTINGS_WAS_MISSING" = 1 ]; then rm -f "$SETTINGS_FILE"; else cat "$SETTINGS_SNAP" >"$SETTINGS_FILE"; fi
+    if [ "$SETTINGS_WAS_MISSING" = 1 ]; then rm -f "$SETTINGS_FILE"; else replace_file "$SETTINGS_FILE" <"$SETTINGS_SNAP"; fi
   fi
   rm -f "$SETTINGS_SNAP"; SETTINGS_SNAP=""; return 0
 }
@@ -39,7 +39,7 @@ settings_prune() {
   labels=""; for mp in $(all_branches); do labels="$labels$(basename "$mp")"$'\n'; done
   tmp=$(mktemp) || return 0
   awk -F'|' -v L="$labels" 'BEGIN { n = split(L, a, "\n"); for (i = 1; i <= n; i++) have[a[i]] = 1 } $1 == "limit" && !($2 in have) { next } { print }' "$SETTINGS_FILE" >"$tmp"
-  cat "$tmp" >"$SETTINGS_FILE" || true
+  replace_file "$SETTINGS_FILE" <"$tmp" || true
   rm -f "$tmp"
 }
 
@@ -82,20 +82,23 @@ fstab_snapshot() {
 
 fstab_rollback() {
   if [ -n "$FSTAB_SNAP" ] && [ -f "$FSTAB_SNAP" ]; then
-    cat "$FSTAB_SNAP" >"$FSTAB" && warn "fstab restored from $FSTAB_SNAP"
+    replace_file "$FSTAB" <"$FSTAB_SNAP" && warn "fstab restored from $FSTAB_SNAP"
     ROLLED_BACK=1
     sd_reload
   fi
 }
 
-fstab_add() { printf '%s\n' "$1" >>"$FSTAB"; log "fstab add: $1"; }
+fstab_add() {
+  { cat "$FSTAB"; [ -s "$FSTAB" ] && [ -n "$(tail -c1 "$FSTAB")" ] && echo; printf '%s\n' "$1"; } | replace_file "$FSTAB" || die "Could not write $FSTAB"
+  log "fstab add: $1"
+}
 
 fstab_remove_mp() {
   local tmp; tmp=$(mktemp)
   awk -v m="$1" '
     /^# removed by drives / { next }
     !/^[[:space:]]*#/ && $2 == m { next }
-    { print }' "$FSTAB" >"$tmp" && cat "$tmp" >"$FSTAB"
+    { print }' "$FSTAB" >"$tmp" && replace_file "$FSTAB" <"$tmp"
   rm -f "$tmp"
   settings_prune
   log "fstab remove mount point: $1"

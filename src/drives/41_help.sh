@@ -108,7 +108,7 @@ EOF
     disconnect) cat <<'EOF'
 sudo drives disconnect [--dry-run] [--yes] [--confirm-erase] [--now]
   Removes one drive from its pool. Its files can be copied to the other drives of the same storage first (checked file by
-  file). The data on the drive is not erased. The last Main drive cannot be removed. The containers stop briefly.
+  file). The data on the drive is not erased. Removing the last Main drive leaves the Main pool empty and needs you to type REMOVE. The containers stop briefly.
 EOF
     ;;
     move) cat <<'EOF'
@@ -300,11 +300,12 @@ sudo drives cache [--dry-run]
 EOF
     ;;
     snapraid) cat <<'EOF'
-sudo drives snapraid [status|diff|sync|scrub] [--dry-run]
+sudo drives snapraid [status|diff|sync|scrub|schedule] [--dry-run]
   Manual SnapRAID commands, for a setup built with  sudo drives preset snapraid1  (or snapraid2).
     status  is the parity up to date?        diff   what changed since the last sync
     sync    update the parity now             scrub  check part of the files against it
-  The same sync runs automatically every night at 04:00, and a scrub on the 1st of the month. Without an argument, the status is shown.
+    schedule  write the nightly schedule again (a setup built before the delete limit existed needs this once)
+  The same sync runs automatically every night at 04:00, and a scrub on the 1st of the month. The nightly sync stops when more than 40 files were deleted since the last one, and the bell says so. Without an argument, the status is shown.
 EOF
     ;;
     wipe) cat <<'EOF'

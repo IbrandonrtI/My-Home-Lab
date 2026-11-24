@@ -92,7 +92,7 @@ class DockerNumbers(unittest.TestCase):
         self.assertEqual(len(cpu["names"]), top + 1)
         self.assertEqual(cpu["names"][0], "c12")
         self.assertEqual(cpu["names"][-1], "other")
-        left = [i for i in range(1, 13 - top)]
+        left = list(range(1, 13 - top))
         self.assertEqual(sorted(cpu["rest"]), sorted("c%02d" % i for i in left))
         self.assertEqual(cpu["series"]["other"][0], float(sum(left)))
         self.assertEqual(out["charts"]["mem"]["series"]["other"][0], 1000 * sum(left))

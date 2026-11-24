@@ -202,9 +202,10 @@ restore_files() {
   sync_fs "${mains[@]}" "$MAIN_POOL"
   say ""
   say "Checking that every file in the backup is now in the pool..."
-  miss=$(LC_ALL=C comm -23 -z \
-    <(cd "$src/main" && find . -path ./lost+found -prune -o \( -type f -o -type l \) -print0 | LC_ALL=C sort -z) \
-    <(cd "$MAIN_POOL" && find . -path ./lost+found -prune -o \( -type f -o -type l \) -print0 | LC_ALL=C sort -z) | tr '\0' '\n')
+  local vrc=0
+  miss=$(copy_check "$base" "$MAIN_POOL/" --ignore-existing --exclude=/lost+found) || vrc=$?
+  if [ "$vrc" = 2 ]; then warn "The restored files could not be checked."; return 1; fi
+  miss=$(sed -E 's/^[^ ]+ //' <<<"$miss")
   if [ -n "$miss" ]; then
     warn "These files from the backup are still missing in the pool (first 20):"
     printf '%s\n' "$miss" | head -20 | sed 's/^/  /' >&2

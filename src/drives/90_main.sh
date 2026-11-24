@@ -10,7 +10,7 @@ run_changing() {
 
 take_lock() {
   mkdir -p "$(dirname "$LOGFILE")" 2>/dev/null || true
-  { exec 9>"/var/lock/homelab-drives.lock"; } 2>/dev/null || exec 9>"/tmp/homelab-drives.lock"
+  { exec 9>"$DRIVES_LOCK"; } 2>/dev/null || die "Could not open the lock file $DRIVES_LOCK. Nothing was done."
   flock -n 9 || die "Another drives command is running."
 }
 

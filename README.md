@@ -20,7 +20,6 @@ This is the home server I run, plus the installer and tools I use to build it an
 - [Guides](#guides)
 - [What is in this repository](#what-is-in-this-repository)
 - [Security](#security)
-- [Built with Claude](#built-with-claude)
 
 ## What it does
 
@@ -162,9 +161,9 @@ dev/             notes for whoever edits the code: a glossary and a list of deci
 ruff.toml        settings for the Python linter
 ```
 
-The installer, `drives`, `homelab` and `homelab-update` are built from small pieces in `src/`. Change the pieces, then run `bash tools/build.sh` to rebuild them, and `bash tools/build.sh --check` to confirm nothing is out of date.
+The installer, `drives`, `homelab`, `homelab-update`, the Customize panel's server script (`homelab-panel`), its page script (`panel/ui/app.js`) and the dashboard script (`homepage-config/custom.js`) are built from small pieces in `src/`. Change the pieces, then run `bash tools/build.sh` to rebuild them, and `bash tools/build.sh --check` to confirm nothing is out of date.
 
-Two workflows run on every push. [`checks.yml`](.github/workflows/checks.yml) covers the shell scripts, the installer build, the Python style, the links and the Markdown. [`tests.yml`](.github/workflows/tests.yml) runs the tests in `tests/`. They cover the Jellyfin look, the panel's sign-in and whether the repository agrees with itself. They don't run the installer on a real machine, so I still check changes on the server.
+Two workflows run on every push. [`checks.yml`](.github/workflows/checks.yml) covers the shell scripts, the installer build, the Python style, the links and the Markdown. [`tests.yml`](.github/workflows/tests.yml) runs the tests in `tests/`. They cover the Jellyfin look, the panel's sign-in, the bell's SnapRAID item, whether the repository agrees with itself, and the drives tool, which is run on test drives made of files (real ext4 drives in a real mergerfs pool). They don't run the installer on a real machine, so I still check changes on the server.
 
 ## Security
 

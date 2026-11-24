@@ -8,7 +8,7 @@ migrate_need_bytes() { local u=${1:-0}; echo $((u + u / 50 + 67108864)); }
 
 fstab_move_mp() {
   local tmp; tmp=$(mktemp)
-  awk -v o="$1" -v n="$2" '!/^[[:space:]]*#/ && $2 == o { sub(o, n) } { print }' "$FSTAB" >"$tmp" && cat "$tmp" >"$FSTAB"
+  awk -v o="$1" -v n="$2" '!/^[[:space:]]*#/ && $2 == o { sub(o, n) } { print }' "$FSTAB" >"$tmp" && replace_file "$FSTAB" <"$tmp"
   rm -f "$tmp"
   log "fstab move mount point: $1 -> $2"
 }
@@ -23,7 +23,11 @@ migrate_copy() {
   case $rc in 0|24) ;; *) warn "The copy stopped with an error (code $rc)."; return 1 ;; esac
   say "Checking the copy..."
   progress 91 "Checking the copy"
-  changed=$(rsync -aHAXni --numeric-ids --delete "${skip[@]}" "$MAIN_POOL"/ "$MIGRATE_DIR"/ 9>&- 2>/dev/null | grep -cE '^(>f|\*deleting|cL|hf)') || true
+  local out vrc=0
+  out=$(rsync -aHAXni --numeric-ids --delete "${skip[@]}" "$MAIN_POOL"/ "$MIGRATE_DIR"/ 9>&- 2>/dev/null) || vrc=$?
+  if abort_requested; then MIGRATE_STOPPED=1; return 1; fi
+  case $vrc in 0|24) ;; *) warn "The copy could not be checked (code $vrc)."; return 1 ;; esac
+  changed=$(grep -cE '^(>f|\*deleting|cL|hf)' <<<"$out") || true
   if abort_requested; then MIGRATE_STOPPED=1; return 1; fi
   if [ "${changed:-0}" -gt 0 ]; then warn "$changed file(s) are not the same in the copy."; return 1; fi
   say "The copy is complete and matches."

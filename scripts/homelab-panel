@@ -304,7 +304,7 @@ def undo():
         except OSError:
             raise Fail("The last Undo entry cannot be read, so nothing was changed.", 500) from None
     gone = set()
-    for fn, info in files.items():
+    for info in files.values():
         if info["path"] == SETTINGS:
             gone |= set(re.findall(r"/images/(background-\d{14}\.\w+)", read(SETTINGS)))
     for fn, info in files.items():
@@ -2522,7 +2522,7 @@ def links_apply(tx, head, old_groups, want, values):
     # Colors. A link that stays in its group keeps its color. A new link, or a link moved to another group (unless it has a color of its own), takes the color that
     # the links already in that group share, so it matches the theme. A new group with no such links uses the one color all links share, if there is one.
     stays = {}
-    for name, before, old_group, was, g in plan:
+    for _name, before, old_group, was, g in plan:
         if before and old_group == was:
             stays.setdefault(id(g), []).append(before)
     everyone = {colors[n] for n in old_links if colors.get(n)}
@@ -2734,25 +2734,35 @@ def set_password(pw):
 
 
 SESSIONS = {}
-FAILS = {"count": 0, "until": 0.0}
+FAIL_FORGET = 15 * 60  # wrong guesses are forgotten after this many quiet seconds
+FAILS = {}  # client address -> {"count", "until", "last"}
 
 
 LOGIN_LOCK = threading.Lock()
 
 
-def login(pw):
-    """Check the password. Checks go one at a time, so a burst of wrong guesses is stopped by the wait after the fourth one and cannot all be tried first."""
+def login(pw, addr="-"):
+    """Check the password. Checks go one at a time, so a burst of wrong guesses is stopped by the wait after the fourth one and cannot all be tried first.
+    Wrong guesses are counted for each address, so someone guessing from one device cannot lock the owner out on another, and the count is forgotten after 15 quiet minutes."""
     with LOGIN_LOCK:
         now = time.time()
-        if now < FAILS["until"]:
-            raise Fail("Too many wrong passwords. Wait %d seconds and try again." % int(FAILS["until"] - now + 1), 429)
+        for a in [a for a, f in FAILS.items() if now >= f["until"] and now - f["last"] > FAIL_FORGET]:
+            del FAILS[a]
+        if len(FAILS) > 2000:
+            for a in sorted(FAILS, key=lambda a: FAILS[a]["last"])[:len(FAILS) - 2000]:
+                del FAILS[a]
+        fail = FAILS.get(addr)
+        if fail and now < fail["until"]:
+            raise Fail("Too many wrong passwords. Wait %d seconds and try again." % int(fail["until"] - now + 1), 429)
         if not os.path.exists(PASSFILE):
             raise Fail("No password is set yet. In a terminal on the server, run:  homelab panel password", 403)
         if not isinstance(pw, str) or not check_password(pw):
-            FAILS["count"] += 1
-            FAILS["until"] = now + min(300, 2 ** min(FAILS["count"], 8)) if FAILS["count"] >= 4 else 0.0
+            fail = FAILS.setdefault(addr, {"count": 0, "until": 0.0, "last": now})
+            fail["count"] += 1
+            fail["last"] = now
+            fail["until"] = now + min(300, 2 ** min(fail["count"], 8)) if fail["count"] >= 4 else 0.0
             raise Fail("That is not the password.", 401)
-        FAILS["count"], FAILS["until"] = 0, 0.0
+        FAILS.pop(addr, None)
     tok = secrets.token_urlsafe(32)
     SESSIONS[tok] = {"created": now, "seen": now, "pw": pw_version()}
     for t in [t for t, s in SESSIONS.items() if now - s["seen"] > SESSION_IDLE or now - s["created"] > SESSION_MAX]:
@@ -4381,7 +4391,7 @@ class Handler(BaseHTTPRequestHandler):
                 if self.headers.get("X-Panel") != "1" or (self.headers.get("Origin") and not self.origin_ok(self.headers.get("Origin"))):
                     raise Fail("This request did not come from the panel page.", 403)
                 body = json.loads(self.read_body(4096) or b"{}")
-                tok = login(body.get("password"))
+                tok = login(body.get("password"), self.client_address[0])
                 flags = "; HttpOnly; SameSite=Lax; Path=/; Max-Age=%d" % SESSION_MAX + ("" if os.environ.get("HLP_COOKIE_PLAIN") else "; Secure")
                 return self.send(200, {"ok": True}, extra={"Set-Cookie": "%s=%s%s" % (COOKIE, tok, flags)})
             if path == "/api/alerts/refresh":

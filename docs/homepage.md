@@ -135,7 +135,7 @@ On a phone the cards stack in one column. It's the same dashboard, so the servic
 
 ## The Customize panel
 
-The Customize tab is a small control panel. It uses the admin password you chose at the start of the install (change it later with `homelab panel password`), and it only runs on the server. You can also open it directly at `https://pc.your-tailnet.ts.net:1100`. It has five screens: Look, Layout, Cards, Drives and Updates.
+The Customize tab is a small control panel. It uses the admin password you chose at the start of the install (change it later with `homelab panel password`), and it only runs on the server. After four wrong passwords from the same device it makes that device wait, a little longer each time. Other devices are not affected, and the count is forgotten after 15 minutes. You can also open it directly at `https://pc.your-tailnet.ts.net:1100`. It has five screens: Look, Layout, Cards, Drives and Updates.
 
 ### Look
 
@@ -184,7 +184,7 @@ A picture of the storage, in the style of TrueNAS.
 
 - The Main pool and Backup pool boxes, with a tile for each drive showing its name, size, how full it's, its temperature, its health and whether it's asleep.
 - Drives that are connected but not in a pool wait at the top. Drag one into a pool to add it, or select it to see its details and buttons: the model, serial number, file system and how much of it's used. The panel looks at the drive read-only for a moment to count, and changes nothing on it. A USB stick or memory card has no health report and no motor, so its card says "Not Reported" and "Always On".
-- Configure Drives builds ready-made setups: a plain pool, a mirror, SnapRAID, ZFS and RAID.
+- Configure Drives builds ready-made setups: a plain pool, a mirror, SnapRAID, ZFS and RAID. A SnapRAID setup updates its protection data every night at 04:00. When more than 40 files were deleted since the last update, the update does not run and the bell says so, because it would make those files impossible to restore. If the deletions are meant, run `sudo drives snapraid sync` once. A SnapRAID setup built before this limit existed needs `sudo drives snapraid schedule` once to get it.
 - Taking a drive out copies its files to the other drives first. Every action that could erase something asks for confirmation.
 - Fix Drives mounts the pools again after a power loss or a disconnection, checks that Immich and Nextcloud can find their files and starts the containers. If a drive is gone, a warning card keeps those two stopped and offers **Restore From Backup** or **Start on Empty Folders** ([details](maintenance.md#if-a-data-drive-fails-or-goes-missing)). A restore shows a progress bar and a **Cancel** button that removes what it copied. Fix Drives also makes sure the music folder is writable, so song uploads work.
 

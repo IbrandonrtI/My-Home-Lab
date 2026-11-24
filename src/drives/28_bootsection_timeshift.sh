@@ -165,7 +165,7 @@ bootsection_flow() {
   if [ -f "$img" ]; then
     old=$(stat -c %s "$img")
     say "A boot drive section of $(pretty_size "$old") that was used for the $role pool before is still saved."
-    idx=$(choose "Choose an action: " "Use it again, with its files" "Delete it and make a new one") || return 1
+    idx=$(choose "Choose an action: " "Use it again, with its files" "Delete it, with its files, and make a new one") || return 1
     [ "$idx" = 0 ] && reuse=1
   fi
 

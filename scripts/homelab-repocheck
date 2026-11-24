@@ -320,7 +320,9 @@ def check_installer(root, r):
 
 
 BUILT_FILES = [("installer/homelab-setup", "src/installer", "py"), ("scripts/drives", "src/drives", "sh"),
-               ("scripts/homelab", "src/homelab", "sh"), ("scripts/homelab-update", "src/homelab-update", "sh")]
+               ("scripts/homelab", "src/homelab", "sh"), ("scripts/homelab-update", "src/homelab-update", "sh"),
+               ("scripts/homelab-panel", "src/homelab-panel", "py"), ("panel/ui/app.js", "src/panel-ui", "js"),
+               ("homepage-config/custom.js", "src/homepage-custom", "js")]
 
 
 def joined_pieces(folder, ext):

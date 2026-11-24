@@ -2,12 +2,15 @@
 import os
 import py_compile
 import re
+import shutil
 import subprocess
 import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TARGETS = [("installer/homelab-setup", "src/installer", "py"), ("scripts/drives", "src/drives", "sh"),
-           ("scripts/homelab", "src/homelab", "sh"), ("scripts/homelab-update", "src/homelab-update", "sh")]
+           ("scripts/homelab", "src/homelab", "sh"), ("scripts/homelab-update", "src/homelab-update", "sh"),
+           ("scripts/homelab-panel", "src/homelab-panel", "py"), ("panel/ui/app.js", "src/panel-ui", "js"),
+           ("homepage-config/custom.js", "src/homepage-custom", "js")]
 
 
 def join_pieces(folder, ext):
@@ -36,8 +39,12 @@ def main(argv):
             continue
         with open(path, "w", encoding="utf-8") as f:
             f.write(text)
-        os.chmod(path, 0o755)
-        if ext == "py":
+        if ext != "js":
+            os.chmod(path, 0o755)
+        if ext == "js":
+            if shutil.which("node") and subprocess.run(["node", "--check", path]).returncode:
+                raise SystemExit("%s has a syntax error" % out)
+        elif ext == "py":
             py_compile.compile(path, doraise=True)
             cache = os.path.join(os.path.dirname(path), "__pycache__")
             subprocess.run(["rm", "-rf", cache])

@@ -55,9 +55,6 @@ adopt_flow() {
   log "adopted $part as $label; pool at $pool"
   say ""
   say "Done. $pool is now a pool containing $(branch_name "$mp"). Check: sudo drives status"
-  if [ "$TEST_MODE" != 1 ]; then
-    say "Reminder: replace the old STORAGE lines in root's crontab with the new one (see the guide)."
-  fi
   return 0
 }
 

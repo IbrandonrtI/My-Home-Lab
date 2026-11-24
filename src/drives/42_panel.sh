@@ -255,12 +255,26 @@ panel_batch_report() {
   return 0
 }
 
+# batch_rsyncs PID: the rsync processes that PID started, directly or through other programs. An rsync that something else started (the nightly backup, for example) is never in the list.
+batch_rsyncs() {
+  local -a todo=("$1")
+  local p c
+  while [ ${#todo[@]} -gt 0 ]; do
+    p=${todo[0]}; todo=("${todo[@]:1}")
+    for c in $(pgrep -P "$p" 2>/dev/null); do
+      [ "$(cat "/proc/$c/comm" 2>/dev/null)" = rsync ] && echo "$c"
+      todo+=("$c")
+    done
+  done
+}
+
 panel_abort() {
   local pid
   pid=$(cat "$BATCH_PID_FILE" 2>/dev/null)
   if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null; then
     : >"$ABORT_FILE"
-    pkill -TERM -f -- '--info=progress2 --no-inc-recursive' 2>/dev/null || true
+    local r
+    for r in $(batch_rsyncs "$pid"); do kill -TERM "$r" 2>/dev/null || true; done
     say "Stop requested. The drives stop at the next safe point."
     return 0
   fi
