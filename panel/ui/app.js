@@ -405,7 +405,7 @@ function quietApps() {
 async function appsRestore() {
   const b = (DRapps || {}).backup || {};
   const ok = await confirmBox("Restore From the Backup?",
-    "The files that are missing are copied back from the last backup" + (b.stamp ? " (" + b.stamp + ", result " + (b.result || "unknown") + ")" : "") + ". Files that are already there are never overwritten. Files added or changed after that backup are not in it and cannot be restored. Immich and Nextcloud stay stopped while the files are copied and start automatically when it is done. Their accounts and settings are unchanged. This can take a long time.",
+    "Missing files are copied back from the last backup" + (b.stamp ? " (" + b.stamp + ", result " + (b.result || "unknown") + ")" : "") + ". Existing files are never overwritten, and files added or changed after that backup cannot be restored. Immich and Nextcloud stop while the files copy and restart on their own. Accounts and settings are unchanged. This can take a long time.",
     "Restore From Backup");
   if (ok) startJob("appsfix", { mode: "restore", typed: ["RESTORE"] }, "The files are restored and Immich and Nextcloud are running again.");
 }
@@ -413,18 +413,18 @@ async function appsFresh() {
   const names = ((DRapps || {}).problems || []).map(a => a === "nextcloud" ? "Nextcloud" : a === "immich" ? "Immich" : a).join(" and ");
   const r = await driveDialog({
     title: "Start on Empty Folders",
-    lead: [names + " will start on empty folders. Their accounts and settings are unchanged because they are saved on the boot drive."],
+    lead: [names + " will start on empty folders. Accounts and settings are unchanged."],
     questions: [],
-    warn: () => "The photos and files that were on the missing drive will not be available. Immich keeps a list of photos it cannot open, and apps that sync with Nextcloud may remove their own copies of files the server no longer has. Do this only when the old files are permanently gone, or after restoring what could be restored.",
+    warn: () => "Photos and files from the missing drive will not be available. Immich keeps a list of photos it cannot open, and apps that sync with Nextcloud may delete their own copies. Do this only if the old files are gone for good, or after restoring what you can.",
     typed: () => [{ word: "START" }],
-    sure: () => "I understand that the old photos and files will not be available.",
+    sure: () => "I understand the old files will not be available.",
     ok: () => "Start on Empty Folders", danger: () => true });
   if (!r) return;
   startJob("appsfix", { mode: "fresh", typed: r.typed }, names + " started on empty folders.");
 }
 async function moveBootFiles() {
   const ok = await confirmBox("Move the Files to the Drive?",
-    "The files saved on the boot drive are copied to the Main pool and every file is checked. Only when all of them are on the pool are the old copies removed from the boot drive. A file that exists in both places with different content is never replaced, and its old copy stays on the boot drive. The services stop briefly while this runs.",
+    "Files on the boot drive are copied to the Main pool and checked. The old copies are removed only after every file is verified. A file that exists in both places with different content is never replaced. Services stop briefly.",
     "Move the Files");
   if (ok) startJob("moveboot", {}, "The files are on the Main pool now.");
 }
@@ -468,7 +468,7 @@ async function jobFinished(j) {
   if (busy) {
     await loadDrives();
     const why = (j.message || "").replace(/^.*?Not safe to continue now: ?/, "").replace(/\. (Nothing was changed|Stopping the containers).*$/, "").replace(/\.$/, "") || "something is being written to a pool";
-    const go = await confirmBox("Not Safe to Continue", why[0].toUpperCase() + why.slice(1) + ". Nothing was changed. Continuing now stops the containers briefly and can interrupt it. Wait until it has finished, or continue anyway?", "Go Ahead Anyway", true);
+    const go = await confirmBox("Not Safe to Continue", why[0].toUpperCase() + why.slice(1) + ". Nothing was changed. Continuing now stops the containers briefly and can interrupt it. Wait for it to finish, or continue anyway?", "Go Ahead Anyway", true);
     if (go) startJob(last.action, Object.assign({}, last.body, { typed: (last.body.typed || []).concat(["NOW"]) }), last.okText);
     return was;
   }
@@ -594,14 +594,14 @@ async function buildPlainPool(o) {
   const r = await driveDialog({
     title: "Build: " + o.title,
     lead: [o.blurb, "Drives used (" + drives.length + " of " + c.spare.length + "): " + drives.map(sp => sp.name + " (" + humanBytes(sp.size_bytes) + ")").join(", "),
-      withFiles.length ? "Drives that are already formatted can keep their files. The files then appear in the Main pool." : "These drives are empty. They will be formatted for HomeLab.",
+      withFiles.length ? "Formatted drives can keep their files, which then appear in the Main pool." : "These drives are empty. They will be formatted for HomeLab.",
       left.length ? "Not used: " + left.map(sp => sp.name + " (" + humanBytes(sp.size_bytes) + ")").join(", ") + ". They stay as spare drives." : "Every spare drive is used."],
     questions: withFiles.map(sp => ({ id: "m-" + sp.id, label: sp.name + "  ·  " + sp.device + "  ·  already formatted", value: sp.keep_ok ? "keep" : "erase", options: sp.keep_ok ? [KEEP_OPT("Main"), ERASE_OPT] : [CANT_KEEP_OPT] })),
     warn: s => {
       const e = erasing(s).filter(sp => !sp.blank);
       if (e.length) return "Everything on " + e.map(sp => sp.device).join(", ") + " will be permanently deleted.";
-      if (erasing(s).length) return "The empty drives are formatted for HomeLab. Nothing is lost. " + (withFiles.length ? "The files on the other drives are unchanged. " : "") + (running ? "The Main pool is running, so nothing stops." : "The containers that use the Main pool stop briefly.");
-      return "The files on the drives are unchanged. " + (running ? "The Main pool is running, so nothing stops." : "The containers that use the Main pool stop briefly.");
+      if (erasing(s).length) return "Empty drives are formatted for HomeLab. Nothing is lost. " + (withFiles.length ? "The files on the other drives are unchanged. " : "") + (running ? "The Main pool keeps running." : "Containers that use the Main pool stop briefly.");
+      return "The files on the drives are unchanged. " + (running ? "The Main pool keeps running." : "Containers that use the Main pool stop briefly.");
     },
     typed: s => erasing(s).length ? erasing(s).map(sp => ({ word: sp.device })).concat([{ word: "ERASE" }]) : [],
     sure: () => "I understand that everything on the drives marked for erasing will be permanently deleted.",
@@ -631,8 +631,8 @@ async function buildSetup(o) {
     title: "Build: " + o.title,
     lead: [o.blurb, "Drives used (" + drives.length + " of " + c.spare.length + "): " + drives.map(sp => sp.name + " (" + humanBytes(sp.size_bytes) + ")").join(", "),
       (humanBytes(o.usable_bytes) === humanBytes(o.used_bytes) ? "You get all of the " + humanBytes(o.used_bytes) + " on these drives. " : "You get about " + humanBytes(o.usable_bytes) + " of the " + humanBytes(o.used_bytes) + " on these drives. ") + (o.tolerates > 0 ? cap(protectText(o)) + " without losing files." : "There is no redundancy: if one drive fails, the files are lost."),
-      keepable.length ? (o.id === "mirror" ? "One drive can keep its files and becomes the Main drive. The other drive holds the copy and is erased." : "Drives that hold files can keep them as data drives. The largest drive" + (par > 1 ? "s" : "") + " that " + (par > 1 ? "are" : "is") + " not kept hold" + (par > 1 ? "" : "s") + " the protection data and " + (par > 1 ? "are" : "is") + " erased.") : null,
-      o.migrate ? "Your Main pool has " + humanBytes(c.main_used_bytes || 0) + " of files and this setup holds " + humanBytes(o.usable_bytes) + ", so everything fits. The files are copied into the new setup first and checked. Only then does it become the Main pool. The old Main drives are released afterwards. Their files are not erased, and they appear as spare drives. " + serviceText(c.main_services) + " The copy can take hours for large amounts of data. If Abort is pressed while it copies, the services start again and nothing changes." : null,
+      keepable.length ? (o.id === "mirror" ? "One drive can keep its files and becomes Main. The other holds the copy and is erased." : "Drives that hold files can keep them as data drives. The largest drive" + (par > 1 ? "s" : "") + " that " + (par > 1 ? "are" : "is") + " not kept hold" + (par > 1 ? "" : "s") + " the protection data and " + (par > 1 ? "are" : "is") + " erased.") : null,
+      o.migrate ? "Your Main pool has " + humanBytes(c.main_used_bytes || 0) + " of files and this setup holds " + humanBytes(o.usable_bytes) + ", so it all fits. The files are copied into the new setup and checked first, then it becomes the Main pool. The old Main drives are released afterwards with their files intact, as spare drives. " + serviceText(c.main_services) + " Large copies can take hours. If you press Abort while it copies, the services restart and nothing changes." : null,
       left.length ? "Not used: " + left.map(sp => sp.name + " (" + humanBytes(sp.size_bytes) + ")").join(", ") + ". They stay as spare drives." : "Every spare drive is used."].filter(Boolean),
     questions: keepable.map(sp => ({ id: "m-" + sp.id, label: sp.name + "  ·  " + sp.device + "  ·  already formatted", value: defKeep.has(sp.id) ? "keep" : "erase", options: [KEEP_OPT("Main"), ERASE_OPT] })),
     invalid: st => o.id === "mirror" && kept(st).length > 1 ? "A mirror can keep the files of only one drive. The other drive becomes the copy." : par && drives.length - kept(st).length < par ? "SnapRAID needs " + par + " drive" + (par > 1 ? "s" : "") + " for the protection data, and " + (par > 1 ? "they are" : "it is") + " erased. Let at least " + par + " of the drives be erased." : null,
@@ -661,7 +661,7 @@ function cfgBox() {
   if (!rec) return h("div", { class: "cfg" }, pick, h("p", { class: "muted" }, usable.length ? "No setup can be built on the chosen drives." : "Every spare drive is left out. Select at least one drive to see the setups."));
   const others = c.options.filter(o => o.id !== rec.id);
   return h("div", { class: "cfg" }, pick,
-    h("p", { class: "muted small" }, "Scanned " + nDrives(spare.length).toLowerCase() + (spare.length === 1 ? " that is" : " that are") + " not in a pool" + (usable.length < spare.length ? " (using " + usable.length + ": " + sizes + ")" : ": " + sizes) + ". Setups are ranked by a balance of redundancy and usable space. Every setup erases the drives it uses, except a plain pool, a mirror and SnapRAID, which can keep the files that are on a drive. A RAID or ZFS setup can also be built while Main has drives. The files are copied into it first, and the old Main drives are released afterwards without erasing their files."),
+    h("p", { class: "muted small" }, "Scanned " + nDrives(spare.length).toLowerCase() + (spare.length === 1 ? " that is" : " that are") + " not in a pool" + (usable.length < spare.length ? " (using " + usable.length + ": " + sizes + ")" : ": " + sizes) + ". Setups are ranked by redundancy and usable space. Every setup erases the drives it uses, except a plain pool, a mirror and SnapRAID, which can keep a drive's files. A RAID or ZFS setup can also replace a Main pool that has drives: the files are copied first, and the old drives are released without being erased."),
     h("div", { class: "cfgrec" }, h("b", {}, "Recommended: " + rec.title), h("span", { class: "muted small" }, humanBytes(rec.usable_bytes) + " usable, " + protectText(rec) + ", uses " + nDrives(rec.drives.length).toLowerCase()),
       !rec.can_build ? h("span", { class: "dwarn small" }, rec.why) : null),
     h("div", { class: "row tight" },
@@ -680,11 +680,11 @@ async function renameDrive(a) {
   driveDo("rename", { id: a.id, name }, true);
 }
 async function autoName(a) {
-  if (await confirmBox("Use the Automatic Name?", "The drive will use its automatic name (size, make and type) instead of \"" + a.name + "\".", "Use Automatic Name")) driveDo("rename", { id: a.id, name: "auto" }, true);
+  if (await confirmBox("Use the Automatic Name?", "The drive goes back to its automatic name (size, make and type) instead of \"" + a.name + "\".", "Use Automatic Name")) driveDo("rename", { id: a.id, name: "auto" }, true);
 }
 async function remountDrives() {
   const ok = await confirmBox("Fix Drives?",
-    "Use this after a drive was disconnected, after a power loss or when a drive is missing. The containers that use the pool stop, every drive and pool is mounted again from the saved setup, and the containers start again. Then it checks that Immich and Nextcloud can find their files. If they cannot, they stay stopped and the next step is chosen here. It can take a minute, and nothing is erased or moved. If a backup or an upload is running right now, it is refused and nothing changes.",
+    "Use this after a drive was disconnected, a power loss or a missing drive. Containers that use the pool stop, every drive and pool is mounted again from the saved setup, and the containers restart. Immich and Nextcloud are then checked for their files. If missing, they stay stopped and you choose the next step. Takes about a minute. Nothing is erased or moved. Refused while a backup or upload is running.",
     "Fix Drives");
   if (ok) driveDo("remount", {}, true);
 }
@@ -692,9 +692,9 @@ async function remountDrives() {
 const poolOf = role => ((DR && DR.status && DR.status.pools) || []).find(p => p.role === role) || {};
 const devOf = t => "/dev/" + diskOf(t.d.device);
 const nDrives = n => n === 0 ? "No Drives" : n + (n === 1 ? " Drive" : " Drives");
-const KEEP_OPT = R => ({ value: "keep", label: "Keep the files", hint: "The drive is added as it is. Its files appear in the " + R + " pool." });
-const ERASE_OPT = { value: "erase", label: "Erase the drive and format it", hint: "Everything on the drive is deleted. It is added as a new, empty drive." };
-const CANT_KEEP_OPT = { value: "erase", label: "Erase the drive and format it", hint: "HomeLab can use a drive as it is only when it has one Linux (ext4) partition. This drive is set up differently (for example Windows exFAT or NTFS, or several partitions), so its files cannot be kept. Everything on it is deleted and it is formatted for HomeLab." };
+const KEEP_OPT = R => ({ value: "keep", label: "Keep the files", hint: "Added as it is. Its files appear in the " + R + " pool." });
+const ERASE_OPT = { value: "erase", label: "Erase the drive and format it", hint: "Everything on it is deleted. It is added as a new, empty drive." };
+const CANT_KEEP_OPT = { value: "erase", label: "Erase the drive and format it", hint: "HomeLab can keep a drive's files only if it has one Linux (ext4) partition. This one does not (for example exFAT, NTFS or several partitions), so it must be erased and formatted." };
 
 // The dialog that adds spare drives to a pool.
 async function addDrives(tiles, role) {
@@ -712,7 +712,7 @@ async function addDrives(tiles, role) {
     warn: s => {
       const e = erasing(s);
       if (e.length) return "Everything on " + e.map(sp => sp.device).join(", ") + " will be permanently deleted.";
-      return "The files on the drive" + (one ? "" : "s") + " stay unchanged and appear in the " + R + " pool. " + (running ? "The pool is running, so nothing stops." : "The containers that use it stop briefly.");
+      return "The files on the drive" + (one ? "" : "s") + " stay unchanged and appear in the " + R + " pool. " + (running ? "The pool keeps running." : "Containers that use it stop briefly.");
     },
     typed: s => { const e = erasing(s); return e.length ? e.map(sp => ({ word: sp.device })).concat([{ word: "ERASE" }]) : []; },
     sure: () => "I understand that everything on " + (one ? "this drive" : "the erased drives") + " will be permanently deleted.",
@@ -726,7 +726,7 @@ async function eraseSpare(sp) {
   const dev = sp.device;
   const r = await driveDialog({
     title: "Erase Spare Drive",
-    lead: [sp.name + "  ·  " + dev + "  ·  " + humanBytes(sp.size_bytes), "Only a spare drive can be erased here. A drive in a pool and the boot drive never can."],
+    lead: [sp.name + "  ·  " + dev + "  ·  " + humanBytes(sp.size_bytes), "Only spare drives can be erased here, never a pool drive or the boot drive."],
     questions: [{ id: "mode", label: "What should the drive be afterwards?", value: "format", options: [
       { value: "format", label: "A new, empty drive (formatted)", hint: "Ready to be added to a pool." },
       { value: "empty", label: "Empty, without a file system", hint: "It must be formatted before it can be used." }] }],
@@ -744,14 +744,14 @@ async function bootAdd(role) {
   const free = (DR.status || {}).boot_free_bytes;
   const r = await driveDialog({
     title: "Use Part of the Boot Drive for the " + R + " Pool",
-    lead: ["The boot drive also holds the system and the apps. Free now: " + humanBytes(free) + ". It always keeps " + humanBytes(typeof free === "number" ? free - bl.max_bytes : 0) + " or more free for the system.",
-      "The space is taken from the boot drive immediately and stays reserved, even while the space is empty. The space is the last drive the " + role + " pool uses. It receives files only when the other " + role + " drives are full."],
-    fields: [{ id: "size", label: "Size in " + bl.unit, value: Math.max(bl.lo, Math.min(bl.hi, 100)), min: bl.lo, max: bl.hi, hint: "From " + bl.lo + " to " + bl.hi + " " + bl.unit + ". The space you can fill is about 2% less, because the new file system keeps some for its own index and journal." }],
+    lead: ["Free now: " + humanBytes(free) + ". At least " + humanBytes(typeof free === "number" ? free - bl.max_bytes : 0) + " always stays free for the system.",
+      "The space is reserved right away, even while empty. The " + role + " pool uses it last, only when its other drives are full."],
+    fields: [{ id: "size", label: "Size in " + bl.unit, value: Math.max(bl.lo, Math.min(bl.hi, 100)), min: bl.lo, max: bl.hi, hint: bl.lo + " to " + bl.hi + " " + bl.unit + ". About 2% less is usable (file system overhead)." }],
     questions: [],
     invalid: st => { const n = Number(st.size); return !Number.isInteger(n) || n < bl.lo || n > bl.hi ? "Choose a whole number from " + bl.lo + " to " + bl.hi + " " + bl.unit + "." : null; },
-    warn: () => "If the boot drive fails, everything in this space is lost together with the system." + (role === "backup" ? " A backup on the boot drive helps if a Main drive fails, but not if the boot drive fails, because the backup is lost with it." : ""),
+    warn: () => "If the boot drive fails, everything in this space is lost with the system." + (role === "backup" ? " A backup here helps if a Main drive fails, but not if the boot drive fails." : ""),
     typed: () => [{ word: "CONTINUE" }],
-    sure: () => "I understand that this part of the boot drive is used for storage and goes with it if it fails.",
+    sure: () => "I understand this space is lost if the boot drive fails.",
     ok: () => "Add to " + R + " Pool", danger: () => false });
   if (r) startJob("bootadd", { role, units: Number(r.answers.size), typed: r.typed }, "The Boot Drive Space was added to the " + R + " pool.");
 }
@@ -782,10 +782,10 @@ async function takeOutDrives(tiles) {
     title: one ? "Take Drive Out of the " + R + " Pool" : "Take " + tiles.length + " Drives Out of the " + R + " Pool",
     lead: [one ? tiles[0].d.name + (tiles[0].ren.has_data ? "  ·  holds " + humanBytes(held) : emptyDriveText(tiles[0])) : names],
     questions: f.copyable && !bootData ? [{ id: "copy", label: (one ? "Its files are" : "Their files are") + " in the " + role + " pool. What should happen to them?", value: "yes", options: [
-      { value: "yes", label: "Copy them to another " + role + " drive first (recommended)", hint: "Every file is copied and checked before the drive is removed. Nothing is lost." },
-      { value: "no", label: "Do not copy them", hint: "The files stay on the drive only. They are no longer available in the " + role + " pool." }] }] : [],
-    note: () => bootData && !f.only ? "The files in the Boot Drive Space are copied to the other " + role + " drives first. Removing it returns its space to the boot drive, which deletes it." : null,
-    warn: s => bootData && f.only ? "There is no other " + role + " drive to copy the files of the Boot Drive Space to, and removing it deletes it. Every file in it is permanently lost. To keep them, add another " + role + " drive first (or cancel)." : f.only ? "No " + role + " drive stays, so nothing can be copied. The files stay on the " + (one ? "drive" : "drives") + " only (nothing is deleted). " + (role === "main" ? "The Main pool will be empty. The services that use it (such as Immich, Nextcloud and FileBrowser) will keep running and save their files on the boot drive until a Main drive is added again." : "Backups stop until another backup drive is added.") : f.copyable && s.copy === "no" ? "Without copying, the files on " + (one ? "this drive" : "these drives") + " will not show in the " + role + " pool any more. They stay on the drive." : f.noRoom && s.copy === "yes" ? f.roomText : "The drive" + (one ? " is" : "s are") + " taken out of the " + role + " pool. The data on the drive is not changed. The containers that use the pool stop briefly.",
+      { value: "yes", label: "Copy them to another " + role + " drive first (recommended)", hint: "Every file is copied and checked first. Nothing is lost." },
+      { value: "no", label: "Do not copy them", hint: "The files stay on the drive only and leave the " + role + " pool." }] }] : [],
+    note: () => bootData && !f.only ? "The Boot Drive Space files are copied to the other " + role + " drives first. Removing it returns its space to the boot drive." : null,
+    warn: s => bootData && f.only ? "There is no other " + role + " drive to copy the files of the Boot Drive Space to, and removing it deletes it. Every file in it is permanently lost. To keep them, add another " + role + " drive first (or cancel)." : f.only ? "No " + role + " drive stays, so nothing can be copied. The files stay on the " + (one ? "drive" : "drives") + " only (nothing is deleted). " + (role === "main" ? "The Main pool will be empty. The services that use it (such as Immich, Nextcloud and FileBrowser) will keep running and save their files on the boot drive until a Main drive is added again." : "Backups stop until another backup drive is added.") : f.copyable && s.copy === "no" ? "Without copying, the files on " + (one ? "this drive" : "these drives") + " will not show in the " + role + " pool any more. They stay on the drive." : f.noRoom && s.copy === "yes" ? f.roomText : "The drive" + (one ? " is" : "s are") + " taken out of the " + role + " pool. Its data is not changed. Containers that use the pool stop briefly.",
     typed: s => bootData && f.only ? [{ word: "ERASE" }, { word: "REMOVE" }] : f.only ? [{ word: "REMOVE" }] : f.copyable && s.copy === "no" ? [{ word: "CONTINUE" }] : [],
     sure: () => bootData && f.only ? "I understand that the files in the Boot Drive Space will be permanently deleted." : f.only ? (role === "main" ? "I understand that the Main pool will be empty and the services that use it will save their files on the boot drive until a Main drive is added." : "I understand that backups stop until another backup drive is added.") : "I understand that the files on " + (one ? "this drive" : "these drives") + " will no longer show in the " + role + " pool.",
     ok: () => one ? "Take Drive Out" : "Take Drives Out", danger: s => f.only || (f.copyable && s.copy === "no") });
@@ -1140,7 +1140,7 @@ async function abortJob() {
   const act = DRbusy;
   if (!/^(add|disconnect|move|setup|appsfix)$/.test(act) || (DRjob && DRjob.stopping)) return;
   if (act === "appsfix") {
-    if (!await confirmBox("Cancel the Copy?", "The copy stops immediately and the files already copied from the backup are removed, so the Main pool has none of this restore's data. Files that were in Main before are not changed. Immich and Nextcloud stay stopped, and the restore can be started again later.", "Cancel the Copy", true)) return;
+    if (!await confirmBox("Cancel the Copy?", "The copy stops now and the files already copied from the backup are removed. Files that were in Main before are not changed. Immich and Nextcloud stay stopped, and the restore can be started again later.", "Cancel the Copy", true)) return;
     try { const r = await api("POST", "/api/drives/abort", {}); if (DRjob) DRjob.stopping = true; toast(r.message || "Stopping."); } catch (e) { fail(e); }
     drawDrives();
     return;
@@ -1289,12 +1289,12 @@ async function updStart(what, extra) {
   } catch (e) { fail(e); }
 }
 async function updAnyway() {
-  if (!(await confirmBox("Update anyway?", "The update is held back because " + UPDheld + ". Updating while that is going on can slow it down or interrupt it, and each service restarts for a short time. Update now?", "Update Anyway", true))) return;
+  if (!(await confirmBox("Update anyway?", "The update is held back because " + UPDheld + ". Updating now can slow that down or interrupt it, and each service restarts briefly. Update now?", "Update Anyway", true))) return;
   UPDheld = "";
   updStart("containers-now");
 }
 async function updRestart() {
-  if (!(await confirmBox("Restart the machine?", "Every service stops for a minute or two and starts again automatically. Do not do this while a backup or an upload is running.", "Restart Now", true))) return;
+  if (!(await confirmBox("Restart the machine?", "Every service stops for a minute or two and restarts on its own. Do not restart during a backup or upload.", "Restart Now", true))) return;
   updStart("restart", { confirm: true });
 }
 function updRow(title, sub, pill, buttons, prog) {
@@ -1471,7 +1471,7 @@ function upPhotoBox() {
         h("p", { class: "small" }, h("a", { href: link, target: "_blank", rel: "noopener" }, "Open Immich's API Keys page")),
         h("div", { class: "row tight" }, key, h("button", { class: "small primary", onclick: save }, "Save the Key")), msg),
     upList("photo"),
-    im.configured ? h("button", { class: "small link", onclick: async () => { if (await confirmBox("Forget the Immich key?", "The panel stops uploading to Immich until a key is pasted again. The key itself stays in Immich.", "Forget It", true)) { try { await api("POST", "/api/upload/immich-key", { key: "" }); await loadUploads(); } catch (e) { fail(e); } } } }, "Forget the Immich key") : null);
+    im.configured ? h("button", { class: "small link", onclick: async () => { if (await confirmBox("Forget the Immich key?", "Uploads to Immich stop until a key is pasted again. The key itself stays in Immich.", "Forget It", true)) { try { await api("POST", "/api/upload/immich-key", { key: "" }); await loadUploads(); } catch (e) { fail(e); } } } }, "Forget the Immich key") : null);
 }
 function upSongBox() {
   const m = UP.music, usable = m.exists && m.writable;
@@ -1606,8 +1606,8 @@ async function bkToggle(t) {
 }
 function bkDelete(t) {
   const d = h("dialog", {}, h("h2", {}, "Delete " + t.name + "?"),
-    h("p", {}, "The task stops running. The copies it already made can be kept (they stay where they are and can be deleted manually) or erased now."),
-    h("p", { class: "muted small" }, "The original files are never changed."),
+    h("p", {}, "The task stops running. Choose what happens to the copies it already made."),
+    h("p", { class: "muted small" }, "Your original files are never changed."),
     h("div", { class: "actions" },
       h("button", { onclick: () => d.close() }, "Cancel"),
       h("button", { onclick: () => go("keep") }, "Delete Task, Keep Copies"),
@@ -1652,15 +1652,15 @@ function bkEdit(t) {
     const kids = [bkField("Where should the copies go?", types)];
     if (d.type === "local") {
       kids.push(pick, bkField("Folder for the copies", h("input", { type: "text", value: d.path, placeholder: "/mnt/backup/homelab-backups", maxlength: 300, oninput: e => { d.path = e.target.value.trim(); } }),
-        "Each task makes its own folder inside it, with one dated folder per version. The folder must be on a connected drive."));
+        "Each task gets its own folder here, with one dated folder per version. It must be on a connected drive."));
     } else if (d.type === "ssh") {
-      kids.push(bkField("The other computer", h("input", { type: "text", value: d.host, placeholder: "user@computer.your-tailnet.ts.net", maxlength: 300, oninput: e => { d.host = e.target.value.trim(); } }), "The account to log in with. Add :2222 at the end to use another port."),
+      kids.push(bkField("The other computer", h("input", { type: "text", value: d.host, placeholder: "user@computer.your-tailnet.ts.net", maxlength: 300, oninput: e => { d.host = e.target.value.trim(); } }), "The login account. Add :2222 for another port."),
         bkField("Folder on that computer", h("input", { type: "text", value: d.path, placeholder: "/home/user/homelab-backups", maxlength: 300, oninput: e => { d.path = e.target.value.trim(); } })),
         h("div", { class: "row tight" },
           h("button", { class: "small", onclick: showKey }, "Show the Key"),
           h("button", { class: "small", onclick: testSsh }, "Test the Connection")),
         keyInfo || (BK.ssh.key ? null : h("p", { class: "muted small" }, "First press Show the Key, add it on the other computer, then test the connection.")),
-        h("p", { class: "muted small" }, "The other computer needs rsync installed and must accept this machine's key."));
+        h("p", { class: "muted small" }, "It needs rsync installed and must accept this machine's key."));
     } else {
       const remotes = BK.cloud.remotes || [];
       if (!BK.cloud.installed) kids.push(h("p", { class: "warntext" }, "The cloud tool (rclone) is not installed on this machine. Install it first: sudo apt install rclone"));
@@ -1718,7 +1718,7 @@ function bkEdit(t) {
     if (s.kind === "weekly") kids.push(h("select", { "aria-label": "Day of the week", onchange: e => { s.dow = +e.target.value; } }, WEEKDAYS.map((n, i) => h("option", { value: i, selected: s.dow === i }, n))));
     if (s.kind === "monthly") kids.push(h("select", { "aria-label": "Day of the month", onchange: e => { s.dom = +e.target.value; } }, Array.from({ length: 28 }, (_, i) => h("option", { value: i + 1, selected: s.dom === i + 1 }, "Day " + (i + 1)))));
     if (s.kind === "hourly") kids.push(h("label", { class: "inl" }, "at minute ", h("input", { type: "number", min: 0, max: 59, value: s.minute || 0, "aria-label": "Minute of the hour", oninput: e => { s.minute = Math.max(0, Math.min(59, parseInt(e.target.value, 10) || 0)); } })));
-    else kids.push(h("label", { class: "inl" }, "at ", h("input", { type: "time", value: s.time || "02:00", "aria-label": "Time of day", oninput: e => { s.time = e.target.value || "02:00"; } }), BK && BK.server_zone ? h("span", { class: "muted" }, " (the server's own time, " + BK.server_zone + "; the list shows the result in your zone)") : ""));
+    else kids.push(h("label", { class: "inl" }, "at ", h("input", { type: "time", value: s.time || "02:00", "aria-label": "Time of day", oninput: e => { s.time = e.target.value || "02:00"; } }), BK && BK.server_zone ? h("span", { class: "muted" }, " (server time, " + BK.server_zone + ")") : ""));
     put(when, h("div", { class: "field" }, h("label", {}, "When should it run?"), h("div", { class: "row tight" }, kids)));
   };
   const drawKeep = () => {
@@ -1731,29 +1731,30 @@ function bkEdit(t) {
   };
   const form = [h("h2", {}, t ? "Edit " + t.name : "New Backup Task"),
     bkField("Name", h("input", { type: "text", value: f.name, maxlength: 40, placeholder: "My documents", oninput: e => { f.name = e.target.value; } }))];
-  const FOLDER_NAMES = { immich: "Photos and videos (Immich)", nextcloud: "Files and documents (Nextcloud)", music: "Music (Navidrome and Downtify)", videos: "Videos saved by MeTube", movies: "Movies (Jellyfin)", shows: "TV shows (Jellyfin)" };
-  const folders = h("div", { class: "field" });
+  const FOLDER_NAMES = { immich: ["Photos and videos", "Immich"], nextcloud: ["Files and documents", "Nextcloud"], music: ["Music", "Navidrome and Downtify"], videos: ["Videos", "MeTube"], movies: ["Movies", "Jellyfin"], shows: ["TV shows", "Jellyfin"] };
+  const folderName = n => (FOLDER_NAMES[n] || [n, ""])[0];
+  const folders = h("div", { class: "field bkfolders" });
   const drawFolders = () => {
     const skip = new Set(f.skip || []), names = f.folders || [];
     const left = names.filter(n => skip.has(n));
-    const rows = names.map(n => h("label", { class: "row check" },
-      h("input", { type: "checkbox", checked: !skip.has(n), "aria-label": "Back up " + (FOLDER_NAMES[n] || n),
+    const tiles = names.map(n => h("label", { class: "bktile" },
+      h("input", { type: "checkbox", checked: !skip.has(n), "aria-label": "Back up " + folderName(n),
         onchange: e => { if (e.target.checked) skip.delete(n); else skip.add(n); f.skip = names.filter(x => skip.has(x)); drawFolders(); } }),
-      h("span", {}, FOLDER_NAMES[n] || n, FOLDER_NAMES[n] ? h("small", { class: "muted" }, "  " + n) : null)));
+      h("span", { class: "bkfname" }, h("b", {}, folderName(n)), h("small", {}, (FOLDER_NAMES[n] || [])[1] || "Folder"))));
     put(folders, h("label", {}, "What to back up"),
-      names.length ? h("div", { class: "grid cols2" }, rows) : h("p", { class: "muted" }, "No folders were found in the Main pool, so the whole pool is backed up."),
-      left.length === names.length && names.length ? h("p", { class: "warntext" }, "Leave at least one folder ticked.") : null,
-      left.length ? h("p", { class: "warntext" }, "Not backed up: " + left.map(n => FOLDER_NAMES[n] || n).join(", ") + ". If a drive fails, these files cannot be restored from this backup. Copies that are already in the backup stay where they are and stop being updated.") : null,
-      h("span", { class: "hint" }, "The lab's settings and the Nextcloud database are always backed up, whatever is ticked here."));
+      names.length ? h("div", { class: "bktiles" }, tiles) : h("p", { class: "muted" }, "No folders found. The whole pool is backed up."),
+      left.length === names.length && names.length ? h("p", { class: "warntext bknote" }, "Keep at least one folder ticked.") : null,
+      left.length ? h("p", { class: "warntext bknote" }, "Not backed up: " + left.map(folderName).join(", ") + ". They cannot be restored if a drive fails.") : null,
+      h("span", { class: "hint" }, "Settings and the Nextcloud database are always included."));
   };
   if (nightly) {
     drawFolders();
-    form.push(h("p", { class: "muted" }, "This is the nightly backup of " + f.source + " to " + f.dest.path + ". You can rename it, turn it off, choose what is backed up, change when it runs and how long it keeps files you delete or replace."), folders, when,
-      bkField("Keep files that are deleted or replaced for how many days?",
+    form.push(h("p", { class: "muted bkintro" }, "Copies " + f.source + " to " + f.dest.path + "."), folders, when,
+      bkField("Keep older versions (days)",
         h("input", { type: "number", min: 1, max: 3650, value: (f.keep && f.keep.days) || 30, "aria-label": "Days to keep deleted or replaced files", oninput: e => { f.keep = { days: Math.max(1, Math.min(3650, parseInt(e.target.value, 10) || 30)) }; } }),
-        "The default is 30 days. When a file is deleted or changed, the older copy stays in the backup for this long and is then removed to free space. A longer period needs more space on the backup drive."));
+        "Deleted or replaced files are kept this long. More days use more space."));
   } else {
-    form.push(bkField("Folder to back up", h("input", { type: "text", value: f.source, placeholder: "/mnt/storage/photos", maxlength: 300, list: "bk-src", oninput: e => { f.source = e.target.value.trim(); } }), "The full path of the folder on this machine."),
+    form.push(bkField("Folder to back up", h("input", { type: "text", value: f.source, placeholder: "/mnt/storage/photos", maxlength: 300, list: "bk-src", oninput: e => { f.source = e.target.value.trim(); } }), "Full path of the folder on this machine."),
       h("datalist", { id: "bk-src" }, BK.drives.map(x => h("option", { value: x.path }))),
       where, when, keep,
       h("details", { class: "bkmore" }, h("summary", {}, "Skip some files (optional)"),
@@ -1809,7 +1810,7 @@ async function bkDownload(t) {
     } catch (e) { put(err, e.message); }
   };
   const d = h("dialog", { class: "wide dcard bkdlg" }, h("h2", {}, "Download from " + t.name),
-    h("p", { class: "muted small" }, "Saves a file, or a whole folder as one .zip, to this device. Use it when there is no other way to get the files back. The zip of a large folder shows no size while it downloads. Keep this page open until the browser reports that the download is done."),
+    h("p", { class: "muted small" }, "Save a file, or a folder as one .zip, to this device. A large .zip shows no size while it downloads. Keep this page open until the browser says it is done."),
     h("div", { class: "field" }, h("label", {}, "Which version?"),
       h("select", { "aria-label": "Version", onchange: e => { ver = versions.find(v => v.name === e.target.value); go([]); } }, versions.map(v => h("option", { value: v.name }, v.label)))),
     note, crumbs, list, err,
@@ -1843,7 +1844,7 @@ async function bkRestore(t) {
       h("button", { class: "small", onclick: () => doRestore(path.concat(e.name).join("/")) }, "Restore"))) : h("p", { class: "muted" }, "Nothing in this folder."));
   };
   const doRestore = async r => {
-    if (target === "original" && !(await confirmBox("Replace the originals with the restored files?", "Files with the same name in " + t.source + " will be replaced by the ones from this version. What they replace is kept in the _restored folder next to them.", "Replace the Files", true))) return;
+    if (target === "original" && !(await confirmBox("Replace the originals with the restored files?", "Files with the same name in " + t.source + " are replaced by this version. The replaced files are kept in the _restored folder next to them.", "Replace the Files", true))) return;
     d.close();
     bkStart("restore", { id: t.id, version: ver.name, rel: r, target });
   };
@@ -1852,8 +1853,8 @@ async function bkRestore(t) {
       h("select", { "aria-label": "Version", onchange: e => { ver = versions.find(v => v.name === e.target.value); go([]); } }, versions.map(v => h("option", { value: v.name }, v.label)))),
     note, crumbs, list,
     h("div", { class: "field" }, h("label", {}, "Where should the files go?"),
-      h("label", { class: "inl" }, h("input", { type: "radio", name: "bk-target", checked: true, onchange: () => { target = "folder"; } }), " Into a new folder next to the originals (safe, nothing is replaced)"),
-      h("label", { class: "inl" }, h("input", { type: "radio", name: "bk-target", onchange: () => { target = "original"; } }), " Over the original files (they are replaced; the old ones are kept)")),
+      h("label", { class: "inl" }, h("input", { type: "radio", name: "bk-target", checked: true, onchange: () => { target = "folder"; } }), " Into a new folder next to the originals (nothing is replaced)"),
+      h("label", { class: "inl" }, h("input", { type: "radio", name: "bk-target", onchange: () => { target = "original"; } }), " Over the original files (replaced files are kept)")),
     err,
     h("div", { class: "actions" }, h("button", { onclick: () => d.close() }, "Close"), h("button", { class: "primary", onclick: () => doRestore(rel()) }, "Restore Everything Shown Here")));
   d.addEventListener("close", () => d.remove());
@@ -1947,7 +1948,7 @@ async function saveLook() {
   } catch (e) { fail(e); }
 }
 async function resetLook() {
-  if (!await confirmBox("Reset All Settings?", "The colors, glass, shapes, names, logo and the colors of cards and labels return to the dashboard defaults. The picture, cards and layout are unchanged. Undo restores the previous settings.", "Reset All Settings")) return;
+  if (!await confirmBox("Reset All Settings?", "Colors, glass, shapes, names, logo and card and label colors return to the defaults. The picture, cards and layout are unchanged. Undo restores the previous settings.", "Reset All Settings")) return;
   try { await api("POST", "/api/look/reset", {}); send({ type: "saved" }); toast("All settings are back to the defaults."); await afterChange(false); } catch (e) { fail(e); }
 }
 function lookSlider(label, key, lo, hi, step, unit, hint) {
@@ -2193,7 +2194,7 @@ async function chooseMyTheme(t) {
   if (server.length) {
     const what = server.map(p => p === "layout" ? "layout (tabs and groups)" : "cards (their names, icons, groups and order)").join(" and ");
     const draft = t.parts.includes("look") || t.parts.includes("background");
-    if (!await confirmBox("Use “" + t.name + "”?", "This theme also puts back its " + what + ". That happens immediately, and the Undo button at the top reverts it. " +
+    if (!await confirmBox("Use “" + t.name + "”?", "This also restores the theme's " + what + ". It applies right away, and Undo reverts it. " +
       (draft ? "The colors and the picture are a draft until you press Save." : ""), "Use This Theme")) return;
     try { await api("POST", "/api/mytheme", { op: "apply", id: t.id }); await afterChange(true); } catch (e) { return fail(e); }
     if (framed && autoReload()) await new Promise(r => setTimeout(r, 1400));
@@ -2261,7 +2262,7 @@ function myThemeTile(t) {
         try { await api("POST", "/api/mytheme", { op: "rename", id: t.id, name: n, blurb: t.blurb }); await refreshMyThemes(); } catch (e) { fail(e); }
       } }, "Rename"),
       h("button", { class: "small danger", onclick: async () => {
-        if (!await confirmBox("Delete “" + t.name + "”?", "The theme is deleted from the list. The current dashboard is unchanged.", "Delete the Theme", true)) return;
+        if (!await confirmBox("Delete “" + t.name + "”?", "The theme is removed from the list. The current dashboard is unchanged.", "Delete the Theme", true)) return;
         try { await api("POST", "/api/mytheme", { op: "delete", id: t.id }); await refreshMyThemes(); toast("Deleted."); } catch (e) { fail(e); }
       } }, "Delete")));
 }
@@ -2762,7 +2763,7 @@ function viewItems(kind) {
   async function remove(g, it) {
     if (!isCards) { g.links.splice(g.links.indexOf(it), 1); redraw(); return; }
     if (it.hl) {
-      if (!await confirmBox("Hide “" + it.name + "”?", "It is removed from the dashboard. It can be restored at any time with Add From HomeLab's List, or with Undo.", "Hide It", true)) return;
+      if (!await confirmBox("Hide “" + it.name + "”?", "It is removed from the dashboard. Restore it any time with Add From HomeLab's List, or with Undo.", "Hide It", true)) return;
       return op({ op: "remove", group: g.group, name: it.name }, "Hidden.");
     }
     if (!await confirmBox("Remove “" + it.name + "”?", "It is removed from the dashboard. Undo restores it.", "Remove It", true)) return;
@@ -2800,7 +2801,7 @@ function viewItems(kind) {
     d.showModal();
   }
   async function hlRestore() {
-    if (!await confirmBox("Put HomeLab's Cards Back?", "Every card that HomeLab fills in returns to its own name, icon and group, and hidden cards are shown again. Cards you added yourself are kept. Undo reverts this.", "Put Them Back", true)) return;
+    if (!await confirmBox("Put HomeLab's Cards Back?", "HomeLab's own cards return to their name, icon and group, and hidden cards show again. Cards you added are kept. Undo reverts this.", "Put Them Back", true)) return;
     try { await api("POST", "/api/hlcards/restore", {}); toast("Put back."); await afterChange(true); } catch (e) { fail(e); }
   }
 
@@ -2888,7 +2889,7 @@ function viewItems(kind) {
   }
   async function groupRemove(g) {
     if (!isCards) {
-      if (!await confirmBox("Remove the Whole Group “" + g.group + "”?", "This takes the group and its " + g.links.length + " link" + (g.links.length === 1 ? "" : "s") + " off the list. Nothing is removed from the dashboard until you press Save.", "Remove the Group", true)) return;
+      if (!await confirmBox("Remove the Whole Group “" + g.group + "”?", "This removes the group and its " + g.links.length + " link" + (g.links.length === 1 ? "" : "s") + " from the list. The dashboard changes when you press Save.", "Remove the Group", true)) return;
       groups.splice(groups.indexOf(g), 1); redraw(); return;
     }
     if (!await confirmBox("Remove the Whole Group “" + g.group + "”?", "This removes the group and its " + items(g).length + " " + word + (items(g).length === 1 ? "" : "s") + ". Undo can bring them back.", "Remove the Group", true)) return;

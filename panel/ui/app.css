@@ -350,6 +350,17 @@ dialog.bkdlg { width: min(680px, calc(100vw - 24px)); }
 .bkdlg .field select, .bkdlg .field input[type="text"] { width: 100%; }
 .bkdlg .inl { display: inline-flex; align-items: center; gap: 6px; font-weight: 400; }
 .bkdlg .inl input[type="number"], .bkdlg .inl input[type="time"] { width: auto; min-height: 36px; padding: 4px 8px; }
+.bkintro { margin: 0 0 14px; }
+.bkfolders { gap: 8px; margin-bottom: 16px; }
+.bktiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.bktile { display: flex; align-items: center; gap: 12px; margin: 0; padding: 10px 14px; min-height: 52px; border: 1px solid var(--line); border-radius: 12px; font-weight: 400; cursor: pointer; }
+.bktile:has(input:checked) { border-color: rgba(var(--accent), 0.55); }
+.bktile input { flex: 0 0 auto; width: 18px; height: 18px; margin: 0; accent-color: rgb(var(--accent)); }
+.bkfname { display: grid; gap: 2px; min-width: 0; line-height: 1.25; }
+.bkfname b { font-weight: 600; }
+.bkfname small { color: var(--muted); font-size: 13px; }
+.bknote { margin: 2px 0 0; }
+@media (max-width: 560px) { .bktiles { grid-template-columns: minmax(0, 1fr); } }
 .bkkeep { display: flex; flex-wrap: wrap; gap: 8px; }
 .bknum { margin: 0; width: 84px; }
 .bknum input { width: 100%; }
@@ -390,3 +401,36 @@ button.link { background: none; border: 0; padding: 2px 4px; min-height: 0; colo
 .group-card.over { outline: 2px dashed rgba(var(--accent), 0.7); outline-offset: -2px; }
 .linkbar { display: block; padding-top: 6px; padding-bottom: 6px; border-bottom: 1px solid var(--line); margin-bottom: 12px; }
 .linkbar .hactions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; flex-wrap: wrap; }
+
+/* Popups: one calm layout shared by every dialog. */
+dialog { padding: 22px 26px 0; border-radius: 16px; box-shadow: 0 24px 64px rgba(0, 0, 0, 0.55); }
+dialog > h2:first-child { font-size: 18px; line-height: 1.3; margin: 0 0 18px; padding-bottom: 14px; border-bottom: 1px solid var(--line); }
+dialog > p { margin: 0 0 14px; color: var(--muted); font-size: 14.5px; line-height: 1.55; }
+dialog > p.small, dialog > p.muted.small { font-size: 13px; }
+dialog .field, dialog .bkfield { margin: 0 0 18px; gap: 6px; }
+dialog .field > label, dialog .field > .lab, dialog fieldset.dq legend, dialog .dfield b { font-size: 12.5px; font-weight: 650; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+dialog .field .hint, dialog .dfield small, dialog label.dopt small, dialog .hint { font-size: 13px; line-height: 1.4; color: var(--muted); }
+dialog input:not([type="checkbox"]):not([type="radio"]), dialog select, dialog textarea { min-height: 40px; }
+dialog .actions { position: sticky; bottom: 0; z-index: 1; margin: 22px -26px 0; padding: 14px 26px 16px; gap: 10px; background: var(--dialog, var(--panel)); border-top: 1px solid var(--line); border-radius: 0 0 16px 16px; }
+dialog .actions button { min-height: 40px; padding: 6px 18px; }
+fieldset.dq { margin: 0 0 16px; padding: 6px 8px 8px; border-radius: 12px; }
+fieldset.dq legend { padding: 0 8px; }
+label.dopt { padding: 9px 10px; border-radius: 9px; gap: 12px; }
+label.dopt:hover { background: rgba(255, 255, 255, 0.04); }
+label.dopt b { font-size: 14.5px; font-weight: 600; }
+label.dopt.sure { margin: 16px 0 0; padding: 12px 14px; border-radius: 10px; }
+label.dopt.sure b { font-size: 14px; font-weight: 500; }
+.dwarn, .dnote { margin: 14px 0 0; padding: 11px 14px; border-radius: 10px; border: 1px solid var(--line); font-size: 14px; line-height: 1.5; color: var(--text); }
+.dwarn { background: rgba(255, 120, 120, 0.08); border-color: rgba(255, 141, 141, 0.35); border-left: 3px solid var(--bad); }
+.dnote { background: rgba(var(--accent), 0.07); border-color: rgba(var(--accent), 0.3); border-left: 3px solid rgba(var(--accent), 0.7); }
+dialog p.muted { margin-top: 0; }
+dialog .dfield { margin: 0 0 16px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; }
+dialog .dfield input { min-height: 40px; }
+.bkdlg .bkintro { margin: 0 0 18px; font-size: 14px; }
+.bkdlg .bkfolders { margin-bottom: 18px; }
+.bkdlg .bkfolders > label:first-child { font-size: 12.5px; font-weight: 650; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
+.bktile { min-height: 50px; padding: 9px 14px; }
+.bkfname small { font-size: 12.5px; }
+.bknote { font-size: 13.5px; line-height: 1.45; margin: 4px 0 0; }
+.bkdlg .badtext:empty { display: none; }
+@media (max-width: 560px) { dialog { padding: 18px 18px 0; } dialog .actions { margin: 18px -18px 0; padding: 12px 18px 14px; } }
