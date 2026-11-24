@@ -173,7 +173,3 @@ Two workflows run on every push. [`checks.yml`](.github/workflows/checks.yml) co
 - Portainer, Homepage and the Beszel agent all mount the Docker socket (Homepage and Beszel read-only), so anyone who gets into them can reach Docker. They stay behind Tailscale, with strong passwords.
 - Nothing on the boot drive or in the backups is encrypted. For a machine at home I'm fine with that.
 - FileBrowser's project was archived and gets no more security fixes, so it's reachable only over Tailscale.
-
-## Built with Claude
-
-I built this with a lot of help from Claude, Anthropic's AI assistant. Claude wrote much of the code, the installer and these guides, and I decided what to build, ran it on my own hardware and tested it. It has mostly run on one machine, so expect bugs. Read what a command does before you run it, and keep the installer off any machine that holds data you can't lose. If something breaks, try the [troubleshooting guide](docs/troubleshooting.md) first, then [open an issue](https://github.com/IbrandonrtI/My-Home-Lab/issues).
