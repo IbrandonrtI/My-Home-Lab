@@ -338,14 +338,13 @@ div[id$="-card"] > div {
   }
 }
 
-
+/* >>> homelab tabs >>> */
 /* Until the dashboard script has built the header gauges, the plain header is hidden, so a reload does not show the unfinished layout first.
    The script adds the class hl-ready on the page. If it cannot run, the header shows by itself after 4 seconds. */
 html:not(.hl-ready) #inner_wrapper #information-widgets { opacity: 0; animation: hl-reveal 0.25s ease 4s forwards; }
 #inner_wrapper #information-widgets { transition: opacity 0.3s ease; }
 @keyframes hl-reveal { to { opacity: 1; } }
 
-/* >>> homelab tabs >>> */
 #inner_wrapper {
   --lk-accent: 138, 180, 255;
   --lk-glass: 13, 18, 30;
