@@ -369,7 +369,8 @@ function poolBox(p, tiles) {
     h("div", { class: "ph" },
       h("div", { class: "pt" }, h("h2", {}, T), h("span", { class: "sub" }, p.path + (p.mounted ? "  ·  " + (p.filesystem || "") : ""))),
       p.mounted ? [ring(p.used_bytes, p.size_bytes), h("div", { class: "pu" }, h("b", {}, humanBytes(p.used_bytes) + " used"), h("span", { class: "sub" }, humanBytes(p.free_bytes) + " free of " + humanBytes(p.size_bytes)))] : h("div", { class: "pu" }, h("span", { class: "sub" }, "Not mounted")),
-      h("span", { class: "pill " + (p.mounted ? "ok" : "bad") }, p.mounted ? "Online" : "Offline")),
+      h("span", { class: "pill " + (p.mounted ? "ok" : "bad") }, p.mounted ? "Online" : "Offline"),
+      p.mounted && tiles.filter(t => t.kind === "pool").length >= 2 ? h("button", { class: "small", disabled: !!DRbusy || !!DRwait, onclick: () => moveFoldersDialog(p.role), title: "Move whole folders (for example the movies and shows) from one drive of this pool to another" }, "Move Folders") : null),
     h("div", { class: "tiles" }, tiles.length ? tiles.map(tile) : h("p", { class: "dropnote" }, "Drag a drive here to add it to the " + (ROLE_TEXT[p.role] || p.role) + " pool."))], { class: "dzone card pool zone-" + p.role });
 }
 function cardStat(label, ...kids) { return h("div", { class: "st" }, h("small", {}, label), h("div", {}, kids)); }
@@ -499,14 +500,14 @@ function drivesParts() {
     const lines = DRjob && DRjob.lines ? DRjob.lines.filter(l => !/\(typed in the panel\)|^Type /.test(l)).slice(-60) : [];
     const copying = !!DRjob && Object.values(DRjob.progress || {}).some(p => /^Copying files/.test(p.text || ""));
     const stopping = !!(DRjob && DRjob.stopping), canStop = !!DRbusy && (/^(add|disconnect|move)$/.test(DRbusy) || ((DRbusy === "setup" || DRbusy === "appsfix") && copying));
-    const rp = (DRbusy === "appsfix" || DRbusy === "moveboot") && DRjob && DRjob.progress ? DRjob.progress[DRbusy] : null;
+    const rp = (DRbusy === "appsfix" || DRbusy === "moveboot" || DRbusy === "movefolders") && DRjob && DRjob.progress ? DRjob.progress[DRbusy === "movefolders" ? "folders" : DRbusy] : null;
     out.push(h("div", { class: "card working", role: "status" }, DRbusy ? (stopping ? "Stopping at the next safe moment..." : (JOB_TEXT[DRbusy] || "Working...")) : DRwait,
       canStop ? h("div", { class: "row tight" }, h("button", { class: "danger small", disabled: stopping, onclick: abortJob, title: "Stops what is not finished and returns the drives that are done to their previous pool" }, stopping ? "Stopping..." : (DRbusy === "appsfix" ? "Cancel" : "Abort")),
         stopping ? h("span", { class: "muted small" }, DRbusy === "appsfix" ? "The copy has been told to stop. The files copied so far are being removed. This can take a minute or two." : DRbusy === "setup" ? "The copy has been told to stop. The drives must finish writing what they already received, and then the new setup is removed and the services start again. This can take a few minutes, longer if more was already copied. The Main pool is not changed." : "A copy stops immediately; a step that has started finishes first. Drives that are already done are returned to their previous pool. This can take a few minutes.") : null) : null,
       rp ? h("div", { class: "tprog big", role: "progressbar", "aria-valuenow": rp.pct, "aria-valuemin": 0, "aria-valuemax": 100, "aria-label": rp.text },
         h("div", { class: "bar" }, h("i", { style: { width: Math.max(2, rp.pct) + "%" } })), h("small", {}, rp.text + "  (" + rp.pct + "%)")) : null,
       DRbusy === "appsfix" && !stopping ? h("p", { class: "muted small" }, copying ? "Cancel stops the copy and removes the files copied so far, so Main has none of this restore's data. The page can be left; the work continues." : "The page can be left; the work continues. The Cancel button appears while the files are being copied.") : null,
-      DRbusy && /^(add|wipe|disconnect|move)$/.test(DRbusy) ? h("p", { class: "muted small" }, "Copying files can take a long time. The page can be left open or closed; the work continues.") : null,
+      DRbusy && /^(add|wipe|disconnect|move|movefolders)$/.test(DRbusy) ? h("p", { class: "muted small" }, "Copying files can take a long time. The page can be left open or closed; the work continues.") : null,
       DRbusy === "setup" && !stopping ? h("p", { class: "muted small" }, copying ? "The process can be stopped while the files are copied, and the Main pool then stays as it is. The page can be left; the work continues." : "A new setup can be stopped only while its files are copied (the Abort button appears then). The page can be left; the work continues.") : null,
       lines.length ? stepsBox(lines) : null));
   }

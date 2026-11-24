@@ -29,6 +29,7 @@ Opening a terminal on the server shows a short summary of the pools, the last ba
 | `docker ps` | Which containers are running and how healthy they are |
 | `sudo drives status` | The pools, the health of every drive and the last backup |
 | `sudo drives health` | SMART health, temperature and wear for each drive |
+| `sudo drives folders` | Moves a whole folder (for example the movies) from one drive of a pool to another. It checks every file before the old copy is removed |
 | `sudo homelab-setup verify` | Whether every container and service answers |
 | `sudo homelab-selftest` | A bigger check of the whole lab. It saves a report in your home folder (the newest 10 are kept) and Ctrl-C stops it and still saves what it found |
 

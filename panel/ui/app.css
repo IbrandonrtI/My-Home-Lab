@@ -441,3 +441,13 @@ dialog .dfield input { min-height: 40px; }
 .bknote { font-size: 13.5px; line-height: 1.45; margin: 4px 0 0; }
 .bkdlg .badtext:empty { display: none; }
 @media (max-width: 560px) { dialog { padding: 18px 18px 0; } dialog .actions { margin: 18px -18px 0; padding: 12px 18px 14px; } }
+
+/* Move Folders dialog on the Drives tab */
+dialog.fmove .fm-scroll { max-height: 38vh; overflow: auto; border: 1px solid var(--line); border-radius: 12px; margin: 10px 0; }
+dialog.fmove .fm-table { width: 100%; border-collapse: collapse; }
+dialog.fmove .fm-table th, dialog.fmove .fm-table td { padding: 7px 10px; text-align: left; border-bottom: 1px solid var(--line); }
+dialog.fmove .fm-table th { position: sticky; top: 0; background: var(--dialog, var(--panel)); font-weight: 600; }
+dialog.fmove .fm-table .num { text-align: right; white-space: nowrap; }
+dialog.fmove .fm-table tr:last-child td { border-bottom: 0; }
+dialog.fmove .fm-table tr.here td { opacity: 0.6; }
+dialog.fmove .fm-table input[type="checkbox"] { width: 18px; height: 18px; }

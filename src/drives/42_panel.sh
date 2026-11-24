@@ -289,6 +289,9 @@ panel_main() {
   local act=${1:-} n=$# i w
   case "$act" in
     setups)       [ "$n" -le 2 ] && { [ "$n" -eq 1 ] || [[ "$2" =~ ^[A-Za-z0-9][A-Za-z0-9._,-]{0,200}$ ]]; } || { panel_refuse "panel setups takes no words, or the drives to leave out."; return 1; } ;;
+    folders)      [ "$n" -eq 2 ] || { panel_refuse "panel folders takes main or backup."; return 1; } ;;
+    folderpin)    [ "$n" -eq 3 ] || { panel_refuse "panel folderpin takes main or backup, and yes or no."; return 1; } ;;
+    movefolders)  [ "$n" -ge 5 ] && [ "$n" -le 6 ] || { panel_refuse "panel movefolders takes main or backup, a drive, the folders and yes or no."; return 1; } ;;
     status|health|check|actions|remount|abort|apps|moveboot) [ "$n" -eq 1 ] || { panel_refuse "panel $act takes no more words."; return 1; } ;;
     rename)       [ "$n" -eq 3 ] || { panel_refuse "panel rename takes a drive and a name."; return 1; } ;;
     sleep|wake)   [ "$n" -eq 2 ] || { panel_refuse "panel $act takes one drive."; return 1; } ;;
@@ -322,6 +325,9 @@ panel_main() {
     setup)      typed_from=4 ;;
     appsfix)    [[ "$2" =~ ^(restore|fresh)$ ]] || arg_ok=0; typed_from=3 ;;
     bootadd)    [[ "$2" =~ ^(main|backup)$ ]] && [[ "$3" =~ ^[0-9]{1,6}$ ]] || arg_ok=0; typed_from=4 ;;
+    folders)    [[ "$2" =~ ^(main|backup)$ ]] || arg_ok=0 ;;
+    folderpin)  [[ "$2" =~ ^(main|backup)$ ]] && [[ "$3" =~ ^(yes|no)$ ]] || arg_ok=0 ;;
+    movefolders) [[ "$2" =~ ^(main|backup)$ ]] && [[ "$4" =~ ^([0-9a-f]{2}){1,200}(,([0-9a-f]{2}){1,200}){0,59}$ ]] && [[ "$5" =~ ^(yes|no)$ ]] || arg_ok=0; typed_from=6 ;;
   esac
   if [ "$arg_ok" = 1 ] && [[ "$act" =~ ^(add|move)$ ]]; then
     local m modeword=$3
@@ -341,14 +347,14 @@ panel_main() {
   fi
   [ "$(id -u)" = 0 ] || die "Run this with sudo:  sudo drives"
   case "$act" in
-    status|health|check|actions|abort|setups|apps) ;;
+    status|health|check|actions|abort|setups|apps|folders) ;;
     *) take_lock ;;
   esac
   PANEL_MODE=1
   ASSUME_YES=0
   local why
   case "$act" in
-    rename|sleep|wake|status|health|check|actions|abort|setups|apps) ASSUME_YES=1 ;;
+    rename|sleep|wake|status|health|check|actions|abort|setups|apps|folders|folderpin) ASSUME_YES=1 ;;
     *) why=""
        if [ "$PANEL_NOW" = 1 ]; then :
        elif [ "$act" = add ] && [[ "${3:-}" =~ ^(main|backup)$ ]] && pool_is_live "$3"; then :; else why=$(busy_reason); fi
@@ -362,6 +368,9 @@ panel_main() {
     actions) with_name_cache panel_actions_json ;;
     abort)   panel_abort ;;
     apps)    apps_json ;;
+    folders) with_name_cache panel_folders_json "$2" ;;
+    folderpin) with_name_cache panel_folderpin "$2" "$3" ;;
+    movefolders) PROG_ITEM=folders; ASSUME_YES=1; with_name_cache run_changing panel_movefolders "$2" "$3" "$4" "$5" ;;
     moveboot) PROG_ITEM=moveboot; run_changing panel_moveboot_flow ;;
     appsfix) PANEL_APPS_ACT=$2; PROG_ITEM=appsfix; run_changing appsfix_flow ;;
     setups)  PANEL_SKIP=${2:-}; panel_setups_json ;;

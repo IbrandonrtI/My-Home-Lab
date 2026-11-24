@@ -2964,7 +2964,7 @@ DRIVES_GATE = threading.Condition()
 DRIVES_STATE = {"readers": 0, "changing": False}
 DRIVE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}\Z")
 DRIVE_NAME = re.compile(r"[A-Za-z0-9 .()+,-]{1,40}\Z")
-DRIVE_TIMEOUT = {"status": 90, "actions": 90, "setups": 120, "health": 180, "check": 180, "remount": 600, "apps": 60}
+DRIVE_TIMEOUT = {"status": 90, "actions": 90, "setups": 120, "health": 180, "check": 180, "remount": 600, "apps": 60, "folders": 900}
 DRIVE_WORD = re.compile(r"(ERASE|CONTINUE|REMOVE|KEEP|NOW|RESTORE|START|/dev/[a-z0-9]{1,16}|pool|mirror|snapraid1|snapraid2|zfs-stripe|zfs-mirror|zfs-raidz1|zfs-raidz2|zfs-raidz3|md-raid0|md-raid1|md-raid5|md-raid6|md-raid10)\Z")
 JOB_MAX_SECONDS = 8 * 3600
 JOB = {"id": 0, "running": False, "action": "", "lines": [], "rc": None, "message": "", "started": 0, "items": [], "progress": {}, "current": "", "stopping": False}
@@ -3125,6 +3125,11 @@ def drive_listed(kind, ident):
 def api_drives_do(action, body):
     """Run rename, sleep, wake or remount and return what the drives tool said."""
     words = [action]
+    if action == "folderpin":
+        role = body.get("role")
+        if role not in ("main", "backup"):
+            raise Fail("Choose Main or Backup first.")
+        words += [role, "yes" if body.get("on") is True else "no"]
     if action in ("rename", "sleep", "wake"):
         ident = body.get("id")
         if not isinstance(ident, str) or not DRIVE_ID.match(ident):
@@ -3151,6 +3156,7 @@ def api_drives_do(action, body):
     return {"message": msg or "Done."}
 
 
+FOLDER_HEX = re.compile(r"([0-9a-f]{2}){1,200}\Z")
 DRIVE_TOKEN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}(:(keep|erase))?\Z")
 
 
@@ -3186,6 +3192,13 @@ def job_words(action, body):
         return v
     if action == "moveboot":
         return ["moveboot"]
+    if action == "movefolders":
+        ident, names = body.get("id"), body.get("folders")
+        if not isinstance(ident, str) or not DRIVE_ID.match(ident):
+            raise Fail("Choose a drive first.")
+        if not isinstance(names, list) or not 1 <= len(names) <= 60 or not all(isinstance(n, str) and FOLDER_HEX.match(n) for n in names):
+            raise Fail("Choose between one and sixty folders.")
+        return ["movefolders", pick("role", ("main", "backup")), ident, ",".join(names), "yes" if body.get("keep") is True else "no"] + typed
     if action == "appsfix":
         return ["appsfix", pick("mode", ("restore", "fresh"))] + typed
     if action == "bootadd":
@@ -3276,7 +3289,7 @@ def api_drives_job_start(action, body):
     words = job_words(action, body)
     if action == "wipe" and not drive_listed("spare", body.get("id")):
         raise Fail("That drive is not a spare drive, so it cannot be wiped here. The boot drive and the drives in a pool are never wiped.")
-    items = [t.split(":")[0] for t in job_ids(body)] if action not in ("wipe", "setup", "bootadd", "appsfix", "moveboot") else ([body.get("id")] if action == "wipe" else ["bootadd"] if action == "bootadd" else ["moveboot"] if action == "moveboot" else ["appsfix"] if action == "appsfix" else [str(t).split(":")[0] for t in (body.get("ids") or [])])
+    items = [t.split(":")[0] for t in job_ids(body)] if action not in ("wipe", "setup", "bootadd", "appsfix", "moveboot", "movefolders") else ([body.get("id")] if action == "wipe" else ["bootadd"] if action == "bootadd" else ["moveboot"] if action == "moveboot" else ["folders"] if action == "movefolders" else ["appsfix"] if action == "appsfix" else [str(t).split(":")[0] for t in (body.get("ids") or [])])
     drives_change_begin()
     with JOB_LOCK:
         JOB.update(id=JOB["id"] + 1, running=True, action=action, lines=[], rc=None, message="", started=int(time.time()), items=items, progress={}, current="", stopping=False)
@@ -4269,12 +4282,17 @@ class Handler(BaseHTTPRequestHandler):
                 if path == "/api/backup":
                     return self.send(200, api_backup_state())
                 return self.send(200, api_backup_look(path.rsplit("/", 1)[1], urllib.parse.urlparse(self.path).query))
-            if path in ("/api/drives", "/api/drives/health", "/api/drives/check", "/api/drives/setups", "/api/drives/apps"):
+            if path in ("/api/drives", "/api/drives/health", "/api/drives/check", "/api/drives/setups", "/api/drives/apps", "/api/drives/folders"):
                 if self.headers.get("X-Panel") != "1" or not session_ok(self.cookie_token()):
                     raise Fail("Please log in again.", 401)
                 if path == "/api/drives":
                     return self.send(200, api_drives_state())
                 action, extra = path.rsplit("/", 1)[1], ()
+                if action == "folders":
+                    role = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get("role", [""])[0]
+                    if role not in ("main", "backup"):
+                        raise Fail("Choose Main or Backup.", 400)
+                    extra = (role,)
                 if action == "setups":
                     skip = [x for x in urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get("skip", [""])[0].split(",") if x]
                     if len(skip) > 24 or not all(DRIVE_ID.match(x) for x in skip):
@@ -4429,9 +4447,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(200, dict(api_backup_task(path.rsplit("/", 1)[1], body), ok=True))
             if path == "/api/drives/abort":
                 return self.send(200, dict(api_drives_abort(), ok=True))
-            if path in ("/api/drives/add", "/api/drives/wipe", "/api/drives/disconnect", "/api/drives/move", "/api/drives/setup", "/api/drives/bootadd", "/api/drives/appsfix", "/api/drives/moveboot"):
+            if path in ("/api/drives/add", "/api/drives/wipe", "/api/drives/disconnect", "/api/drives/move", "/api/drives/setup", "/api/drives/bootadd", "/api/drives/appsfix", "/api/drives/moveboot", "/api/drives/movefolders"):
                 return self.send(200, api_drives_job_start(path.rsplit("/", 1)[1], body))
-            if path in ("/api/drives/rename", "/api/drives/sleep", "/api/drives/wake", "/api/drives/remount"):
+            if path in ("/api/drives/rename", "/api/drives/sleep", "/api/drives/wake", "/api/drives/remount", "/api/drives/folderpin"):
                 return self.send(200, dict(api_drives_do(path.rsplit("/", 1)[1], body), ok=True))
             if path == "/api/location/search":
                 return self.send(200, dict(api_location_search(body), ok=True))
@@ -4471,7 +4489,7 @@ JOBSTATUS_FILE = os.path.join(IMAGES, "job-status.json")
 MDSTAT = os.environ.get("HLP_MDSTAT") or "/proc/mdstat"
 JOBSTATUS_SECS = float(os.environ.get("HLP_JOBSTATUS_SECS") or 5)
 DRIVE_TITLES = {"setup": "Building the new drive setup", "add": "Adding a drive", "move": "Moving a drive", "disconnect": "Taking a drive out of its pool", "wipe": "Erasing a drive",
-                "bootadd": "Reserving space on the boot drive", "moveboot": "Moving files from the boot drive", "appsfix": "Repairing Immich and Nextcloud", "remount": "Repairing the drives"}
+                "bootadd": "Reserving space on the boot drive", "moveboot": "Moving files from the boot drive", "movefolders": "Moving folders to another drive", "appsfix": "Repairing Immich and Nextcloud", "remount": "Repairing the drives"}
 UPDATE_TITLES = {"check": "Looking for updates", "containers": "Updating the containers", "containers-now": "Updating the containers", "system": "Updating the system", "restart": "Restarting the machine"}
 MD_TITLES = {"resync": "Syncing drive array %s", "recovery": "Rebuilding drive array %s", "reshape": "Resizing drive array %s", "check": "Checking drive array %s"}
 

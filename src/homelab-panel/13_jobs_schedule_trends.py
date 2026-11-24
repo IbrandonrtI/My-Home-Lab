@@ -10,7 +10,7 @@ JOBSTATUS_FILE = os.path.join(IMAGES, "job-status.json")
 MDSTAT = os.environ.get("HLP_MDSTAT") or "/proc/mdstat"
 JOBSTATUS_SECS = float(os.environ.get("HLP_JOBSTATUS_SECS") or 5)
 DRIVE_TITLES = {"setup": "Building the new drive setup", "add": "Adding a drive", "move": "Moving a drive", "disconnect": "Taking a drive out of its pool", "wipe": "Erasing a drive",
-                "bootadd": "Reserving space on the boot drive", "moveboot": "Moving files from the boot drive", "appsfix": "Repairing Immich and Nextcloud", "remount": "Repairing the drives"}
+                "bootadd": "Reserving space on the boot drive", "moveboot": "Moving files from the boot drive", "movefolders": "Moving folders to another drive", "appsfix": "Repairing Immich and Nextcloud", "remount": "Repairing the drives"}
 UPDATE_TITLES = {"check": "Looking for updates", "containers": "Updating the containers", "containers-now": "Updating the containers", "system": "Updating the system", "restart": "Restarting the machine"}
 MD_TITLES = {"resync": "Syncing drive array %s", "recovery": "Rebuilding drive array %s", "reshape": "Resizing drive array %s", "check": "Checking drive array %s"}
 

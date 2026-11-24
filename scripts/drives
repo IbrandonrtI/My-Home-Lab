@@ -559,7 +559,9 @@ branches_string() {
 }
 
 pool_policy() {
-  case "$(setting_get policy "$1")" in mfs) echo mfs ;; *) echo ff ;; esac
+  local base=ff
+  [ "$(setting_get policy "$1")" = mfs ] && base=mfs
+  if [ "$(setting_get pin "$1")" = 1 ]; then echo "ep$base"; else echo "$base"; fi
 }
 
 pool_line() {
@@ -2934,8 +2936,10 @@ pool_policy_live() {
 
 policy_text() {
   case "$1" in
-    ff)  printf '%s' "one drive at a time (a new file goes to the first drive that has room)" ;;
-    mfs) printf '%s' "spread (a new file goes to the drive with the most free space)" ;;
+    ff)    printf '%s' "one drive at a time (a new file goes to the first drive that has room)" ;;
+    mfs)   printf '%s' "spread (a new file goes to the drive with the most free space)" ;;
+    epff)  printf '%s' "one drive at a time, and a new file stays on the drive that holds its folder (see: sudo drives folders)" ;;
+    epmfs) printf '%s' "spread by free space, and a new file stays on the drive that holds its folder (see: sudo drives folders)" ;;
     *)   printf '%s' "spread over the drives (older setting)" ;;
   esac
 }
@@ -3017,15 +3021,15 @@ fillorder_flow() {
   say "Order of the drives: $(order_text "$role")"
   pool_has_limits "$pool" || say "(This pool still has an older setting without a free-space limit per drive. Choosing the first or second option updates it.)"
   act=$(choose "What do you want to do? " \
-        "Fill one drive at a time, the first drive first$([ "$now" = ff ] && pool_has_limits "$pool" && echo "   [now]")" \
-        "Spread: put a new file on the drive with the most free space$([ "$now" = mfs ] && pool_has_limits "$pool" && echo "   [now]")" \
+        "Fill one drive at a time, the first drive first$([ "${now#ep}" = ff ] && pool_has_limits "$pool" && echo "   [now]")" \
+        "Spread: put a new file on the drive with the most free space$([ "${now#ep}" = mfs ] && pool_has_limits "$pool" && echo "   [now]")" \
         "Choose which drive is used first") || return 1
   settings_snapshot
   case "$act" in
     0|1)
       local want=ff; [ "$act" = 1 ] && want=mfs
       # "already works like that" only when the running pool was really read; an unreadable running pool is applied again
-      if [ "$now" = "$want" ] && pool_has_limits "$pool" && { [ "$live" = "$want" ] || { [ -z "$live" ] && ! mountpoint -q "$pool" 2>/dev/null; }; }; then
+      if [ "${now#ep}" = "$want" ] && pool_has_limits "$pool" && { [ "${live#ep}" = "$want" ] || { [ -z "$live" ] && ! mountpoint -q "$pool" 2>/dev/null; }; }; then
         settings_discard; say "The $role pool already works like that. Nothing was changed."; return 0
       fi
       dry_gate "Save the setting '$(policy_text "$want")' for the $role pool." \
@@ -3045,7 +3049,7 @@ fillorder_flow() {
       idx=$(choose "Which drive should be used first? " "${items[@]}") || { settings_discard; return 1; }
       first=${mps[$idx]}
       if [ "$idx" = 0 ]; then settings_discard; say "$(branch_name "$first") is already the first drive. Nothing was changed."; return 0; fi
-      [ "$now" = mfs ] && say "Note: this pool spreads files by free space, so the order has little effect. It is still saved."
+      [ "${now#ep}" = mfs ] && say "Note: this pool spreads files by free space, so the order has little effect. It is still saved."
       dry_gate "Save the order: $(branch_name "$first") first, then the others in their current order." \
                "Apply it to the running pool if possible (nothing stops)." && { settings_discard; return 0; }
       cur="$(basename "$first")"
@@ -3470,6 +3474,12 @@ balance_main() {
   declare -gA BALANCE_TAKEN=()
   role=$(pick_pool_role 2) || return 1
   pool=$(role_pool "$role")
+  if pool_pinned "$role"; then
+    say ""
+    say "This storage keeps new files of moved folders on their own drive (see: sudo drives folders). Balancing spreads folders over both drives again,"
+    say "so a folder you gave its own drive would end up on both."
+    yn "Balance it anyway?" || { say "Cancelled. Nothing was changed."; return 1; }
+  fi
   for mp in $(branches_of "$role"); do
     is_boot_section "$mp" && continue
     if ! mountpoint -q "$mp"; then note "$(branch_name "$mp") is not connected. Reconnect it first (sudo drives remount). Nothing was changed."; return 1; fi
@@ -4130,6 +4140,7 @@ settings_menu() {
     say "  4) Even out the used space between the drives of a storage (balance)"
     say "  5) Set how much free space a drive keeps"
     say "  6) Make a boot drive section bigger or smaller"
+    say "  7) Move folders from one drive of a storage to another"
     say "  0) Back"
     c=$(ask_choice)
     case "$c" in
@@ -4157,6 +4168,10 @@ settings_menu() {
            "Next, choose a section and its new size. The containers of that pool stop during the change." \
            "You are asked to confirm before anything changes." &&
          { resize_flow && sync_filebrowser; } ;;
+      7) intro "Move folders between the drives of a storage" \
+           "Next, choose a storage with two or more drives, a folder and the drive it should move to." \
+           "Files are copied and checked before they are removed, and the folder keeps its place in the pool." &&
+         { folders_flow && sync_filebrowser; } ;;
       0|"") return 0 ;;
       *) say "Enter a number from the list." ;;
     esac
@@ -5440,6 +5455,284 @@ wizard_flow() {
   return $rc
 }
 
+# Which top-level folders sit on which drive of a pool, and moving whole folders from one drive to another.
+# A pool shows the folders of all its drives as one. A file always lives whole on one drive, so a folder can be moved between the drives
+# and the pool looks the same. When "keep new files on their drive" is on, the pool puts a new file on a drive that already has its folder.
+
+pool_pinned() { [ "$(setting_get pin "$1")" = 1 ]; }
+
+folders_real_branches() {
+  local mp
+  for mp in $(branches_of "$1"); do is_boot_section "$mp" || printf '%s\n' "$mp"; done
+}
+
+# folders_why_not ROLE: print the reason and return 1 when the folders of this pool cannot be moved between drives.
+folders_why_not() {
+  local role=$1 mp n=0
+  if [ "$role" = main ] && array_active; then echo "The Main storage is a drive array, which is one volume, so there are no separate drives to move folders between."; return 1; fi
+  if [ "$role" = main ] && snapraid_active; then echo "The Main storage uses SnapRAID. Moving folders would count as deleted files and block the nightly protection update, so it is not offered there."; return 1; fi
+  for mp in $(folders_real_branches "$role"); do
+    mountpoint -q "$mp" || { echo "$(branch_name "$mp") is not connected. Reconnect it first (Fix Drives)."; return 1; }
+    n=$((n + 1))
+  done
+  if [ "$n" -lt 2 ]; then echo "This needs a pool with at least two drives. Add the second drive first."; return 1; fi
+  mountpoint -q "$(role_pool "$role")" || { echo "The pool is not mounted."; return 1; }
+  return 0
+}
+
+# folders_names ROLE: the top-level folders on any drive of the pool, one per line (hidden folders, lost+found and names with a line break are left out).
+folders_names() {
+  local mp
+  for mp in $(folders_real_branches "$1"); do
+    find "$mp" -mindepth 1 -maxdepth 1 -type d ! -name 'lost+found' ! -name '.*' -printf '%f\0' 2>/dev/null
+  done | sort -zu | tr '\0' '\n' | grep -v '^$' || true
+}
+
+folder_bytes() {
+  local n
+  n=$(du -sxb -- "$1/$2" 2>/dev/null | cut -f1)
+  [[ "$n" =~ ^[0-9]+$ ]] && echo "$n" || echo 0
+}
+
+folder_hex() { printf '%s' "$1" | od -An -v -tx1 | tr -d ' \n'; }
+
+# folder_from_hex HEX: the folder name for a hex string. The panel hands names over this way so no odd character can reach a command.
+folder_from_hex() {
+  [[ "$1" =~ ^([0-9a-f]{2}){1,200}$ ]] || return 1
+  local name
+  name=$(printf '%b' "$(printf '%s' "$1" | sed 's/../\\x&/g')"; printf x)
+  name=${name%x}
+  case "$name" in ""|.|..|.*|*/*|*$'\n'*|lost+found) return 1 ;; esac
+  printf '%s' "$name"
+}
+
+pool_policy_name() {
+  case "$1" in
+    ff|epff)   echo "one drive at a time" ;;
+    mfs|epmfs) echo "spread by free space" ;;
+    *)         echo "$1" ;;
+  esac
+}
+
+# panel_folders_json ROLE: what the Drives tab shows for the folder move: the drives with their free space, and each folder with its size on each drive.
+panel_folders_json() {
+  local role=$1 why mp f first=1 d first_d=1 id used avail lim
+  why=$(folders_why_not "$role") || { printf '{"eligible":false,"why":%s}\n' "$(json_str "$why")"; return 0; }
+  printf '{"eligible":true,"role":%s,"pinned":%s,"policy":%s,"drives":[' "$(json_str "$role")" "$(pool_pinned "$role" && echo true || echo false)" "$(json_str "$(pool_policy_name "$(pool_policy "$role")")")"
+  for mp in $(folders_real_branches "$role"); do
+    used=$(used_bytes "$mp"); avail=$(avail_bytes "$mp"); lim=$(branch_minfree "$mp" | tr -d K); lim=${lim:-0}
+    [ "$first_d" = 1 ] || printf ','
+    first_d=0
+    printf '{"id":%s,"name":%s,"used_bytes":%s,"free_bytes":%s,"limit_bytes":%s}' "$(json_str "$(basename "$mp")")" "$(json_str "$(branch_name "$mp")")" "$(json_num "$used")" "$(json_num "$avail")" "$(json_num $(( lim * 1024 )))"
+  done
+  printf '],"folders":['
+  while IFS= read -r f; do
+    [ -n "$f" ] || continue
+    [ "$first" = 1 ] || printf ','
+    first=0
+    printf '{"name":%s,"hex":%s,"bytes":{' "$(json_str "$f")" "$(json_str "$(folder_hex "$f")")"
+    d=1
+    for mp in $(folders_real_branches "$role"); do
+      id=$(basename "$mp")
+      [ "$d" = 1 ] || printf ','
+      d=0
+      if [ -d "$mp/$f" ]; then printf '%s:%s' "$(json_str "$id")" "$(json_num "$(folder_bytes "$mp" "$f")")"; else printf '%s:null' "$(json_str "$id")"; fi
+    done
+    printf '}}'
+  done < <(folders_names "$role")
+  printf ']}\n'
+}
+
+# folders_undo_pairs TARGET LIST...: take the copies made on TARGET away again. Only files that are still on the old drive are removed there.
+folders_undo_pairs() {
+  local target=$1 pair src f rel; shift
+  for pair in "$@"; do
+    src=${pair%%|*}; f=${pair#*|}
+    while IFS= read -r -d '' rel; do rm -f -- "${target:?}/$f/$rel"; done < <(find "$src/$f" -type f -printf '%P\0' 2>/dev/null)
+    find "$target/$f" -depth -type d -empty -delete 2>/dev/null || true
+  done
+}
+
+# folders_move_core ROLE TARGET_MOUNT PIN(yes|no) FOLDER...: move the folders onto one drive of the pool.
+folders_move_core() {
+  local role=$1 target=$2 pin=$3; shift 3
+  local pool mp f pair sz need=0 free lim n rel bad=0 i total_files=0 conflicts
+  local -a pairs=() sizes=() others=()
+  pool=$(role_pool "$role")
+  for mp in $(folders_real_branches "$role"); do [ "$mp" = "$target" ] || others+=("$mp"); done
+  for f in "$@"; do
+    for mp in "${others[@]}"; do
+      [ -d "$mp/$f" ] || continue
+      sz=$(folder_bytes "$mp" "$f")
+      pairs+=("$mp|$f"); sizes+=("$sz"); need=$((need + sz))
+    done
+  done
+  if [ ${#pairs[@]} -eq 0 ]; then
+    say "Those folders are already only on $(branch_name "$target"). Nothing needs to be moved."
+    folders_apply_pin "$role" "$pin" || return 1
+    return 0
+  fi
+  lim=$(branch_minfree "$target" | tr -d K); lim=${lim:-0}
+  free=$(( $(avail_bytes "$target") - lim * 1024 ))
+  say ""
+  say "The plan: move $(human "$need") to $(branch_name "$target"):"
+  for i in "${!pairs[@]}"; do say "  - ${pairs[$i]#*|}   $(human "${sizes[$i]}") from $(branch_name "${pairs[$i]%%|*}")"; done
+  say "$(branch_name "$target") has $(human "$(( free > 0 ? free : 0 ))") free above its limit."
+  if [ "$need" -gt "$free" ]; then
+    NOROOM=1
+    note "There is not enough room on $(branch_name "$target") for this ($(human "$need") needed). Nothing was changed."
+    return 1
+  fi
+  for pair in "${pairs[@]}"; do
+    f=${pair#*|}; mp=${pair%%|*}
+    [ -d "$target/$f" ] || continue
+    if conflicts=$(copy_conflicts "$mp/$f/" "$target/$f/"); then :; else
+      note "A file in '$f' exists on both drives with different content, and a move never replaces a file:"
+      printf '%s\n' "$conflicts" | head -5 | sed 's/^/    /' >&2
+      note "Nothing was changed."
+      return 1
+    fi
+  done
+  say "Each file is copied and checked first, then removed from the old drive. The folders keep their place in the pool."
+  say "The services keep running while the files are copied. They stop for a short time at the end to copy the last changes."
+  yn "Move the folders now?" || { say "Cancelled. Nothing was changed."; return 1; }
+  local -a steps=("Copy the chosen folders ($(human "$need")) onto $(branch_name "$target") while the services run."
+                  "Stop the containers that use the $role pool for a short time and copy the last changes."
+                  "Check every copied file, remove the old copies and the emptied folders, and start the containers again.")
+  [ "$pin" = yes ] && steps+=("Keep new files of these folders on $(branch_name "$target").")
+  pre_change "${steps[@]}" && return 0
+  local listdir; listdir=$(mktemp -d) || { note "Not enough space for working files. Nothing was changed."; return 1; }
+  for i in "${!pairs[@]}"; do
+    mp=${pairs[$i]%%|*}; f=${pairs[$i]#*|}
+    find "$mp/$f" -type f -printf '%P\0' >"$listdir/$i" 2>/dev/null
+    total_files=$((total_files + $(tr -cd '\0' <"$listdir/$i" | wc -c)))
+  done
+  local done_bytes=0
+  for i in "${!pairs[@]}"; do
+    mp=${pairs[$i]%%|*}; f=${pairs[$i]#*|}
+    say "Copying '$f' from $(branch_name "$mp") to $(branch_name "$target") (pass 1, services keep running)..."
+    progress $(( need > 0 ? done_bytes * 85 / need : 0 )) "Copying files"
+    mkdir -p "$target/$f"
+    rsync -aH --numeric-ids "$mp/$f/" "$target/$f/"
+    n=$?
+    if [ "$n" -ne 0 ] && [ "$n" -ne 24 ]; then
+      warn "Copy failed (code $n). The old copies were not removed."
+      folders_undo_pairs "$target" "${pairs[@]}"
+      rm -rf "$listdir"
+      return 1
+    fi
+    done_bytes=$((done_bytes + sizes[i]))
+  done
+  progress 88 "Checking the copies"
+  stop_containers "$pool"
+  say "Pass 2 (catching changes made during the first pass)..."
+  for i in "${!pairs[@]}"; do
+    mp=${pairs[$i]%%|*}; f=${pairs[$i]#*|}
+    while IFS= read -r -d '' rel; do
+      [ -e "$mp/$f/$rel" ] || rm -f -- "${target:?}/$f/$rel"
+    done <"$listdir/$i"
+    rsync -aH --numeric-ids --update "$mp/$f/" "$target/$f/"
+    n=$?
+    if [ "$n" -ne 0 ] && [ "$n" -ne 24 ]; then bad=1; break; fi
+    if ! copy_check "$mp/$f/" "$target/$f/" >/dev/null; then bad=1; break; fi
+  done
+  if [ "$bad" = 1 ]; then
+    warn "The check found files that are not copied correctly. Nothing was removed from the old drives."
+    folders_undo_pairs "$target" "${pairs[@]}"
+    start_containers
+    rm -rf "$listdir"
+    return 1
+  fi
+  say "Verified: every file is on $(branch_name "$target"). Removing the old copies..."
+  progress 94 "Removing the old copies"
+  for pair in "${pairs[@]}"; do
+    mp=${pair%%|*}; f=${pair#*|}
+    find "$mp/$f" ! -type d -delete 2>/dev/null
+    find "$mp/$f" -depth -type d -empty -delete 2>/dev/null
+    [ -d "$mp/$f" ] && warn "'$f' on $(branch_name "$mp") still holds something that could not be removed. It stays where it is."
+  done
+  sync_fs "$target" "${others[@]}"
+  rm -rf "$listdir"
+  folders_apply_pin "$role" "$pin" || { start_containers; return 1; }
+  start_containers
+  progress 100 "Done"
+  log "moved folders to $(basename "$target") in $role: $* ($need bytes)"
+  say ""
+  say "Done. $(human "$need") moved to $(branch_name "$target")."
+  return 0
+}
+
+# folders_apply_pin ROLE yes|no: switch "keep new files on their drive" on or off for the pool, now and in fstab.
+folders_apply_pin() {
+  local role=$1 want=$2 now=0
+  pool_pinned "$role" && now=1
+  if [ "$want" = yes ] && [ "$now" = 1 ]; then return 0; fi
+  if [ "$want" != yes ] && [ "$now" = 0 ]; then return 0; fi
+  settings_snapshot
+  if [ "$want" = yes ]; then setting_put pin "$role" 1; else setting_del pin "$role"; fi
+  pool_reconfigure "$role" || { settings_rollback; return 1; }
+  settings_discard
+  if [ "$want" = yes ]; then say "New files of these folders now stay on the drive that holds the folder."; else say "New files go by the pool's fill setting again ($(pool_policy_name "$(pool_policy "$role")"))."; fi
+  log "pool $role pin $want"
+  return 0
+}
+
+# `folders`: look at which drive holds which folder, and move folders to another drive of the same pool.
+folders_flow() {
+  array_guard || return 1
+  local role why mp f idx i sel tgt target pin=yes
+  local -a mps=() fl=() items=() titems=()
+  role=$(pick_pool_role 2) || return 1
+  why=$(folders_why_not "$role") || { note "$why Nothing was changed."; return 1; }
+  for mp in $(folders_real_branches "$role"); do mps+=("$mp"); done
+  say ""
+  say "Measuring the folders of the $role pool (this can take a minute)..."
+  while IFS= read -r f; do [ -n "$f" ] && fl+=("$f"); done < <(folders_names "$role")
+  if [ ${#fl[@]} -eq 0 ]; then say "There are no folders on these drives yet. Nothing to move."; return 0; fi
+  for f in "${fl[@]}"; do
+    sel="$f   ("
+    for mp in "${mps[@]}"; do
+      if [ -d "$mp/$f" ]; then sel="$sel$(branch_name "$mp"): $(human "$(folder_bytes "$mp" "$f")")  "; fi
+    done
+    items+=("${sel% })")
+  done
+  say ""
+  say "Free space: $(for mp in "${mps[@]}"; do printf '%s %s free   ' "$(branch_name "$mp")" "$(human "$(avail_bytes "$mp")")"; done)"
+  idx=$(choose "Which folder do you want to move? " "${items[@]}") || return 1
+  f=${fl[$idx]}
+  for mp in "${mps[@]}"; do titems+=("$(branch_name "$mp")"); done
+  tgt=$(choose "Move '$f' to which drive? " "${titems[@]}") || return 1
+  target=${mps[$tgt]}
+  yn_yes "Keep new files of the folders you move on that drive (instead of following the pool's fill setting)?" || pin=no
+  folders_move_core "$role" "$target" "$pin" "$f"
+}
+
+# panel_folderpin ROLE yes|no
+panel_folderpin() {
+  folders_why_not "$1" >/dev/null || { panel_refuse "Folders cannot be moved in this pool, so the setting does not apply."; return 1; }
+  folders_apply_pin "$1" "$2"
+}
+
+# panel_movefolders ROLE DRIVE_ID HEXLIST PIN: the Drives tab's folder move.
+panel_movefolders() {
+  local role=$1 tid=$2 hexlist=$3 pin=$4 why mp target="" h f
+  local -a names=() hexes=()
+  why=$(folders_why_not "$role") || { panel_refuse "$why"; return 1; }
+  for mp in $(folders_real_branches "$role"); do [ "$(basename "$mp")" = "$tid" ] && target=$mp; done
+  [ -n "$target" ] || { panel_refuse "That drive is not in the $role pool."; return 1; }
+  IFS=, read -ra hexes <<<"$hexlist"
+  [ "${#hexes[@]}" -ge 1 ] && [ "${#hexes[@]}" -le 60 ] || { panel_refuse "Choose between one and sixty folders."; return 1; }
+  for h in "${hexes[@]}"; do
+    f=$(folder_from_hex "$h") || { panel_refuse "A folder name is not allowed."; return 1; }
+    local seen=0
+    for mp in $(folders_real_branches "$role"); do [ -d "$mp/$f" ] && seen=1; done
+    [ "$seen" = 1 ] || { panel_refuse "The folder '$f' is not on the drives any more."; return 1; }
+    names+=("$f")
+  done
+  PROG_ITEM=folders
+  progress 0 "Planning the move"
+  folders_move_core "$role" "$target" "$pin" "${names[@]}"
+}
 JSON=0
 FULL=0
 FOLDERS=0
@@ -5917,6 +6210,7 @@ Change the drives:
   restore       copy only the missing files back from the backup
   fillorder     how a pool chooses a drive for a new file (one at a time or spread) and which drive is used first
   balance       move files so that the drives of one storage are about equally full
+  folders       move whole folders from one drive of a storage to another (for example Jellyfin's folders to their own drive)
   limit         how much free space a drive keeps before the pool uses the next drive
   resize        make a boot drive section bigger or smaller
   power         apply the drive power settings
@@ -6083,6 +6377,18 @@ sudo drives balance [--dry-run] [--yes] [--now]
   Every file is copied and checked, then removed from the old drive. The files keep their place in the pool. The services keep
   running during the long copy and stop for a short time at the end. The boot drive section is excluded. If the drives are
   within 5 percentage points of each other nothing is moved. New files still follow the fill order (sudo drives fillorder).
+EOF
+    ;;
+    folders) cat <<'EOF'
+sudo drives folders [--dry-run] [--yes] [--now]
+  Moves a whole top-level folder (for example movies or shows) from the drive that holds it to another drive of the same storage.
+  The pool looks the same afterwards, because it shows the folders of all its drives as one. Choose the storage, the folder and
+  the drive. Every file is copied and checked, then removed from the old drive, and the emptied folder is removed too. The services keep
+  running during the long copy and stop for a short time at the end. It needs a pool of separate drives with at least two drives
+  (not a SnapRAID, ZFS or RAID setup), and enough free space on the target drive above its limit.
+  You are asked whether new files of the moved folders should stay on that drive. If yes, the pool puts a new file on a drive that
+  already has its folder, so for example new movies keep going to the Jellyfin drive. New folders follow the fill order
+  (sudo drives fillorder). Do not use  sudo drives balance  afterwards: it spreads folders over both drives again.
 EOF
     ;;
     limit) cat <<'EOF'
@@ -6501,6 +6807,9 @@ panel_main() {
   local act=${1:-} n=$# i w
   case "$act" in
     setups)       [ "$n" -le 2 ] && { [ "$n" -eq 1 ] || [[ "$2" =~ ^[A-Za-z0-9][A-Za-z0-9._,-]{0,200}$ ]]; } || { panel_refuse "panel setups takes no words, or the drives to leave out."; return 1; } ;;
+    folders)      [ "$n" -eq 2 ] || { panel_refuse "panel folders takes main or backup."; return 1; } ;;
+    folderpin)    [ "$n" -eq 3 ] || { panel_refuse "panel folderpin takes main or backup, and yes or no."; return 1; } ;;
+    movefolders)  [ "$n" -ge 5 ] && [ "$n" -le 6 ] || { panel_refuse "panel movefolders takes main or backup, a drive, the folders and yes or no."; return 1; } ;;
     status|health|check|actions|remount|abort|apps|moveboot) [ "$n" -eq 1 ] || { panel_refuse "panel $act takes no more words."; return 1; } ;;
     rename)       [ "$n" -eq 3 ] || { panel_refuse "panel rename takes a drive and a name."; return 1; } ;;
     sleep|wake)   [ "$n" -eq 2 ] || { panel_refuse "panel $act takes one drive."; return 1; } ;;
@@ -6534,6 +6843,9 @@ panel_main() {
     setup)      typed_from=4 ;;
     appsfix)    [[ "$2" =~ ^(restore|fresh)$ ]] || arg_ok=0; typed_from=3 ;;
     bootadd)    [[ "$2" =~ ^(main|backup)$ ]] && [[ "$3" =~ ^[0-9]{1,6}$ ]] || arg_ok=0; typed_from=4 ;;
+    folders)    [[ "$2" =~ ^(main|backup)$ ]] || arg_ok=0 ;;
+    folderpin)  [[ "$2" =~ ^(main|backup)$ ]] && [[ "$3" =~ ^(yes|no)$ ]] || arg_ok=0 ;;
+    movefolders) [[ "$2" =~ ^(main|backup)$ ]] && [[ "$4" =~ ^([0-9a-f]{2}){1,200}(,([0-9a-f]{2}){1,200}){0,59}$ ]] && [[ "$5" =~ ^(yes|no)$ ]] || arg_ok=0; typed_from=6 ;;
   esac
   if [ "$arg_ok" = 1 ] && [[ "$act" =~ ^(add|move)$ ]]; then
     local m modeword=$3
@@ -6553,14 +6865,14 @@ panel_main() {
   fi
   [ "$(id -u)" = 0 ] || die "Run this with sudo:  sudo drives"
   case "$act" in
-    status|health|check|actions|abort|setups|apps) ;;
+    status|health|check|actions|abort|setups|apps|folders) ;;
     *) take_lock ;;
   esac
   PANEL_MODE=1
   ASSUME_YES=0
   local why
   case "$act" in
-    rename|sleep|wake|status|health|check|actions|abort|setups|apps) ASSUME_YES=1 ;;
+    rename|sleep|wake|status|health|check|actions|abort|setups|apps|folders|folderpin) ASSUME_YES=1 ;;
     *) why=""
        if [ "$PANEL_NOW" = 1 ]; then :
        elif [ "$act" = add ] && [[ "${3:-}" =~ ^(main|backup)$ ]] && pool_is_live "$3"; then :; else why=$(busy_reason); fi
@@ -6574,6 +6886,9 @@ panel_main() {
     actions) with_name_cache panel_actions_json ;;
     abort)   panel_abort ;;
     apps)    apps_json ;;
+    folders) with_name_cache panel_folders_json "$2" ;;
+    folderpin) with_name_cache panel_folderpin "$2" "$3" ;;
+    movefolders) PROG_ITEM=folders; ASSUME_YES=1; with_name_cache run_changing panel_movefolders "$2" "$3" "$4" "$5" ;;
     moveboot) PROG_ITEM=moveboot; run_changing panel_moveboot_flow ;;
     appsfix) PANEL_APPS_ACT=$2; PROG_ITEM=appsfix; run_changing appsfix_flow ;;
     setups)  PANEL_SKIP=${2:-}; panel_setups_json ;;
@@ -6831,6 +7146,7 @@ main() {
     replace)      run_changing replace_flow ;;
     fillorder|reorder|priority) fillorder_flow ;;
     balance|rebalance) run_changing balance_flow ;;
+    folders|movefolders) run_changing folders_flow ;;
     limit)        limit_flow ;;
     resize)       run_changing resize_flow ;;
     preset)       if [ -n "${2:-}" ]; then run_changing preset_flow "$2"; else preset_list_flow; fi ;;

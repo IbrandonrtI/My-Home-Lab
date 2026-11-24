@@ -14,8 +14,10 @@ pool_policy_live() {
 
 policy_text() {
   case "$1" in
-    ff)  printf '%s' "one drive at a time (a new file goes to the first drive that has room)" ;;
-    mfs) printf '%s' "spread (a new file goes to the drive with the most free space)" ;;
+    ff)    printf '%s' "one drive at a time (a new file goes to the first drive that has room)" ;;
+    mfs)   printf '%s' "spread (a new file goes to the drive with the most free space)" ;;
+    epff)  printf '%s' "one drive at a time, and a new file stays on the drive that holds its folder (see: sudo drives folders)" ;;
+    epmfs) printf '%s' "spread by free space, and a new file stays on the drive that holds its folder (see: sudo drives folders)" ;;
     *)   printf '%s' "spread over the drives (older setting)" ;;
   esac
 }
@@ -97,15 +99,15 @@ fillorder_flow() {
   say "Order of the drives: $(order_text "$role")"
   pool_has_limits "$pool" || say "(This pool still has an older setting without a free-space limit per drive. Choosing the first or second option updates it.)"
   act=$(choose "What do you want to do? " \
-        "Fill one drive at a time, the first drive first$([ "$now" = ff ] && pool_has_limits "$pool" && echo "   [now]")" \
-        "Spread: put a new file on the drive with the most free space$([ "$now" = mfs ] && pool_has_limits "$pool" && echo "   [now]")" \
+        "Fill one drive at a time, the first drive first$([ "${now#ep}" = ff ] && pool_has_limits "$pool" && echo "   [now]")" \
+        "Spread: put a new file on the drive with the most free space$([ "${now#ep}" = mfs ] && pool_has_limits "$pool" && echo "   [now]")" \
         "Choose which drive is used first") || return 1
   settings_snapshot
   case "$act" in
     0|1)
       local want=ff; [ "$act" = 1 ] && want=mfs
       # "already works like that" only when the running pool was really read; an unreadable running pool is applied again
-      if [ "$now" = "$want" ] && pool_has_limits "$pool" && { [ "$live" = "$want" ] || { [ -z "$live" ] && ! mountpoint -q "$pool" 2>/dev/null; }; }; then
+      if [ "${now#ep}" = "$want" ] && pool_has_limits "$pool" && { [ "${live#ep}" = "$want" ] || { [ -z "$live" ] && ! mountpoint -q "$pool" 2>/dev/null; }; }; then
         settings_discard; say "The $role pool already works like that. Nothing was changed."; return 0
       fi
       dry_gate "Save the setting '$(policy_text "$want")' for the $role pool." \
@@ -125,7 +127,7 @@ fillorder_flow() {
       idx=$(choose "Which drive should be used first? " "${items[@]}") || { settings_discard; return 1; }
       first=${mps[$idx]}
       if [ "$idx" = 0 ]; then settings_discard; say "$(branch_name "$first") is already the first drive. Nothing was changed."; return 0; fi
-      [ "$now" = mfs ] && say "Note: this pool spreads files by free space, so the order has little effect. It is still saved."
+      [ "${now#ep}" = mfs ] && say "Note: this pool spreads files by free space, so the order has little effect. It is still saved."
       dry_gate "Save the order: $(branch_name "$first") first, then the others in their current order." \
                "Apply it to the running pool if possible (nothing stops)." && { settings_discard; return 0; }
       cur="$(basename "$first")"

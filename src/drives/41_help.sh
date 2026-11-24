@@ -28,6 +28,7 @@ Change the drives:
   restore       copy only the missing files back from the backup
   fillorder     how a pool chooses a drive for a new file (one at a time or spread) and which drive is used first
   balance       move files so that the drives of one storage are about equally full
+  folders       move whole folders from one drive of a storage to another (for example Jellyfin's folders to their own drive)
   limit         how much free space a drive keeps before the pool uses the next drive
   resize        make a boot drive section bigger or smaller
   power         apply the drive power settings
@@ -194,6 +195,18 @@ sudo drives balance [--dry-run] [--yes] [--now]
   Every file is copied and checked, then removed from the old drive. The files keep their place in the pool. The services keep
   running during the long copy and stop for a short time at the end. The boot drive section is excluded. If the drives are
   within 5 percentage points of each other nothing is moved. New files still follow the fill order (sudo drives fillorder).
+EOF
+    ;;
+    folders) cat <<'EOF'
+sudo drives folders [--dry-run] [--yes] [--now]
+  Moves a whole top-level folder (for example movies or shows) from the drive that holds it to another drive of the same storage.
+  The pool looks the same afterwards, because it shows the folders of all its drives as one. Choose the storage, the folder and
+  the drive. Every file is copied and checked, then removed from the old drive, and the emptied folder is removed too. The services keep
+  running during the long copy and stop for a short time at the end. It needs a pool of separate drives with at least two drives
+  (not a SnapRAID, ZFS or RAID setup), and enough free space on the target drive above its limit.
+  You are asked whether new files of the moved folders should stay on that drive. If yes, the pool puts a new file on a drive that
+  already has its folder, so for example new movies keep going to the Jellyfin drive. New folders follow the fill order
+  (sudo drives fillorder). Do not use  sudo drives balance  afterwards: it spreads folders over both drives again.
 EOF
     ;;
     limit) cat <<'EOF'

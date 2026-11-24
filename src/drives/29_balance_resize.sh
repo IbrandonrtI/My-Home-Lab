@@ -36,6 +36,12 @@ balance_main() {
   declare -gA BALANCE_TAKEN=()
   role=$(pick_pool_role 2) || return 1
   pool=$(role_pool "$role")
+  if pool_pinned "$role"; then
+    say ""
+    say "This storage keeps new files of moved folders on their own drive (see: sudo drives folders). Balancing spreads folders over both drives again,"
+    say "so a folder you gave its own drive would end up on both."
+    yn "Balance it anyway?" || { say "Cancelled. Nothing was changed."; return 1; }
+  fi
   for mp in $(branches_of "$role"); do
     is_boot_section "$mp" && continue
     if ! mountpoint -q "$mp"; then note "$(branch_name "$mp") is not connected. Reconnect it first (sudo drives remount). Nothing was changed."; return 1; fi

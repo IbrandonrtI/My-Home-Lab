@@ -91,6 +91,7 @@ main() {
     replace)      run_changing replace_flow ;;
     fillorder|reorder|priority) fillorder_flow ;;
     balance|rebalance) run_changing balance_flow ;;
+    folders|movefolders) run_changing folders_flow ;;
     limit)        limit_flow ;;
     resize)       run_changing resize_flow ;;
     preset)       if [ -n "${2:-}" ]; then run_changing preset_flow "$2"; else preset_list_flow; fi ;;

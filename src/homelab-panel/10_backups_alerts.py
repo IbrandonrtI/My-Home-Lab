@@ -2,7 +2,7 @@ def api_drives_job_start(action, body):
     words = job_words(action, body)
     if action == "wipe" and not drive_listed("spare", body.get("id")):
         raise Fail("That drive is not a spare drive, so it cannot be wiped here. The boot drive and the drives in a pool are never wiped.")
-    items = [t.split(":")[0] for t in job_ids(body)] if action not in ("wipe", "setup", "bootadd", "appsfix", "moveboot") else ([body.get("id")] if action == "wipe" else ["bootadd"] if action == "bootadd" else ["moveboot"] if action == "moveboot" else ["appsfix"] if action == "appsfix" else [str(t).split(":")[0] for t in (body.get("ids") or [])])
+    items = [t.split(":")[0] for t in job_ids(body)] if action not in ("wipe", "setup", "bootadd", "appsfix", "moveboot", "movefolders") else ([body.get("id")] if action == "wipe" else ["bootadd"] if action == "bootadd" else ["moveboot"] if action == "moveboot" else ["folders"] if action == "movefolders" else ["appsfix"] if action == "appsfix" else [str(t).split(":")[0] for t in (body.get("ids") or [])])
     drives_change_begin()
     with JOB_LOCK:
         JOB.update(id=JOB["id"] + 1, running=True, action=action, lines=[], rc=None, message="", started=int(time.time()), items=items, progress={}, current="", stopping=False)

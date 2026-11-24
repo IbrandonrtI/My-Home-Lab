@@ -134,7 +134,9 @@ branches_string() {
 }
 
 pool_policy() {
-  case "$(setting_get policy "$1")" in mfs) echo mfs ;; *) echo ff ;; esac
+  local base=ff
+  [ "$(setting_get policy "$1")" = mfs ] && base=mfs
+  if [ "$(setting_get pin "$1")" = 1 ]; then echo "ep$base"; else echo "$base"; fi
 }
 
 pool_line() {

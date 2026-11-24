@@ -20,6 +20,7 @@ SCENARIOS = [
     ("drain_conflict.sh",),
     ("drain_retry.sh",),
     ("balance_between_passes.sh",),
+    ("folders_move.sh",),
     ("absorb_boot_files.sh",),
     ("moveboot.sh",),
     ("restore_files.sh",),

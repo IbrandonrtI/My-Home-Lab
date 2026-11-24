@@ -119,6 +119,7 @@ settings_menu() {
     say "  4) Even out the used space between the drives of a storage (balance)"
     say "  5) Set how much free space a drive keeps"
     say "  6) Make a boot drive section bigger or smaller"
+    say "  7) Move folders from one drive of a storage to another"
     say "  0) Back"
     c=$(ask_choice)
     case "$c" in
@@ -146,6 +147,10 @@ settings_menu() {
            "Next, choose a section and its new size. The containers of that pool stop during the change." \
            "You are asked to confirm before anything changes." &&
          { resize_flow && sync_filebrowser; } ;;
+      7) intro "Move folders between the drives of a storage" \
+           "Next, choose a storage with two or more drives, a folder and the drive it should move to." \
+           "Files are copied and checked before they are removed, and the folder keeps its place in the pool." &&
+         { folders_flow && sync_filebrowser; } ;;
       0|"") return 0 ;;
       *) say "Enter a number from the list." ;;
     esac

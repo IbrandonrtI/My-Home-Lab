@@ -279,12 +279,17 @@ class Handler(BaseHTTPRequestHandler):
                 if path == "/api/backup":
                     return self.send(200, api_backup_state())
                 return self.send(200, api_backup_look(path.rsplit("/", 1)[1], urllib.parse.urlparse(self.path).query))
-            if path in ("/api/drives", "/api/drives/health", "/api/drives/check", "/api/drives/setups", "/api/drives/apps"):
+            if path in ("/api/drives", "/api/drives/health", "/api/drives/check", "/api/drives/setups", "/api/drives/apps", "/api/drives/folders"):
                 if self.headers.get("X-Panel") != "1" or not session_ok(self.cookie_token()):
                     raise Fail("Please log in again.", 401)
                 if path == "/api/drives":
                     return self.send(200, api_drives_state())
                 action, extra = path.rsplit("/", 1)[1], ()
+                if action == "folders":
+                    role = urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get("role", [""])[0]
+                    if role not in ("main", "backup"):
+                        raise Fail("Choose Main or Backup.", 400)
+                    extra = (role,)
                 if action == "setups":
                     skip = [x for x in urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query).get("skip", [""])[0].split(",") if x]
                     if len(skip) > 24 or not all(DRIVE_ID.match(x) for x in skip):
@@ -439,9 +444,9 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(200, dict(api_backup_task(path.rsplit("/", 1)[1], body), ok=True))
             if path == "/api/drives/abort":
                 return self.send(200, dict(api_drives_abort(), ok=True))
-            if path in ("/api/drives/add", "/api/drives/wipe", "/api/drives/disconnect", "/api/drives/move", "/api/drives/setup", "/api/drives/bootadd", "/api/drives/appsfix", "/api/drives/moveboot"):
+            if path in ("/api/drives/add", "/api/drives/wipe", "/api/drives/disconnect", "/api/drives/move", "/api/drives/setup", "/api/drives/bootadd", "/api/drives/appsfix", "/api/drives/moveboot", "/api/drives/movefolders"):
                 return self.send(200, api_drives_job_start(path.rsplit("/", 1)[1], body))
-            if path in ("/api/drives/rename", "/api/drives/sleep", "/api/drives/wake", "/api/drives/remount"):
+            if path in ("/api/drives/rename", "/api/drives/sleep", "/api/drives/wake", "/api/drives/remount", "/api/drives/folderpin"):
                 return self.send(200, dict(api_drives_do(path.rsplit("/", 1)[1], body), ok=True))
             if path == "/api/location/search":
                 return self.send(200, dict(api_location_search(body), ok=True))

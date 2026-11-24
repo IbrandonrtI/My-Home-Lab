@@ -341,7 +341,7 @@ const ROLE_TEXT = { main: "Main", backup: "Backup", parity: "Parity", array: "Ar
 const STATE_TEXT = { connected: "Connected", "connected (used last)": "Connected", MISSING: "Missing", "NOT MOUNTED": "Not Mounted",
   "not connected to a pool": "Not in a Pool", "boot/system drive (not changed)": "Boot Drive" };
 const STATE_HINT = { "connected (used last)": "A backup copy on the boot drive. It is used only when the other backup drives are full.", "boot/system drive (not changed)": "The boot drive. The panel never changes it." };
-const JOB_TEXT = { add: "Adding the drive...", wipe: "Erasing the drive...", disconnect: "Taking the drive out of its pool...", move: "Moving the drive...", remount: "Repairing the drives. This can take a minute...", moveboot: "Moving the files from the boot drive to the drive. This can take a while...", appsfix: "Repairing Immich and Nextcloud. Copying files back from the backup can take a long time...",
+const JOB_TEXT = { add: "Adding the drive...", wipe: "Erasing the drive...", disconnect: "Taking the drive out of its pool...", move: "Moving the drive...", remount: "Repairing the drives. This can take a minute...", moveboot: "Moving the files from the boot drive to the drive. This can take a while...", movefolders: "Moving the folders to the other drive. This can take a while...", appsfix: "Repairing Immich and Nextcloud. Copying files back from the backup can take a long time...",
   setup: "Building the new setup. This can take a few minutes...", bootadd: "Reserving part of the boot drive...", rename: "Saving the name...", sleep: "Telling the drive to sleep...", wake: "Waking the drive up..." };
 // The automatic name of a Boot Drive Space starts with the size of its file. Show the space that can be filled instead, so the name and the pool agree.
 function bootSectionName(d) {
@@ -673,6 +673,78 @@ function cfgBox() {
 const other = r => (r === "main" ? "backup" : "main");
 const cap = t => t[0].toUpperCase() + t.slice(1);
 
+// Move folders between the drives of a pool. The pool shows the folders of all its drives as one, so a folder can live on any of them.
+// A folder moved to its own drive stays there for new files too, when "keep new files on their drive" is on.
+async function moveFoldersDialog(role) {
+  const T = (ROLE_TEXT[role] || role) + " Pool";
+  const body = h("div", {});
+  const d = h("dialog", { class: "wide fmove" }, h("h2", {}, "Move Folders: " + T), body);
+  d.addEventListener("close", () => d.remove());
+  document.body.append(d);
+  const closeBtn = () => h("div", { class: "actions" }, h("button", { onclick: () => d.close() }, "Close"));
+  put(body, [h("p", { class: "muted" }, "Measuring the folders on each drive. This can take a minute on big drives."), closeBtn()]);
+  d.showModal();
+  let info;
+  try { info = await api("GET", "/api/drives/folders?role=" + encodeURIComponent(role)); } catch (e) {
+    put(body, [h("p", { class: "dwarn", role: "alert" }, e.message || "The folders could not be read."), closeBtn()]);
+    return;
+  }
+  if (!info.eligible) { put(body, [h("p", {}, info.why || "Folders cannot be moved in this pool."), closeBtn()]); return; }
+  const drives = info.drives || [], folders = info.folders || [];
+  if (!folders.length) { put(body, [h("p", {}, "There are no folders on these drives yet."), closeBtn()]); return; }
+  let target = drives.length ? drives[drives.length - 1].id : "";
+  let keep = true;
+  const picked = new Set();
+  const sizeOn = (f, id) => (f.bytes && typeof f.bytes[id] === "number") ? f.bytes[id] : null;
+  const onlyOn = (f, id) => drives.every(x => x.id === id ? sizeOn(f, x.id) !== null : sizeOn(f, x.id) === null);
+  const moveBytes = f => drives.reduce((s, x) => s + (x.id !== target && sizeOn(f, x.id) !== null ? sizeOn(f, x.id) : 0), 0);
+  const draw = () => {
+    const tg = drives.find(x => x.id === target) || drives[0];
+    folders.forEach(f => { if (onlyOn(f, target)) picked.delete(f.name); });
+    const list = folders.filter(f => picked.has(f.name));
+    const need = list.reduce((s, f) => s + moveBytes(f), 0);
+    const room = Math.max(0, tg.free_bytes - tg.limit_bytes);
+    const tooBig = need > room;
+    put(body, [
+      info.pinned ? h("div", { class: "dnote", role: "status" }, "New files of moved folders currently stay on the drive that holds their folder. ",
+        h("button", { class: "small", onclick: async () => {
+          if (!await confirmBox("Turn Off Keeping Files on Their Drive?", "New files then go by the pool's usual fill setting again. Files already on a drive stay where they are.", "Turn Off")) return;
+          d.close();
+          driveDo("folderpin", { role, on: false });
+        } }, "Turn Off")) : null,
+      h("p", { class: "muted" }, "Pick the folders to move and the drive they should go to. The pool looks the same afterwards. Every file is copied and checked before the old copy is removed."),
+      h("fieldset", { class: "dq" }, h("legend", {}, "Move to"),
+        drives.map(x => h("label", { class: "dopt" },
+          h("input", Object.assign({ type: "radio", name: "fm-target", value: x.id, onchange: () => { target = x.id; draw(); } }, x.id === target ? { checked: true } : {})),
+          h("span", {}, h("b", {}, x.name), h("small", {}, humanBytes(x.used_bytes) + " used, " + humanBytes(x.free_bytes) + " free"))))),
+      h("div", { class: "fm-scroll" }, h("table", { class: "fm-table" },
+        h("thead", {}, h("tr", {}, h("th", {}, ""), h("th", {}, "Folder"), drives.map(x => h("th", { class: "num" }, x.name)))),
+        h("tbody", {}, folders.map(f => {
+          const here = onlyOn(f, target);
+          return h("tr", { class: here ? "here" : "" },
+            h("td", {}, h("input", Object.assign({ type: "checkbox", "aria-label": "Move " + f.name, disabled: here, onchange: ev => { if (ev.target.checked) picked.add(f.name); else picked.delete(f.name); draw(); } }, picked.has(f.name) ? { checked: true } : {}))),
+            h("td", {}, f.name, here ? h("small", { class: "muted" }, "  already only on " + tg.name) : null),
+            drives.map(x => h("td", { class: "num" }, sizeOn(f, x.id) === null ? "-" : humanBytes(sizeOn(f, x.id)))));
+        })))),
+      h("label", { class: "dopt" },
+        h("input", Object.assign({ type: "checkbox", onchange: ev => { keep = ev.target.checked; draw(); } }, keep ? { checked: true } : {})),
+        h("span", {}, h("b", {}, "Keep new files of these folders on their drive"),
+          h("small", {}, "On: a new movie put into a folder you moved goes to that folder's drive. Off: new files follow the pool's usual fill setting, so the drives can mix again over time. This setting applies to the whole " + T.toLowerCase() + "."))),
+      list.length ? h("p", { class: tooBig ? "dwarn" : "dnote", role: tooBig ? "alert" : "status" },
+        tooBig ? humanBytes(need) + " does not fit on " + tg.name + ": it has " + humanBytes(room) + " free above its limit. Choose fewer folders or another drive."
+               : "Moving " + list.length + (list.length === 1 ? " folder" : " folders") + " (" + humanBytes(need) + ") to " + tg.name + ". It has " + humanBytes(room) + " free above its limit.") : null,
+      h("div", { class: "actions" },
+        h("button", { onclick: () => d.close() }, "Cancel"),
+        h("button", { class: "primary", disabled: !list.length || tooBig, onclick: async () => {
+          if (!await confirmBox("Move " + list.length + (list.length === 1 ? " Folder?" : " Folders?"),
+            humanBytes(need) + " is copied to " + tg.name + " and checked, then the old copies are removed. This can take hours for big folders; the page can be closed while it works. Services that use the pool stop for a short time at the end.",
+            "Move the Folders")) return;
+          d.close();
+          startJob("movefolders", { role, id: target, folders: list.map(f => f.hex), keep }, list.length === 1 ? "The folder is on " + tg.name + " now." : "The folders are on " + tg.name + " now.");
+        } }, "Move the Folders"))]);
+  };
+  draw();
+}
 async function renameDrive(a) {
   const name = await askText("Rename Drive", "New name for " + a.name + " (letters, numbers, spaces and . ( ) + , -)", a.custom ? a.name : "");
   if (name === null) return;
@@ -1044,7 +1116,8 @@ function poolBox(p, tiles) {
     h("div", { class: "ph" },
       h("div", { class: "pt" }, h("h2", {}, T), h("span", { class: "sub" }, p.path + (p.mounted ? "  ·  " + (p.filesystem || "") : ""))),
       p.mounted ? [ring(p.used_bytes, p.size_bytes), h("div", { class: "pu" }, h("b", {}, humanBytes(p.used_bytes) + " used"), h("span", { class: "sub" }, humanBytes(p.free_bytes) + " free of " + humanBytes(p.size_bytes)))] : h("div", { class: "pu" }, h("span", { class: "sub" }, "Not mounted")),
-      h("span", { class: "pill " + (p.mounted ? "ok" : "bad") }, p.mounted ? "Online" : "Offline")),
+      h("span", { class: "pill " + (p.mounted ? "ok" : "bad") }, p.mounted ? "Online" : "Offline"),
+      p.mounted && tiles.filter(t => t.kind === "pool").length >= 2 ? h("button", { class: "small", disabled: !!DRbusy || !!DRwait, onclick: () => moveFoldersDialog(p.role), title: "Move whole folders (for example the movies and shows) from one drive of this pool to another" }, "Move Folders") : null),
     h("div", { class: "tiles" }, tiles.length ? tiles.map(tile) : h("p", { class: "dropnote" }, "Drag a drive here to add it to the " + (ROLE_TEXT[p.role] || p.role) + " pool."))], { class: "dzone card pool zone-" + p.role });
 }
 function cardStat(label, ...kids) { return h("div", { class: "st" }, h("small", {}, label), h("div", {}, kids)); }
@@ -1174,14 +1247,14 @@ function drivesParts() {
     const lines = DRjob && DRjob.lines ? DRjob.lines.filter(l => !/\(typed in the panel\)|^Type /.test(l)).slice(-60) : [];
     const copying = !!DRjob && Object.values(DRjob.progress || {}).some(p => /^Copying files/.test(p.text || ""));
     const stopping = !!(DRjob && DRjob.stopping), canStop = !!DRbusy && (/^(add|disconnect|move)$/.test(DRbusy) || ((DRbusy === "setup" || DRbusy === "appsfix") && copying));
-    const rp = (DRbusy === "appsfix" || DRbusy === "moveboot") && DRjob && DRjob.progress ? DRjob.progress[DRbusy] : null;
+    const rp = (DRbusy === "appsfix" || DRbusy === "moveboot" || DRbusy === "movefolders") && DRjob && DRjob.progress ? DRjob.progress[DRbusy === "movefolders" ? "folders" : DRbusy] : null;
     out.push(h("div", { class: "card working", role: "status" }, DRbusy ? (stopping ? "Stopping at the next safe moment..." : (JOB_TEXT[DRbusy] || "Working...")) : DRwait,
       canStop ? h("div", { class: "row tight" }, h("button", { class: "danger small", disabled: stopping, onclick: abortJob, title: "Stops what is not finished and returns the drives that are done to their previous pool" }, stopping ? "Stopping..." : (DRbusy === "appsfix" ? "Cancel" : "Abort")),
         stopping ? h("span", { class: "muted small" }, DRbusy === "appsfix" ? "The copy has been told to stop. The files copied so far are being removed. This can take a minute or two." : DRbusy === "setup" ? "The copy has been told to stop. The drives must finish writing what they already received, and then the new setup is removed and the services start again. This can take a few minutes, longer if more was already copied. The Main pool is not changed." : "A copy stops immediately; a step that has started finishes first. Drives that are already done are returned to their previous pool. This can take a few minutes.") : null) : null,
       rp ? h("div", { class: "tprog big", role: "progressbar", "aria-valuenow": rp.pct, "aria-valuemin": 0, "aria-valuemax": 100, "aria-label": rp.text },
         h("div", { class: "bar" }, h("i", { style: { width: Math.max(2, rp.pct) + "%" } })), h("small", {}, rp.text + "  (" + rp.pct + "%)")) : null,
       DRbusy === "appsfix" && !stopping ? h("p", { class: "muted small" }, copying ? "Cancel stops the copy and removes the files copied so far, so Main has none of this restore's data. The page can be left; the work continues." : "The page can be left; the work continues. The Cancel button appears while the files are being copied.") : null,
-      DRbusy && /^(add|wipe|disconnect|move)$/.test(DRbusy) ? h("p", { class: "muted small" }, "Copying files can take a long time. The page can be left open or closed; the work continues.") : null,
+      DRbusy && /^(add|wipe|disconnect|move|movefolders)$/.test(DRbusy) ? h("p", { class: "muted small" }, "Copying files can take a long time. The page can be left open or closed; the work continues.") : null,
       DRbusy === "setup" && !stopping ? h("p", { class: "muted small" }, copying ? "The process can be stopped while the files are copied, and the Main pool then stays as it is. The page can be left; the work continues." : "A new setup can be stopped only while its files are copied (the Abort button appears then). The page can be left; the work continues.") : null,
       lines.length ? stepsBox(lines) : null));
   }

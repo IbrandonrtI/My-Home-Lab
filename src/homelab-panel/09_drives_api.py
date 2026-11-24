@@ -50,7 +50,7 @@ DRIVES_GATE = threading.Condition()
 DRIVES_STATE = {"readers": 0, "changing": False}
 DRIVE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}\Z")
 DRIVE_NAME = re.compile(r"[A-Za-z0-9 .()+,-]{1,40}\Z")
-DRIVE_TIMEOUT = {"status": 90, "actions": 90, "setups": 120, "health": 180, "check": 180, "remount": 600, "apps": 60}
+DRIVE_TIMEOUT = {"status": 90, "actions": 90, "setups": 120, "health": 180, "check": 180, "remount": 600, "apps": 60, "folders": 900}
 DRIVE_WORD = re.compile(r"(ERASE|CONTINUE|REMOVE|KEEP|NOW|RESTORE|START|/dev/[a-z0-9]{1,16}|pool|mirror|snapraid1|snapraid2|zfs-stripe|zfs-mirror|zfs-raidz1|zfs-raidz2|zfs-raidz3|md-raid0|md-raid1|md-raid5|md-raid6|md-raid10)\Z")
 JOB_MAX_SECONDS = 8 * 3600
 JOB = {"id": 0, "running": False, "action": "", "lines": [], "rc": None, "message": "", "started": 0, "items": [], "progress": {}, "current": "", "stopping": False}
@@ -211,6 +211,11 @@ def drive_listed(kind, ident):
 def api_drives_do(action, body):
     """Run rename, sleep, wake or remount and return what the drives tool said."""
     words = [action]
+    if action == "folderpin":
+        role = body.get("role")
+        if role not in ("main", "backup"):
+            raise Fail("Choose Main or Backup first.")
+        words += [role, "yes" if body.get("on") is True else "no"]
     if action in ("rename", "sleep", "wake"):
         ident = body.get("id")
         if not isinstance(ident, str) or not DRIVE_ID.match(ident):
@@ -237,6 +242,7 @@ def api_drives_do(action, body):
     return {"message": msg or "Done."}
 
 
+FOLDER_HEX = re.compile(r"([0-9a-f]{2}){1,200}\Z")
 DRIVE_TOKEN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}(:(keep|erase))?\Z")
 
 
@@ -272,6 +278,13 @@ def job_words(action, body):
         return v
     if action == "moveboot":
         return ["moveboot"]
+    if action == "movefolders":
+        ident, names = body.get("id"), body.get("folders")
+        if not isinstance(ident, str) or not DRIVE_ID.match(ident):
+            raise Fail("Choose a drive first.")
+        if not isinstance(names, list) or not 1 <= len(names) <= 60 or not all(isinstance(n, str) and FOLDER_HEX.match(n) for n in names):
+            raise Fail("Choose between one and sixty folders.")
+        return ["movefolders", pick("role", ("main", "backup")), ident, ",".join(names), "yes" if body.get("keep") is True else "no"] + typed
     if action == "appsfix":
         return ["appsfix", pick("mode", ("restore", "fresh"))] + typed
     if action == "bootadd":

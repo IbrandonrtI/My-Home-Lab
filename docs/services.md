@@ -204,6 +204,10 @@ The nightly backup copies the Main pool and the lab's settings. Deleted or chang
 
 `sudo drives status` shows the pools and the health of every drive. `sudo drives` is a menu for connecting, moving and replacing drives, and it asks before it erases anything.
 
+In a pool of separate drives, each file lives whole on one drive. Nothing is split across drives, and the pool has no protection by itself: if a drive fails, the files on it are lost and the rest stay. New files go to the first drive until it is nearly full, then to the next. `sudo drives fillorder` can spread them by free space instead.
+
+To give one drive to a few folders, for example the movies and shows on their own drive, use **Move Folders** on the Pool box of the Drives screen, or `sudo drives folders`. Choose the folders and the drive. Each file is copied and checked before the old copy is removed, and the pool looks the same afterwards. By default, new files of a moved folder keep going to that folder's drive, so new Jellyfin files stay on the Jellyfin drive. This needs a pool of separate drives with at least two drives, so it is not offered for SnapRAID, ZFS or RAID. Do not run `sudo drives balance` afterwards, because it spreads the folders over both drives again (it asks first).
+
 ## What runs by itself
 
 | How often | What |
