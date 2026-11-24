@@ -347,6 +347,17 @@ def pool_space(path):
     return total, max(total - s.f_bfree * s.f_frsize, 0), free
 
 
+def boot_sections():
+    """Return {'main': True, 'backup': True} for each pool that has a mounted boot-drive section (MAINBOOT, BACKUPBOOT). That part of the boot drive is a drive of the pool but has no disk label of its own."""
+    base = os.environ.get("HOMELAB_DISKS_DIR", "/mnt/disks")
+    found = {}
+    for role, label in (("main", "MAINBOOT"), ("backup", "BACKUPBOOT")):
+        mp = os.path.join(base, label)
+        if os.path.ismount(mp) or (os.environ.get("HOMELAB_STATS_NOMOUNT") == "1" and os.path.isdir(mp)):
+            found[role] = True
+    return found
+
+
 def drive_roles():
     """Return {'main': [(label, device)], 'backup': [...]} from the drive labels (MAIN1, BACKUP1, ...)."""
     roles = {"main": [], "backup": []}
@@ -465,7 +476,8 @@ def array_health():
 def pool_block(path, role, roles, old_drives, new_drives):
     """Readings for one pool: used, free, total, percent, health and drive count."""
     sp = pool_space(path)
-    if role == "backup" and not roles.get(role):
+    boot = boot_sections().get(role, False)
+    if role == "backup" and not roles.get(role) and not boot:
         sp = None
     if sp is None:
         return {"used": "-", "free": "-", "total": "-", "percent": "Not connected", "health": "Not connected", "drives": "-"}, None
@@ -484,7 +496,7 @@ def pool_block(path, role, roles, old_drives, new_drives):
     if arr:
         health = arr[0]
     elif not states:
-        health = "No drives found"
+        health = "On the boot drive" if boot else "No drives found"
     elif "failed" in states:
         health = "PROBLEM: check drives"
     elif "nosmart" in states:
@@ -496,7 +508,7 @@ def pool_block(path, role, roles, old_drives, new_drives):
     else:
         health = "Not checked yet"
     return {"used": human(used), "free": human(free), "total": human(total), "percent": "%d%%" % pct,
-            "health": health, "drives": "%d" % len(states) if states else (arr[1] if arr else "-")}, (total, used)
+            "health": health, "drives": "%d" % (len(states) + (1 if boot else 0)) if states or boot else (arr[1] if arr else "-")}, (total, used)
 
 
 def backup_info(now):

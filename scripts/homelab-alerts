@@ -240,11 +240,11 @@ def backup_waiting():
 
 
 def backup_drives_configured():
-    """The backup drives (BACKUP2, BACKUP3) that /etc/fstab holds. A drive removed with `drives disconnect` is no longer listed there."""
+    """The backup drives (BACKUP2, BACKUP3, or BACKUPBOOT for part of the boot drive) that /etc/fstab holds. A drive removed with `drives disconnect` is no longer listed there."""
     found = []
     for line in read(FSTAB).splitlines():
         f = line.split()
-        if len(f) > 1 and not f[0].startswith("#") and re.search(r"/BACKUP\d+/?$", f[1]):
+        if len(f) > 1 and not f[0].startswith("#") and re.search(r"/BACKUP(\d+|BOOT)/?$", f[1]):
             found.append(f[1].rstrip("/"))
     return found
 

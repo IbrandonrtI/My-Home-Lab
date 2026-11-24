@@ -1437,7 +1437,9 @@ html.hl-jf-side #hl-jf-frame .hl-jf-open:hover { color: var(--lk-hi, #fff); }
 #hl-docker .hl-dk-grid { stroke: rgba(var(--lk-ink, 255, 255, 255), 0.14); stroke-dasharray: 3 4; }
 #hl-docker .hl-dk-y { position: absolute; left: -46px; width: 40px; text-align: right; transform: translateY(50%); font-size: 11px; line-height: 1; color: var(--lk-muted); pointer-events: none; }
 #hl-docker .hl-dk-line { position: absolute; top: 0; bottom: 0; width: 1px; background: rgba(var(--lk-ink, 255, 255, 255), 0.45); pointer-events: none; }
-#hl-docker .hl-dk-tip { position: absolute; top: 4px; z-index: 3; min-width: 170px; padding: 8px 10px; border-radius: 10px; border: 1px solid var(--lk-line); background: rgba(var(--lk-glass), 0.96); box-shadow: 0 10px 28px -10px rgba(0, 0, 0, 0.6); font-size: 12px; color: var(--lk-text); pointer-events: none; }
+/* The hover box is solid and uses the pop-up colors (the same as the bell and the search box), so its text stays readable on a light or a dark theme. */
+#hl-docker .hl-dk-tip { position: absolute; top: 4px; z-index: 3; min-width: 170px; padding: 8px 10px; border-radius: 10px; border: 1px solid rgba(var(--lk-ink, 255, 255, 255), 0.18); background: color-mix(in srgb, rgb(var(--lk-accent, 138, 180, 255)) 11%, var(--lk-popbase, #0b101c)); box-shadow: 0 10px 28px -10px rgba(0, 0, 0, 0.6); font-size: 12px; color: var(--lk-hi, #f3f6fb); pointer-events: none; }
+#hl-docker .hl-dk-tip .hl-dk-row span, #hl-docker .hl-dk-tip .hl-dk-sub { color: var(--lk-popmuted, #bcc6d6); }
 #hl-docker .hl-dk-tip b { display: block; margin-bottom: 5px; font-weight: 650; }
 #hl-docker .hl-dk-row { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: center; gap: 8px; line-height: 1.5; }
 #hl-docker .hl-dk-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--lk-muted); }

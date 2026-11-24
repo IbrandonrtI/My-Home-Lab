@@ -37,7 +37,7 @@ def rim_shadow(level, bevel=0, tone="dark"):
 TONE_TOKENS = {"dark": {"--lk-ink": "255, 255, 255", "--lk-hi": "#fff", "--lk-shadow": "0, 0, 0", "--lk-deepbase": "#070a12", "--lk-popbase": "#0b101c",
                         "--lk-popmuted": "#bcc6d6", "--lk-spotk": "1", "--lk-platek": "1", "color-scheme": "dark"},
                "light": {"--lk-ink": "22, 38, 64", "--lk-hi": "#0f1a2e", "--lk-shadow": "52, 74, 112", "--lk-deepbase": "#eaf1fb", "--lk-popbase": "#f4f8ff",
-                         "--lk-popmuted": "#52627c", "--lk-spotk": "2.6", "--lk-platek": "3.4", "color-scheme": "light"}}
+                         "--lk-popmuted": "#475670", "--lk-spotk": "2.6", "--lk-platek": "3.4", "color-scheme": "light"}}
 
 
 def glass_alpha(v):
