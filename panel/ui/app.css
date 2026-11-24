@@ -117,6 +117,8 @@ input[type="checkbox"] { width: 22px; height: 22px; accent-color: rgb(var(--acce
 .grp { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px; margin-bottom: 8px; border-radius: 12px; border: 1px solid var(--line); background: var(--panel); }
 .grp.drag { opacity: 0.4; }
 .grp.over { border-color: rgb(var(--accent)); }
+.grp.over-t { box-shadow: 0 -2px 0 0 rgb(var(--accent)); }
+.grp.over-b { box-shadow: 0 2px 0 0 rgb(var(--accent)); }
 .grp .name { flex: 1 1 120px; font-weight: 600; min-width: 100px; }
 .grp .handle { cursor: grab; color: var(--muted); padding: 0 4px; user-select: none; }
 .grp select, .grp input { width: auto; min-height: 36px; padding: 4px 8px; font-size: 14px; }
@@ -393,7 +395,12 @@ button.link { background: none; border: 0; padding: 2px 4px; min-height: 0; colo
 .upd .bkl { display: grid; gap: 10px; margin-top: 14px; }
 
 /* The Links screen: dragging a link, and the bar that keeps Save in view in the Edit Links box. */
-.item .handle { cursor: grab; color: var(--muted); padding: 0 4px; user-select: none; }
+.item .handle, .tabcol header .handle { cursor: grab; color: var(--muted); padding: 0 4px; user-select: none; }
+.item .handle.off { visibility: hidden; cursor: default; }
+.handle:focus-visible { outline: 2px solid rgb(var(--accent)); outline-offset: 1px; border-radius: 4px; }
+.tabcol header[draggable="true"] { cursor: default; }
+.tabcol.drag { opacity: 0.5; }
+.tabcol.over { border-color: rgb(var(--accent)); }
 .item[draggable="true"] { cursor: default; }
 .item.drag { opacity: 0.4; }
 .item.over-t { box-shadow: 0 -2px 0 0 rgb(var(--accent)); }

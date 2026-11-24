@@ -2675,14 +2675,24 @@ function viewLayout() {
     dragging = null;
     redraw();
   }
+  let draggingTab = null;
+  function dropTab(to) {
+    const from = draggingTab;
+    draggingTab = null;
+    if (from === null || from === to) return;
+    T.splice(to, 0, T.splice(from, 1)[0]);
+    redraw();
+  }
   function groupRow(g, ti, gi) {
     const row = h("div", { class: "grp", draggable: "true",
       ondragstart: ev => { dragging = [ti, gi]; ev.dataTransfer.effectAllowed = "move"; ev.dataTransfer.setData("text/plain", g.name); row.classList.add("drag"); },
       ondragend: () => row.classList.remove("drag"),
-      ondragover: ev => { ev.preventDefault(); row.classList.add("over"); },
-      ondragleave: () => row.classList.remove("over"),
-      ondrop: ev => { ev.preventDefault(); row.classList.remove("over"); drop(ti, gi); } });
+      ondragover: ev => { if (!dragging) return; ev.preventDefault(); const b = ev.clientY > row.getBoundingClientRect().top + row.offsetHeight / 2; row.classList.toggle("over-b", b); row.classList.toggle("over-t", !b); },
+      ondragleave: () => row.classList.remove("over-t", "over-b"),
+      ondrop: ev => { if (!dragging) return; ev.preventDefault(); const b = ev.clientY > row.getBoundingClientRect().top + row.offsetHeight / 2; row.classList.remove("over-t", "over-b"); drop(ti, gi + (b ? 1 : 0)); } });
     const move = (d) => { const arr = T[ti].groups; const j = gi + d; if (j < 0 || j >= arr.length) return; [arr[gi], arr[j]] = [arr[j], arr[gi]]; redraw(); };
+    const handle = h("span", { class: "handle", tabindex: "0", role: "button", title: "Drag to move", "aria-label": "Move " + g.name + ". Drag it, or press the up or down arrow key.",
+      onkeydown: ev => { if (ev.key === "ArrowUp" || ev.key === "ArrowDown") { ev.preventDefault(); move(ev.key === "ArrowUp" ? -1 : 1); } } }, "⠿");
     const sel = h("select", { "aria-label": "Move " + g.name + " to a tab", onchange: async ev => {
       let v = ev.target.value;
       if (v === "__new") { v = (await askText("New tab", "Name of the new tab", "")) || ""; if (!v) return redraw(); if (tabNames().includes(v)) return moveTo(gi, ti, v); }
@@ -2692,25 +2702,34 @@ function viewLayout() {
     const style = h("select", { "aria-label": "Shape of " + g.name, onchange: ev => { g.style = ev.target.value; redraw(); } },
       h("option", { value: "", selected: !g.style }, "Cards in a list"), h("option", { value: "row", selected: g.style === "row" }, "Cards in a row"));
     const cols = h("input", { class: "cols-in", type: "number", min: 1, max: 8, value: g.columns || "", placeholder: "Columns", title: "How many columns (empty = automatic)", "aria-label": "Columns of " + g.name, onchange: ev => { g.columns = ev.target.value; redraw(); } });
-    add(row, h("span", { class: "handle", title: "Drag to move", "aria-hidden": "true" }, "⠿"), iconEl(g.icon), h("span", { class: "name" }, g.name),
+    add(row, handle, iconEl(g.icon), h("span", { class: "name" }, g.name),
       g.automatic ? h("span", { class: "badge", title: "HomeLab fills this group automatically" }, "automatic") : null,
-      h("button", { class: "small icon", "aria-label": "Move " + g.name + " up", disabled: gi === 0, onclick: () => move(-1) }, "↑"),
-      h("button", { class: "small icon", "aria-label": "Move " + g.name + " down", disabled: gi === T[ti].groups.length - 1, onclick: () => move(1) }, "↓"),
       sel, icon, style, cols);
     return row;
   }
   function tabCol(t, ti) {
-    const col = h("div", { class: "tabcol", ondragover: ev => ev.preventDefault(), ondrop: ev => { if (ev.target === col || !ev.target.closest(".grp")) { ev.preventDefault(); drop(ti, t.groups.length); } } });
+    const col = h("div", { class: "tabcol",
+      ondragover: ev => { ev.preventDefault(); if (draggingTab !== null) col.classList.add("over"); },
+      ondragleave: ev => { if (!col.contains(ev.relatedTarget)) col.classList.remove("over"); },
+      ondrop: ev => {
+        col.classList.remove("over");
+        if (draggingTab !== null) { ev.preventDefault(); dropTab(ti); return; }
+        if (ev.target === col || !ev.target.closest(".grp")) { ev.preventDefault(); drop(ti, t.groups.length); }
+      } });
     const mvT = d => { const j = ti + d; if (j < 0 || j >= T.length) return; [T[ti], T[j]] = [T[j], T[ti]]; redraw(); };
-    add(col, h("header", {}, h("h3", {}, t.name),
-      h("button", { class: "small icon", "aria-label": "Move the tab left", disabled: ti === 0, onclick: () => mvT(-1) }, "←"),
-      h("button", { class: "small icon", "aria-label": "Move the tab right", disabled: ti === T.length - 1, onclick: () => mvT(1) }, "→"),
+    const head = h("header", { draggable: "true",
+      ondragstart: ev => { draggingTab = ti; ev.dataTransfer.effectAllowed = "move"; ev.dataTransfer.setData("text/plain", t.name); setTimeout(() => col.classList.add("drag"), 0); },
+      ondragend: () => { draggingTab = null; col.classList.remove("drag", "over"); } },
+      h("span", { class: "handle", tabindex: "0", role: "button", title: "Drag to move the tab", "aria-label": "Move the tab " + t.name + ". Drag it, or press the left or right arrow key.",
+        onkeydown: ev => { if (ev.key === "ArrowLeft" || ev.key === "ArrowRight") { ev.preventDefault(); mvT(ev.key === "ArrowLeft" ? -1 : 1); } } }, "⠿"),
+      h("h3", {}, t.name),
       h("button", { class: "small", onclick: async () => {
         const n = (await askText("Rename the tab", "New name for the tab “" + t.name + "”", t.name)) || "";
         if (!n || n === t.name) return;
         if (T.some(x => x.name === n)) return toast("There is already a tab with that name.", true);
         t.name = n; redraw();
-      } }, "Rename")),
+      } }, "Rename"));
+    add(col, head,
     takesRows(t) ? h("div", { class: "row", style: { margin: "4px 0 10px" } }, h("label", { for: "per-row-" + ti, class: "muted small" }, "Groups in a row"),
       h("select", { id: "per-row-" + ti, title: "How many groups sit side by side on this tab. More groups start a new row. A narrow window shows fewer.", onchange: ev => { t.perRow = ev.target.value; redraw(); } },
         h("option", { value: "", selected: !t.perRow }, "Standard (2)"), [1, 2, 3, 4].map(n => h("option", { value: String(n), selected: String(t.perRow) === String(n) }, String(n))))) : null,
@@ -2722,7 +2741,7 @@ function viewLayout() {
   setTimeout(refreshBar, 0);
   return h("div", {},
     h("div", { class: "card" }, h("h2", {}, "Tabs and Groups"),
-      h("p", { class: "muted" }, "Each box is a tab of the dashboard. Drag a group (or use the arrows) to change the order, choose another tab to move it there, and choose how its cards are laid out. “Cards in a row” places the cards side by side."),
+      h("p", { class: "muted" }, "Each box is a tab of the dashboard. Drag a group by its handle to change the order, or drag a tab by the handle in its title. Choose another tab to move a group there, and choose how its cards are laid out. “Cards in a row” places the cards side by side."),
       h("div", { class: "row", style: { marginBottom: "12px" } }, h("button", { onclick: async () => {
         const n = (await askText("Add a tab", "Name of the new tab", "")) || "";
         if (!n) return;
@@ -2754,6 +2773,12 @@ function viewItems(kind) {
     const it = arr[i];
     const before = d < 0 ? arr[i - 1] : arr[i + 2];
     await op({ op: "move", group: g.group, name: it.name, to: g.group, before: before ? before.name : undefined }, "Order saved.");
+  }
+  async function dropCard(f, to, at) {
+    const it = items(f.g)[f.i];
+    if (!it || (f.g === to && (at === f.i || at === f.i + 1))) return;
+    const next = items(to)[at];
+    await op({ op: "move", group: f.g.group, name: it.name, to: to.group, before: next ? next.name : undefined }, f.g === to ? "Order saved." : "Moved to " + to.group + ".");
   }
   async function quickIcon(g, it) {
     const pick = await pickIcon(it.icon);
@@ -2905,6 +2930,7 @@ function viewItems(kind) {
     const f = dragFrom;
     dragFrom = null;
     if (!f) return;
+    if (isCards) { dropCard(f, to, at); return; }
     const it = f.g.links.splice(f.i, 1)[0];
     if (f.g === to && f.i < at) at -= 1;
     to.links.splice(Math.max(0, Math.min(at, to.links.length)), 0, it);
@@ -2912,7 +2938,8 @@ function viewItems(kind) {
   }
   function itemRow(g, it, i) {
     const row = h("div", { class: "item" });
-    if (!isCards) {
+    const movable = !(isCards && it.locked);
+    if (movable) {
       const after = ev => { const r = row.getBoundingClientRect(); return ev.clientY > r.top + r.height / 2; };
       const clear = () => row.classList.remove("over-t", "over-b");
       row.draggable = true;
@@ -2922,11 +2949,12 @@ function viewItems(kind) {
       row.addEventListener("dragleave", clear);
       row.addEventListener("drop", ev => { if (!dragFrom) return; ev.preventDefault(); ev.stopPropagation(); const b = after(ev); clear(); dropAt(g, i + (b ? 1 : 0)); });
     }
-    add(row, isCards ? null : h("span", { class: "handle", title: "Drag to move", "aria-hidden": "true" }, "⠿"), iconEl(it.icon),
+    const grip = movable ? h("span", { class: "handle", tabindex: "0", role: "button", title: "Drag to move", "aria-label": "Move " + it.name + ". Drag it, or press the up or down arrow key.",
+      onkeydown: ev => { if (ev.key === "ArrowUp" && i > 0) { ev.preventDefault(); reorder(g, i, -1); } else if (ev.key === "ArrowDown" && i < items(g).length - 1) { ev.preventDefault(); reorder(g, i, 1); } } }, "⠿")
+      : h("span", { class: "handle off", "aria-hidden": "true" }, "⠿");
+    add(row, grip, iconEl(it.icon),
       h("div", { class: "txt" }, h("b", {}, it.name), h("span", {}, [it.description, it.href].filter(Boolean).join("  ·  ") || "No address")),
       isCards && it.managed ? h("span", { class: "badge", title: "Created by HomeLab; it keeps the address up to date" }, "Built-In") : null,
-      h("button", { class: "small icon", "aria-label": "Move " + it.name + " up", disabled: i === 0, onclick: () => reorder(g, i, -1) }, "↑"),
-      h("button", { class: "small icon", "aria-label": "Move " + it.name + " down", disabled: i === items(g).length - 1, onclick: () => reorder(g, i, 1) }, "↓"),
       isCards && !it.locked ? h("button", { class: "small", onclick: () => quickIcon(g, it) }, "Icon…") : null,
       h("button", { class: "small", onclick: () => editor(g, it) }, "Change"),
       h("button", { class: "small danger", onclick: () => remove(g, it) }, it.hl ? "Hide" : "Remove"));
@@ -2942,11 +2970,9 @@ function viewItems(kind) {
         items(g).map((it, i) => itemRow(g, it, i)),
         !isCards && !items(g).length ? h("p", { class: "muted small" }, "Empty. Drag a link here or add one. A group with no links is not kept when you save.") : null,
         h("div", { style: { marginTop: "10px" } }, h("button", { class: "small", onclick: () => editor(g, null) }, "+ Add a " + (word === "card" ? "Card" : "Link") + " here")));
-      if (!isCards) {
-        box.addEventListener("dragover", ev => { if (!dragFrom) return; ev.preventDefault(); box.classList.add("over"); });
-        box.addEventListener("dragleave", ev => { if (!box.contains(ev.relatedTarget)) box.classList.remove("over"); });
-        box.addEventListener("drop", ev => { if (!dragFrom) return; ev.preventDefault(); box.classList.remove("over"); dropAt(g, g.links.length); });
-      }
+      box.addEventListener("dragover", ev => { if (!dragFrom) return; ev.preventDefault(); box.classList.add("over"); });
+      box.addEventListener("dragleave", ev => { if (!box.contains(ev.relatedTarget)) box.classList.remove("over"); });
+      box.addEventListener("drop", ev => { if (!dragFrom) return; ev.preventDefault(); box.classList.remove("over"); dropAt(g, items(g).length); });
       return box;
     });
   }
@@ -2958,8 +2984,8 @@ function viewItems(kind) {
   return h("div", {},
     barEl,
     h("div", { class: "card" }, h("h2", {}, isCards ? "Cards on the Dashboard" : "Links (Bookmarks)"),
-      h("p", { class: "muted" }, isCards ? "The cards of the Home tab. Add cards for any web page, change a name or text, change the order or group, or remove cards."
-        : "The bookmarks of the Links tab, in groups. Add your own sites with icons. Drag a link (or use the arrows) to change the order, or drop it on another group to move it. Nothing changes on the dashboard until you press Save."),
+      h("p", { class: "muted" }, isCards ? "The cards of the Home tab. Add cards for any web page, change a name or text, or remove cards. Drag a card by its handle to change the order, or drop it on another group to move it."
+        : "The bookmarks of the Links tab, in groups. Add your own sites with icons. Drag a link by its handle to change the order, or drop it on another group to move it. Nothing changes on the dashboard until you press Save."),
       h("div", { class: "row" }, h("button", { class: "primary", onclick: () => editor(groups[0] || null, null) }, "+ Add a " + (word === "card" ? "Card" : "Link")),
         isCards ? [h("button", { onclick: hlList }, "Add From HomeLab's List…"), h("button", { onclick: hlRestore, title: "Restore the cards that HomeLab fills in to their defaults" }, "Put HomeLab's Cards Back…")] : null),
       isCards ? h("p", { class: "muted small" }, "The groups marked “Filled in by HomeLab” hold the numbers and the calendar. Their cards can be renamed, given another icon or color, moved, reordered, hidden and restored like any other card.") : null),

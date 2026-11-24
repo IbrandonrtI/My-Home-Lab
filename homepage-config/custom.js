@@ -987,6 +987,41 @@
     if (off) b.disabled = true; else b.onclick = fn;
     return b;
   }
+  /* Drag a row to move an icon. The row follows the pointer, the rows it passes slide out of the way, and the list is saved when it is let go. The grip also takes the up and down arrow keys. */
+  function trayDrag(ev, li, ul) {
+    if (ev.button > 0 || !li.isConnected) return;
+    var grip = ev.target.closest && ev.target.closest(".hl-tgrip");
+    if (!grip && (ev.pointerType === "touch" || (ev.target.closest && ev.target.closest("button")))) return;
+    var rows = Array.prototype.slice.call(ul.children).filter(function (r) { return r.classList.contains("hl-trow"); });
+    var from = rows.indexOf(li), step = li.offsetHeight, y0 = ev.clientY, to = from, moved = false;
+    if (from < 0 || rows.length < 2) return;
+    ev.preventDefault();
+    try { li.setPointerCapture(ev.pointerId); } catch (e) { /* the row still follows through the events below */ }
+    function place(dy) {
+      to = Math.max(0, Math.min(rows.length - 1, from + Math.round(dy / step)));
+      rows.forEach(function (r, i) {
+        if (r === li) { r.style.transform = "translateY(" + dy + "px)"; return; }
+        var shift = (from < to && i > from && i <= to) ? -step : (to < from && i >= to && i < from) ? step : 0;
+        r.style.transform = shift ? "translateY(" + shift + "px)" : "";
+      });
+    }
+    function finish(save) {
+      li.removeEventListener("pointermove", onMove); li.removeEventListener("pointerup", onUp); li.removeEventListener("pointercancel", onCancel);
+      try { li.releasePointerCapture(ev.pointerId); } catch (e) { /* already released */ }
+      ul.classList.remove("hl-dragging"); li.classList.remove("hl-drag");
+      rows.forEach(function (r) { r.style.transform = ""; });
+      if (save && moved && to !== from) trayEdit(function (l) { l.splice(to, 0, l.splice(from, 1)[0]); });
+    }
+    function onMove(e) {
+      var dy = e.clientY - y0;
+      if (!moved && Math.abs(dy) < 4) return;
+      if (!moved) { moved = true; ul.classList.add("hl-dragging"); li.classList.add("hl-drag"); }
+      place(dy);
+    }
+    function onUp() { finish(true); }
+    function onCancel() { finish(false); }
+    li.addEventListener("pointermove", onMove); li.addEventListener("pointerup", onUp); li.addEventListener("pointercancel", onCancel);
+  }
   function trayDraw() {
     var pop = TRAY.pop;
     if (!pop || !trayOpen()) return;
@@ -999,12 +1034,22 @@
     var ul = el("ul", "hl-tlist");
     if (!list.length) ul.appendChild(el("li", "hl-tnone", "No icons yet. Add one below."));
     list.forEach(function (c, i) {
-      var li = el("li", "hl-trow"), ic = el("span", "hl-di");
+      var li = el("li", "hl-trow"), ic = el("span", "hl-di"), grip = el("span", "hl-tgrip", "⋮⋮");
+      grip.setAttribute("role", "button"); grip.tabIndex = 0; grip.title = "Drag to move";
+      grip.setAttribute("aria-label", "Move " + c.r.name + ". Drag it, or press the up or down arrow key.");
+      grip.addEventListener("keydown", function (ev) {
+        var d = ev.key === "ArrowUp" ? -1 : ev.key === "ArrowDown" ? 1 : 0, j = i + d;
+        if (!d || j < 0 || j >= list.length) return;
+        ev.preventDefault();
+        trayEdit(function (l) { l.splice(j, 0, l.splice(i, 1)[0]); });
+        var g = TRAY.pop && TRAY.pop.querySelectorAll(".hl-tgrip")[j];
+        if (g) g.focus();
+      });
+      li.addEventListener("pointerdown", function (ev) { trayDrag(ev, li, ul); });
       trayIcon(ic, c);
+      li.appendChild(grip);
       li.appendChild(ic);
       li.appendChild(el("span", "hl-tname", c.r.name));
-      li.appendChild(trayBtn("↑", "Move " + c.r.name + " earlier", function () { trayEdit(function (l) { l.splice(i - 1, 0, l.splice(i, 1)[0]); }); }, i === 0));
-      li.appendChild(trayBtn("↓", "Move " + c.r.name + " later", function () { trayEdit(function (l) { l.splice(i + 1, 0, l.splice(i, 1)[0]); }); }, i === list.length - 1));
       li.appendChild(trayBtn("✕", "Remove " + c.r.name, function () { trayEdit(function (l) { l.splice(i, 1); }); }));
       ul.appendChild(li);
     });
