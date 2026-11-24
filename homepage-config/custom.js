@@ -1462,22 +1462,6 @@
     var ax = el("div", "hl-dk-x"), span = Math.round((d.t[n - 1] - d.t[0]) / 60);
     ax.appendChild(el("span", "", span > 0 ? span + " min ago" : "")); ax.appendChild(el("span", "", "now"));
     card.appendChild(ax);
-    var leg = el("div", "hl-dk-legend");
-    names.slice().reverse().forEach(function (nm) {
-      var chip = el("span", "hl-dk-chip"), dot = el("i");
-      dot.style.background = dkColor(d, nm);
-      chip.appendChild(dot); chip.appendChild(document.createTextNode(nm + (nm === "other" ? " (" + Object.keys(c.rest || {}).length + ") " : " ")));
-      chip.appendChild(el("em", "", fmt((c.series[nm] || [])[n - 1] || 0)));
-      leg.appendChild(chip);
-    });
-    card.appendChild(leg);
-    var inside = dkInside(c, n - 1);
-    if (c.rest && inside.length) {
-      var line = el("p", "hl-dk-inside"), shown = inside.slice(0, 8);
-      line.appendChild(el("b", "", "Inside other: "));
-      line.appendChild(document.createTextNode(shown.map(function (r) { return r[0] + " " + fmt(r[1]); }).join(", ") + (inside.length > shown.length ? ", and " + (inside.length - shown.length) + " more" : "")));
-      card.appendChild(line);
-    }
     return card;
   }
   function dkDraw(box, d) {
