@@ -208,6 +208,23 @@ def find_stack(name):
     return None
 
 
+def variable_version(text, env, old, new):
+    """An image whose version is a variable in the stack file (image:TAG written as ${NAME:-TAG}): set the variable and its default to the new version."""
+    base, newtag = old.rpartition(":")[0], new.rpartition(":")[2]
+    pattern = re.escape(base) + r":\$\{(\w+)(?::-[^}]*)?\}"
+    m = re.search(pattern, text)
+    if not m or not newtag:
+        raise RuntimeError("the stack file does not contain '%s' (and no variable for its version), so its version cannot be changed here" % old)
+    var = m.group(1)
+    for e in env:
+        if e["name"] == var:
+            e["value"] = newtag
+            break
+    else:
+        env.append({"name": var, "value": newtag})
+    return re.sub(re.escape(base) + r":\$\{" + var + r"(?::-[^}]*)?\}", lambda _: "%s:${%s:-%s}" % (base, var, newtag), text)
+
+
 def stack_update(name, pairs):
     """Change image names in the saved stack file (pairs of OLD NEW) and redeploy it, like 'Update the stack'."""
     s = find_stack(name)
@@ -217,12 +234,13 @@ def stack_update(name, pairs):
     text = pt("GET", "/api/stacks/%s/file?endpointId=%s" % (sid, eid)).get("StackFileContent", "")
     if not text:
         raise RuntimeError("could not read the stack file of '%s'" % name)
+    env = [{"name": e["name"], "value": e["value"]} for e in (s.get("Env") or [])]
     for old, new in pairs:
         if old != new:
-            if old not in text:
-                raise RuntimeError("the stack file does not contain '%s' (it may use a variable), so its version cannot be changed here" % old)
-            text = text.replace(old, new)
-    env = [{"name": e["name"], "value": e["value"]} for e in (s.get("Env") or [])]
+            if old in text:
+                text = text.replace(old, new)
+            else:
+                text = variable_version(text, env, old, new)
     pt("PUT", "/api/stacks/%s?endpointId=%s" % (sid, eid),
        {"stackFileContent": text, "env": env, "prune": False, "pullImage": False})
 

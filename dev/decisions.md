@@ -55,7 +55,7 @@ Choices that are costly to undo, or easy to undo by mistake, and the reason for 
 
 ## Some images follow a moving tag
 
-**Decision.** Most images are pinned to an exact version. These are not: Downtify and MeTube (`latest`), Immich (`release`), Netdata (`stable`), Portainer (`latest`, set by the installer), Redis in the Nextcloud stack (`alpine`).
+**Decision.** Most images are pinned to an exact version. These are not: Downtify and MeTube (`latest`), Netdata (`stable`), Portainer (`latest`, set by the installer), Redis in the Nextcloud stack (`alpine`).
 **Why.** Not recorded. The pinned ones follow the rule in the entry on Jellyfin. `homelab-update` compares image digests, so it still notices a newer image behind a moving tag.
 **Consequence.** `docs/maintenance.md` says which images follow a moving name. `tests/test_repo_consistency.py` fails when a new image without a fixed version is added, unless it is listed on purpose.
 
@@ -77,3 +77,9 @@ Choices that are costly to undo, or easy to undo by mistake, and the reason for 
 **Decision.** `tests/drives/` builds real ext4 drives out of files (loop devices) and a real mergerfs pool in a temporary folder, using the tool's own test mode, and runs the flows on them. `tests/test_drives_loop.py` runs every scenario when it can (root, loop devices, FUSE, mergerfs, rsync, parted) and skips otherwise.
 **Why.** The tool moves people's files and could only be tried on a real server.
 **Source.** `tests/drives/lab.sh`.
+
+## Immich is pinned through one variable
+
+**Decision.** `stacks/immich.yaml` writes the Immich images as `${IMMICH_VERSION:-v3.4.2}` and the installer saves the same value in the stack's variables. The update tool can change a version that is kept in a variable: it sets the variable and the default together.
+**Why.** Immich changes between releases in ways that need the release notes, so a new version should only arrive when the person asks for it. The `release` tag moved on its own with every pull.
+**Source.** `stacks/immich.yaml`, `src/installer/21_machine.py`, `src/homelab-update/20_portainer.sh` and `tests/test_update_portainer.py`.

@@ -15,7 +15,7 @@ import helpers
 ROOT = helpers.ROOT
 
 # Images allowed to follow a moving tag. Add to this list only on purpose: a pinned version is what makes an update something you choose.
-FLOATING_IMAGES = {"henriquesebastiao/downtify:latest", "ghcr.io/alexta69/metube:latest"}
+FLOATING_IMAGES = {"henriquesebastiao/downtify:latest", "ghcr.io/alexta69/metube:latest", "netdata/netdata:stable", "redis:alpine"}
 
 try:
     import yaml
@@ -110,11 +110,12 @@ class Stacks(unittest.TestCase):
     def test_images_are_pinned_unless_listed(self):
         for path in self.files():
             for image in re.findall(r"^\s*image:\s*(\S+)", read(os.path.relpath(path, ROOT)), flags=re.M):
+                image = re.sub(r"\$\{\w+:-([^}]*)\}", r"\1", image)   # a version kept in a variable: its default counts
                 if image in FLOATING_IMAGES:
                     continue
                 name = image.split("@")[0]
                 tag = name.rsplit(":", 1)[1] if ":" in name.rsplit("/", 1)[-1] else ""
-                self.assertTrue(tag and tag != "latest", "%s uses %s without a fixed version (add it to FLOATING_IMAGES only if that is on purpose)" % (os.path.basename(path), image))
+                self.assertTrue(re.search(r"\d", tag) and tag != "latest", "%s uses %s without a fixed version (add it to FLOATING_IMAGES only if that is on purpose)" % (os.path.basename(path), image))
 
 
 class PageScripts(unittest.TestCase):
