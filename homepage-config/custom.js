@@ -1389,23 +1389,34 @@
     return made ? svg : null;
   }
   /* Docker charts on the Stats tab: processor and memory of every container, stacked, for the last hour. The control panel samples docker once a minute into docker-trends.json. */
-  var DK = { data: null, at: 0, busy: false }, DK_COLORS = ["#5b8def", "#4fd1b0", "#f2b84b", "#e27d8b", "#9b7bea", "#6ec1e4"], DK_OTHER = "#8892a8";
+  var DK = { data: null, at: 0, busy: false }, DK_COLORS = ["#5b8def", "#4fd1b0", "#f2b84b", "#e27d8b", "#9b7bea", "#6ec1e4", "#b5d96b", "#f08a4b", "#d98bd9", "#7fb0a8"], DK_OTHER = "#8892a8";
   function dockerLoad() {
     DK.busy = true;
     fetch("/images/docker-trends.json?t=" + Date.now(), { cache: "no-store" }).then(function (r) { if (!r.ok) throw new Error("no file"); return r.json(); })
-      .then(function (d) { if (d && Array.isArray(d.t) && Array.isArray(d.names) && d.cpu && d.mem) DK.data = d; })
+      .then(function (d) { if (d && Array.isArray(d.t) && d.charts && d.charts.cpu && d.charts.mem) DK.data = d; })
       .catch(function () { /* keep what is shown */ })
       .then(function () { DK.busy = false; DK.at = Date.now(); soon(); });
   }
   function dkNice(v) { var p = Math.pow(10, Math.floor(Math.log(v) / Math.LN10)), m = v / p; return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 5 ? 5 : 10) * p; }
   function dkPct(v) { return v === 0 ? "0%" : (v >= 10 ? v.toFixed(0) : v >= 1 ? v.toFixed(1) : v.toFixed(2)) + "%"; }
   function dkBytes(b) { return b >= 1073741824 ? (b / 1073741824).toFixed(b >= 10737418240 ? 0 : 1) + " GiB" : Math.round(b / 1048576) + " MiB"; }
-  function dkColor(d, name) { var i = d.names.indexOf(name); return name === "other" ? DK_OTHER : DK_COLORS[i % DK_COLORS.length]; }
+  /* A container keeps the same color in both charts: the colors go out in alphabetical order of every name shown. */
+  function dkColor(d, name) {
+    if (name === "other") return DK_OTHER;
+    if (!d.pal) { var all = {}; ["cpu", "mem"].forEach(function (k) { d.charts[k].names.forEach(function (n) { if (n !== "other") all[n] = 1; }); }); d.pal = Object.keys(all).sort(); }
+    return DK_COLORS[Math.max(0, d.pal.indexOf(name)) % DK_COLORS.length];
+  }
+  /* The containers added together as "other" at one reading, biggest first. */
+  function dkInside(c, j) {
+    var rows = Object.keys(c.rest || {}).map(function (n) { return [n, (c.rest[n] || [])[j] || 0]; }).filter(function (r) { return r[1] > 0; });
+    rows.sort(function (a, b) { return b[1] - a[1]; });
+    return rows;
+  }
   function dkSvg(tag, attrs) { var n = document.createElementNS(SVGNS, tag), k; for (k in attrs) n.setAttribute(k, attrs[k]); return n; }
   function dkCard(d, title, key, fmt, floor, cap, note) {
-    var card = el("div", "hl-dk-card"), n = d.t.length, names = d.names, i, k;
+    var card = el("div", "hl-dk-card"), n = d.t.length, c = d.charts[key], names = c.names, i, k;
     var totals = [];
-    for (i = 0; i < n; i++) totals.push(names.reduce(function (a, nm) { return a + ((d[key][nm] || [])[i] || 0); }, 0));
+    for (i = 0; i < n; i++) totals.push(names.reduce(function (a, nm) { return a + ((c.series[nm] || [])[i] || 0); }, 0));
     var top = Math.max(floor, Math.max.apply(null, totals) * 1.12), ymax = Math.min(cap || Infinity, dkNice(top));
     var head = el("div", "hl-dk-head"), now = totals[n - 1] || 0;
     head.appendChild(el("b", "", title));
@@ -1415,7 +1426,7 @@
     var plot = el("div", "hl-dk-plot"), svg = dkSvg("svg", { viewBox: "0 0 1000 100", preserveAspectRatio: "none", "aria-hidden": "true" }), below = [];
     for (i = 0; i < n; i++) below.push(0);
     names.forEach(function (nm) {
-      var vals = d[key][nm] || [], up = [], top2 = [], bot = [];
+      var vals = c.series[nm] || [], up = [], top2 = [], bot = [];
       for (i = 0; i < n; i++) { up.push(below[i] + (vals[i] || 0)); }
       for (i = 0; i < n; i++) { var x = (n > 1 ? i / (n - 1) * 1000 : 0).toFixed(1); top2.push(x + " " + (100 - Math.min(up[i], ymax) / ymax * 100).toFixed(2)); bot.push(x + " " + (100 - Math.min(below[i], ymax) / ymax * 100).toFixed(2)); }
       var path = dkSvg("path", { d: "M" + top2.join(" L") + " L" + bot.reverse().join(" L") + " Z", fill: dkColor(d, nm), "fill-opacity": "0.8", stroke: dkColor(d, nm), "stroke-width": "1.2", "vector-effect": "non-scaling-stroke" });
@@ -1434,10 +1445,15 @@
       tip.textContent = "";
       tip.appendChild(el("b", "", when.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }) + "  ·  " + fmt(totals[j])));
       names.slice().reverse().forEach(function (nm) {
-        var v = (d[key][nm] || [])[j] || 0, row = el("div", "hl-dk-row"), dot = el("i");
+        var v = (c.series[nm] || [])[j] || 0, row = el("div", "hl-dk-row"), dot = el("i");
         dot.style.background = dkColor(d, nm);
         row.appendChild(dot); row.appendChild(el("span", "", nm)); row.appendChild(el("em", "", fmt(v)));
         tip.appendChild(row);
+        if (nm === "other") {
+          var ins = dkInside(c, j);
+          ins.slice(0, 6).forEach(function (r) { var sub = el("div", "hl-dk-sub"); sub.appendChild(el("span", "", r[0])); sub.appendChild(el("em", "", fmt(r[1]))); tip.appendChild(sub); });
+          if (ins.length > 6) tip.appendChild(el("div", "hl-dk-sub", "+ " + (ins.length - 6) + " more"));
+        }
       });
       tip.style.left = (f > 0.6 ? "auto" : "calc(" + f * 100 + "% + 14px)"); tip.style.right = (f > 0.6 ? "calc(" + (100 - f * 100) + "% + 14px)" : "auto");
     });
@@ -1450,11 +1466,18 @@
     names.slice().reverse().forEach(function (nm) {
       var chip = el("span", "hl-dk-chip"), dot = el("i");
       dot.style.background = dkColor(d, nm);
-      chip.appendChild(dot); chip.appendChild(document.createTextNode(nm + " "));
-      chip.appendChild(el("em", "", fmt((d[key][nm] || [])[n - 1] || 0)));
+      chip.appendChild(dot); chip.appendChild(document.createTextNode(nm + (nm === "other" ? " (" + Object.keys(c.rest || {}).length + ") " : " ")));
+      chip.appendChild(el("em", "", fmt((c.series[nm] || [])[n - 1] || 0)));
       leg.appendChild(chip);
     });
     card.appendChild(leg);
+    var inside = dkInside(c, n - 1);
+    if (c.rest && inside.length) {
+      var line = el("p", "hl-dk-inside"), shown = inside.slice(0, 8);
+      line.appendChild(el("b", "", "Inside other: "));
+      line.appendChild(document.createTextNode(shown.map(function (r) { return r[0] + " " + fmt(r[1]); }).join(", ") + (inside.length > shown.length ? ", and " + (inside.length - shown.length) + " more" : "")));
+      card.appendChild(line);
+    }
     return card;
   }
   function dkDraw(box, d) {

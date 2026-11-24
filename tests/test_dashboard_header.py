@@ -83,16 +83,40 @@ class DockerNumbers(unittest.TestCase):
 
     def test_summary_keeps_the_busiest_and_sums_the_rest(self):
         full = {"t": [], "names": [], "cpu": {}, "mem": {}}
-        sample = {"c%d" % i: (float(i), 1000 * i) for i in range(1, 10)}
+        sample = {"c%02d" % i: (float(i), 1000 * i) for i in range(1, 13)}
         for k in range(3):
             self.panel.docker_push(full, sample, 60 * k)
         out = self.panel.docker_summary(full, 5, 4)
-        self.assertEqual(len(out["names"]), self.panel.DOCKER_TOP + 1)
-        self.assertEqual(out["names"][0], "c9")
-        self.assertEqual(out["names"][-1], "other")
-        self.assertEqual(out["cpu"]["other"][0], 1.0 + 2.0 + 3.0)
-        self.assertEqual(out["mem"]["other"][0], 6000)
+        top = self.panel.DOCKER_TOP
+        cpu = out["charts"]["cpu"]
+        self.assertEqual(len(cpu["names"]), top + 1)
+        self.assertEqual(cpu["names"][0], "c12")
+        self.assertEqual(cpu["names"][-1], "other")
+        left = [i for i in range(1, 13 - top)]
+        self.assertEqual(sorted(cpu["rest"]), sorted("c%02d" % i for i in left))
+        self.assertEqual(cpu["series"]["other"][0], float(sum(left)))
+        self.assertEqual(out["charts"]["mem"]["series"]["other"][0], 1000 * sum(left))
         self.assertEqual(out["cores"], 4)
+
+    def test_each_chart_ranks_by_its_own_number(self):
+        full = {"t": [], "names": [], "cpu": {}, "mem": {}}
+        sample = {"cpuhog": (50.0, 1), "memhog": (0.1, 9000)}
+        sample.update({"s%d" % i: (1.0 + i / 10, 100 + i) for i in range(self.panel.DOCKER_TOP + 1)})
+        self.panel.docker_push(full, sample, 0)
+        self.panel.docker_push(full, sample, 60)
+        out = self.panel.docker_summary(full, 5, 4)
+        self.assertEqual(out["charts"]["cpu"]["names"][0], "cpuhog")
+        self.assertEqual(out["charts"]["mem"]["names"][0], "memhog")
+        self.assertIn("memhog", out["charts"]["mem"]["series"])
+        self.assertIn("cpuhog", out["charts"]["cpu"]["series"])
+
+    def test_nothing_is_hidden_when_everything_fits(self):
+        full = {"t": [], "names": [], "cpu": {}, "mem": {}}
+        self.panel.docker_push(full, {"a": (1.0, 100), "b": (2.0, 200)}, 0)
+        self.panel.docker_push(full, {"a": (1.0, 100), "b": (2.0, 200)}, 60)
+        out = self.panel.docker_summary(full, 5, 4)
+        self.assertEqual(out["charts"]["cpu"]["names"], ["b", "a"])
+        self.assertEqual(out["charts"]["cpu"]["rest"], {})
 
 
 @unittest.skipUnless(shutil.which("node"), "node is not installed")

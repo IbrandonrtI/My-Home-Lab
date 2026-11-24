@@ -1445,6 +1445,11 @@ html.hl-jf-side #hl-jf-frame .hl-jf-open:hover { color: var(--lk-hi, #fff); }
 #hl-docker .hl-dk-row i, #hl-docker .hl-dk-chip i { display: inline-block; width: 8px; height: 8px; border-radius: 3px; }
 #hl-docker .hl-dk-x { display: flex; justify-content: space-between; margin: 5px 0 0 46px; font-size: 11px; color: var(--lk-muted); }
 #hl-docker .hl-dk-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 10px; }
+#hl-docker .hl-dk-sub { display: flex; justify-content: space-between; gap: 12px; padding-left: 16px; font-size: 11.5px; line-height: 1.45; color: var(--lk-muted); }
+#hl-docker .hl-dk-sub span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#hl-docker .hl-dk-sub em { font-style: normal; flex: none; }
+#hl-docker .hl-dk-inside { margin: 8px 0 0; font-size: 12px; line-height: 1.5; color: var(--lk-muted); }
+#hl-docker .hl-dk-inside b { font-weight: 600; color: var(--lk-text); }
 #hl-docker .hl-dk-chip { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--lk-muted); white-space: nowrap; }
 #hl-docker .hl-dk-chip em { color: var(--lk-text); }
 @media (max-width: 1000px) { #hl-docker { grid-template-columns: minmax(0, 1fr); } }

@@ -65,7 +65,7 @@ The numbers tab. It refreshes by itself every few minutes:
 | Backup and Updates | How the last backup went, and which containers have an update waiting |
 | Folder Sizes | How big each folder is, counted again only when something changed |
 
-Above these groups, two charts show **Docker CPU** and **Docker memory** for the last hour, one stacked area per container. The six busiest containers get their own color and the rest are added together as "other". Point at a chart to see every container's value at that minute. CPU is shown as a share of the whole machine (all cores together), so 100 % means every core is busy. The control panel samples `docker stats` once a minute and keeps the last 60 readings in `homepage-config/images/docker-trends.json` (a few KB). The charts start empty after an update and fill in over the first hour.
+Above these groups, two charts show **Docker CPU** and **Docker memory** for the last hour, one stacked area per container. Each chart gives its eight busiest containers their own color and adds the rest together as "other". A line under the chart lists what is inside "other", and pointing at the chart shows every container's value at that minute, including the ones inside "other". CPU is shown as a share of the whole machine (all cores together), so 100 % means every core is busy. The control panel samples `docker stats` once a minute and keeps the last 60 readings in `homepage-config/images/docker-trends.json` (a few KB). The charts start empty after an update and fill in over the first hour.
 
 ![The Stats tab](images/homepage-stats.png)
 

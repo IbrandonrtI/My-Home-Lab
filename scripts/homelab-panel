@@ -4811,7 +4811,7 @@ def trends_loop():
 DOCKER_FILE = os.path.join(IMAGES, "docker-trends.json")
 DOCKER_SECS = float(os.environ.get("HLP_DOCKER_SECS") or 60)
 DOCKER_POINTS = 60
-DOCKER_TOP = 6
+DOCKER_TOP = 8
 _MEM_UNITS = {"b": 1, "kb": 1000, "mb": 1000 ** 2, "gb": 1000 ** 3, "tb": 1000 ** 4,
               "kib": 1024, "mib": 1024 ** 2, "gib": 1024 ** 3, "tib": 1024 ** 4}
 
@@ -4858,17 +4858,18 @@ def docker_push(full, sample, now):
 
 
 def docker_summary(full, now, cores=1):
-    """What the charts need: the busiest containers by name, everything else summed into 'other'."""
+    """What the charts need. Each chart ranks the containers by its own number (processor or memory), names the busiest and adds the rest together as 'other'. The members of 'other' are kept too, so the page can say what is in it."""
     t = full["t"]
-    load = lambda x: sum(full["cpu"][x]) / max(1, len(t)) + sum(full["mem"][x]) / max(1, len(t)) / 1e9 * 10
-    rank = sorted(full["names"], key=lambda x: -load(x))
-    keep, rest = rank[:DOCKER_TOP], rank[DOCKER_TOP:]
-    out = {"version": 1, "step": DOCKER_SECS, "updated": int(now), "cores": cores, "t": t, "names": list(keep),
-           "cpu": {x: full["cpu"][x] for x in keep}, "mem": {x: full["mem"][x] for x in keep}}
-    if rest:
-        out["names"].append("other")
-        out["cpu"]["other"] = [round(sum(full["cpu"][x][i] for x in rest), 2) for i in range(len(t))]
-        out["mem"]["other"] = [sum(full["mem"][x][i] for x in rest) for i in range(len(t))]
+    out = {"version": 2, "step": DOCKER_SECS, "updated": int(now), "cores": cores, "t": t, "charts": {}}
+    for key in ("cpu", "mem"):
+        rank = sorted(full["names"], key=lambda x: -sum(full[key][x]))
+        keep, rest = rank[:DOCKER_TOP], rank[DOCKER_TOP:]
+        chart = {"names": list(keep), "series": {x: full[key][x] for x in keep}, "rest": {x: full[key][x] for x in rest}}
+        if rest:
+            chart["names"].append("other")
+            total = [sum(full[key][x][i] for x in rest) for i in range(len(t))]
+            chart["series"]["other"] = [round(v, 2) for v in total] if key == "cpu" else total
+        out["charts"][key] = chart
     return out
 
 
