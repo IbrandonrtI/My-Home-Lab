@@ -55,7 +55,7 @@ Choices that are costly to undo, or easy to undo by mistake, and the reason for 
 
 ## Some images follow a moving tag
 
-**Decision.** Most images are pinned to an exact version. These are not: Downtify and MeTube (`latest`), Netdata (`stable`), Portainer (`latest`, set by the installer), Redis in the Nextcloud stack (`alpine`).
+**Decision.** Most images are pinned to an exact version. These are not: Downtify and MeTube (`latest`), Immich (`release`), Netdata (`stable`), Portainer (`latest`, set by the installer), Redis in the Nextcloud stack (`alpine`).
 **Why.** Not recorded. The pinned ones follow the rule in the entry on Jellyfin. `homelab-update` compares image digests, so it still notices a newer image behind a moving tag.
 **Consequence.** `docs/maintenance.md` says which images follow a moving name. `tests/test_repo_consistency.py` fails when a new image without a fixed version is added, unless it is listed on purpose.
 
@@ -78,8 +78,8 @@ Choices that are costly to undo, or easy to undo by mistake, and the reason for 
 **Why.** The tool moves people's files and could only be tried on a real server.
 **Source.** `tests/drives/lab.sh`.
 
-## Immich is pinned through one variable
+## The update tool can change a version that is kept in a variable
 
-**Decision.** `stacks/immich.yaml` writes the Immich images as `${IMMICH_VERSION:-v3.4.2}` and the installer saves the same value in the stack's variables. The update tool can change a version that is kept in a variable: it sets the variable and the default together.
-**Why.** Immich changes between releases in ways that need the release notes, so a new version should only arrive when the person asks for it. The `release` tag moved on its own with every pull.
-**Source.** `stacks/immich.yaml`, `src/installer/21_machine.py`, `src/homelab-update/20_portainer.sh` and `tests/test_update_portainer.py`.
+**Decision.** When an image in a stack file has its version as a variable (`${IMMICH_VERSION:-release}`), `homelab-update` sets the variable and its default to the new version, instead of refusing.
+**Why.** Immich's version is a variable. Images pinned to a version number would otherwise have to be updated by hand in Portainer. Immich and Redis follow a moving name by choice, because the owner does not want the lab tied to one version, so this only matters if the owner pins Immich later.
+**Source.** `src/homelab-update/20_portainer.sh` and `tests/test_update_portainer.py`.

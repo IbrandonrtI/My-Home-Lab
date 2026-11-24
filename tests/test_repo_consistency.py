@@ -15,7 +15,8 @@ import helpers
 ROOT = helpers.ROOT
 
 # Images allowed to follow a moving tag. Add to this list only on purpose: a pinned version is what makes an update something you choose.
-FLOATING_IMAGES = {"henriquesebastiao/downtify:latest", "ghcr.io/alexta69/metube:latest", "netdata/netdata:stable", "redis:alpine"}
+FLOATING_IMAGES = {"henriquesebastiao/downtify:latest", "ghcr.io/alexta69/metube:latest", "netdata/netdata:stable", "redis:alpine",
+                   "ghcr.io/immich-app/immich-server:release", "ghcr.io/immich-app/immich-machine-learning:release"}
 
 try:
     import yaml

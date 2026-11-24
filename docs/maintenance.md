@@ -38,7 +38,7 @@ A healthy drive says `PASSED`. If its reallocated or pending sector counts start
 
 ## Updating
 
-Nothing updates by itself. Most stack files pin an image to an exact version, and a few follow a moving name on purpose (Downtify, MeTube, Netdata's `stable` and Redis in the Nextcloud stack). The weekly check still notices a newer image behind a moving name, and nothing is replaced until you ask for an update.
+Nothing updates by itself. Most stack files pin an image to an exact version, and a few follow a moving name on purpose (Downtify, MeTube, Immich's `release`, Netdata's `stable` and Redis in the Nextcloud stack). The weekly check still notices a newer image behind a moving name, and nothing is replaced until you ask for an update.
 
 From the panel: the server looks for newer container versions about once a week, and the bell shows what it found. The Update button on the bell opens the [Updates screen](homepage.md#updates). Before any container update it dumps the Immich and Nextcloud databases. It won't start while a backup is running or files are being uploaded, and it tells you why.
 

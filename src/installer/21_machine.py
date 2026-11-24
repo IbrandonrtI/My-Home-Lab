@@ -498,7 +498,7 @@ def stack_env(name):
     """The variables Portainer needs for a stack, as (name, value) pairs."""
     if name == "immich":
         return [("UPLOAD_LOCATION", "/mnt/storage/immich"), ("DB_DATA_LOCATION", Ctx.home + "/immich/postgres"),
-                ("TZ", Ctx.tz), ("IMMICH_VERSION", "v3.4.2"), ("DB_PASSWORD", Secrets.get("DB_PASSWORD")),
+                ("TZ", Ctx.tz), ("IMMICH_VERSION", "release"), ("DB_PASSWORD", Secrets.get("DB_PASSWORD")),
                 ("DB_USERNAME", "postgres"), ("DB_DATABASE_NAME", "immich")]
     if name == "nextcloud":
         return [("NC_ADMIN_USER", Ctx.admin), ("NC_ADMIN_PASSWORD", Runtime.password or ""),
