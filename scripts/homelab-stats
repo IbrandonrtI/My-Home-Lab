@@ -357,9 +357,14 @@ def utc_epoch(text):
         return None
 
 
+def jellyfin_head(key):
+    """The login Jellyfin 10.9 and newer wants (the same form the installer uses), and the older header for servers that still read it."""
+    return {"Authorization": 'MediaBrowser Client="HomeLab", Device="homelab-stats", DeviceId="homelab-stats", Version="1", Token="%s"' % key, "X-Emby-Token": key}
+
+
 def jellyfin_plays(w, now):
     """How many times something was played on each of the last PLAY_DAYS days, from Jellyfin's activity log: [{day, movies, shows, music}], oldest first. None when the log can not be read."""
-    head = {"X-Emby-Token": w["key"]}
+    head = jellyfin_head(w["key"])
     since = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now - (PLAY_DAYS + 1) * 86400))
     try:
         rows = http_json(w["url"] + "/System/ActivityLog/Entries?startIndex=0&limit=2000&hasUserId=true&minDate=" + since, head).get("Items") or []
@@ -392,7 +397,7 @@ def jellyfin_plays(w, now):
 
 
 def get_jellyfin(w, now):
-    head = {"X-Emby-Token": w["key"]}
+    head = jellyfin_head(w["key"])
     counts = http_json(w["url"] + "/Items/Counts", head)
     query = "/Items?Recursive=true&IncludeItemTypes=Movie,Series&SortBy=DateCreated&SortOrder=Descending&Fields=DateCreated&Limit=%d" % RECENT_ITEMS
     rows = []

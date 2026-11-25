@@ -123,7 +123,7 @@ class JellyfinTotals(unittest.TestCase):
         self.assertEqual([r["name"] for r in got["recent"]], ["Dune (2021)", "Severance"])
         self.assertTrue(got["recent"][0]["label"].startswith("Movie - "))
         self.assertTrue(got["recent"][1]["label"].startswith("Show - "))
-        self.assertTrue(all(h == {"X-Emby-Token": "K"} for _, h in asked))
+        self.assertTrue(all(h["Authorization"].startswith("MediaBrowser ") and h["Authorization"].endswith('Token="K"') and h["X-Emby-Token"] == "K" for _, h in asked))
 
     def test_plays_per_day_split_into_movies_shows_and_music(self):
         now = self.m.utc_epoch("2025-11-20T20:00:00Z")
