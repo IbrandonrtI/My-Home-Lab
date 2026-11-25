@@ -401,9 +401,14 @@ html.hl-sharp #background { filter: saturate(0.85); }
 #inner_wrapper #hl-logo { display: flex; align-items: center; justify-content: center; flex: 0 0 auto; padding: 0 4px; text-decoration: none; }
 #inner_wrapper #hl-logo img { display: block; width: auto; height: 48px; max-width: min(260px, 45vw); object-fit: contain; border-radius: 6px; }
 /* The logo sits in the header itself, left of the name, so it stays when the gauges replace the original tiles. */
-#inner_wrapper #widgets-wrap > #hl-logo { order: -5; margin: 0; padding: 2px 4px 2px 18px; }
+#inner_wrapper #widgets-wrap > #hl-logo { order: -5; position: relative; margin: 0; padding: 2px 18px 2px 18px; }
+#inner_wrapper #widgets-wrap > #hl-logo::after { content: ""; position: absolute; right: 0; top: 12%; bottom: 12%; width: 1px; background: rgba(var(--lk-ink, 255, 255, 255), 0.1); }
+@media (min-width: 1181px) {
+  #inner_wrapper #widgets-wrap.hl-has-logo #hl-hello.hl-in-panel { padding-left: 16px; }
+}
 @media (max-width: 1180px) {
   #inner_wrapper #widgets-wrap > #hl-logo { order: -6; flex: 0 0 100%; padding: 2px 0 4px; }
+  #inner_wrapper #widgets-wrap > #hl-logo::after { display: none; }
 }
 #inner_wrapper #widgets-wrap > .widget-container:first-of-type { flex: 1 1 auto !important; }
 #inner_wrapper .widget-container:has(.information-widget-resource) > div:last-child {
@@ -1420,8 +1425,8 @@ html.hl-jf-side #hl-jf-slot { display: block; flex: 1 1 auto; min-height: 340px;
   #inner_wrapper #widgets-wrap.hl-stats-on::before { display: none; }
   #inner_wrapper #widgets-wrap.hl-stats-on #hl-hello.hl-in-panel { grid-column: 1; grid-row: 1; flex: none; max-width: 12em; padding: 2px 18px 2px 12px; }
   #inner_wrapper #widgets-wrap.hl-stats-on.hl-has-logo { grid-template-columns: auto auto minmax(0, 1fr) auto; }
-  #inner_wrapper #widgets-wrap.hl-stats-on.hl-has-logo > #hl-logo { grid-column: 1; grid-row: 1; padding: 2px 4px 2px 12px; }
-  #inner_wrapper #widgets-wrap.hl-stats-on.hl-has-logo #hl-hello.hl-in-panel { grid-column: 2; padding-left: 8px; }
+  #inner_wrapper #widgets-wrap.hl-stats-on.hl-has-logo > #hl-logo { grid-column: 1; grid-row: 1; padding: 2px 16px 2px 12px; }
+  #inner_wrapper #widgets-wrap.hl-stats-on.hl-has-logo #hl-hello.hl-in-panel { grid-column: 2; padding-left: 14px; }
   #inner_wrapper #widgets-wrap.hl-stats-on.hl-has-logo #hl-stats { grid-column: 3; }
   #inner_wrapper #widgets-wrap.hl-stats-on.hl-has-logo #information-widgets-right { grid-column: 4; }
   #inner_wrapper #widgets-wrap.hl-stats-on #hl-stats { grid-column: 2; grid-row: 1; min-width: 0; padding: 0; }

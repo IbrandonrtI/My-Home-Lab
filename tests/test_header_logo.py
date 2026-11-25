@@ -76,6 +76,25 @@ class HeaderLogoTests(unittest.TestCase):
                 self.assertGreaterEqual(logo[0], 0)
                 self.assertTrue(logo[2] <= name[0] + 1 or logo[3] <= name[1] + 1, "the logo and the name overlap: %s %s" % (logo, name))
 
+    def test_a_thin_line_separates_the_logo_from_what_follows(self):
+        """On a wide screen the logo is followed by a separator line with room on both sides; stacked above the name it has none."""
+        line = "(() => { const c = getComputedStyle(document.getElementById('hl-logo'), '::after'); return [c.content, c.display, c.width]; })()"
+        for hello in ('"Brandon"', '"off"'):
+            for width in (1700, 1300):
+                with self.subTest(width=width, hello=hello):
+                    p = self.open(page(hello=hello), width)
+                    content, display, w = p.evaluate(line)
+                    self.assertEqual((content, display, w), ('""', "block", "1px"))
+                    logo = self.box(p, "#hl-logo")
+                    sel = "#hl-hello" if hello != '"off"' else "#hl-stats .hl-g"
+                    nxt = p.evaluate("""s => { const e = document.querySelector(s); if (!e) return null; const r = e.getBoundingClientRect(); return [r.left + parseFloat(getComputedStyle(e).paddingLeft), r.top, r.bottom]; }""", sel)
+                    if nxt and nxt[1] < logo[3]:
+                        self.assertGreaterEqual(nxt[0] - logo[2], 10, "too little room after the line")
+                    img = self.box(p, "#hl-logo img")
+                    self.assertGreaterEqual(logo[2] - img[2], 12, "too little room before the line")
+        p = self.open(page(), 900)
+        self.assertEqual(p.evaluate(line)[1], "none")
+
     def test_phone_shows_the_logo(self):
         """The name is left out on a phone by design; the logo stays."""
         p = self.open(page(), 420)
