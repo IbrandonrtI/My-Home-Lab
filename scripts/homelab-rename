@@ -45,7 +45,8 @@ STRONG = re.compile(r"(\d{3,4}[pi]|4k|uhd|bluray|blu-ray|bdrip|brrip|bdremux|rem
                     r"x26[45]|h26[45]|hevc|xvid|divx|av1|aac\d*|ac3|eac3|dts|dts-hd|ddp?\d?|truehd|atmos|10bit|8bit|hdr10\+?|proper|repack)")
 WEAK = re.compile(r"(web|dv|hdr|nf|amzn|dsnp|hmax|atvp|hulu|ma|dvd|cam|ts|extended|unrated|uncut|remastered|imax|internal|limited|multi|dual|subbed|dubbed|complete)")
 SEASON_WORD = re.compile(r"(?:s\d{1,2}(?:e\d{1,3})?(?:-s?\d{1,2})?|seasons?|complete|series)")
-EP_CODE = re.compile(r"[Ss](\d{1,2})[ ._-]?[Ee](\d{1,3})((?:-?[Ee]\d{1,3})*)")
+EP_CODE = re.compile(r"[Ss](\d{1,2})[ ._-]{0,3}[Ee](\d{1,3})((?:-?[Ee]\d{1,3})*)")
+EP_PART = re.compile(r"(?:[Ss]eason[ ._-]*|[Ss])(\d{1,2})[ ._-]*(?:[Pp]art|[Pp]t)[ ._-]*(\d)[ ._-]*[Ee](?:p|pisode)?[ ._-]*(\d{1,3})(?!\d)")
 EP_X = re.compile(r"(?<!\d)(\d{1,2})x(\d{2,3})(?!\d)")
 EP_WORDS = re.compile(r"[Ss]eason[ ._-]*(\d{1,2})[ ._-]*[Ee](?:p|pisode)?[ ._-]*(\d{1,3})(?!\d)")
 EP_ONLY = re.compile(r"(?:^|[ ._-])(?:[Ee]p?|[Ee]pisode)[ ._-]?(\d{1,3})(?!\d)")
@@ -119,24 +120,27 @@ def movie_name(stem, folder):
 
 
 def episode_info(stem, season_dir):
-    """Return (season, [episodes], text before the number) or None."""
+    """Return (season, [episodes], text before the number, part of the season) or None. The part is 1 when the name does not say."""
+    m = EP_PART.search(stem)
+    if m:
+        return int(m.group(1)), [int(m.group(3))], stem[:m.start()], int(m.group(2))
     m = EP_CODE.search(stem)
     if m:
         eps = [int(m.group(2))] + [int(x) for x in re.findall(r"\d+", m.group(3))]
-        return int(m.group(1)), eps, stem[:m.start()]
+        return int(m.group(1)), eps, stem[:m.start()], 1
     m = EP_X.search(stem)
     if m and int(m.group(1)) <= 40:
-        return int(m.group(1)), [int(m.group(2))], stem[:m.start()]
+        return int(m.group(1)), [int(m.group(2))], stem[:m.start()], 1
     m = EP_WORDS.search(stem)
     if m:
-        return int(m.group(1)), [int(m.group(2))], stem[:m.start()]
+        return int(m.group(1)), [int(m.group(2))], stem[:m.start()], 1
     if season_dir is not None:
         m = EP_ONLY.search(stem)
         if m:
-            return season_dir, [int(m.group(1))], stem[:m.start()]
+            return season_dir, [int(m.group(1))], stem[:m.start()], 1
         m = EP_LEAD.match(stem)
         if m:
-            return season_dir, [int(m.group(1))], ""
+            return season_dir, [int(m.group(1))], "", 1
     return None
 
 
@@ -194,6 +198,28 @@ def plan_movies(root):
     return items, skipped
 
 
+def number_parts(found, skipped):
+    """A season released in parts ("Season 2 Part 2 - E01") continues the numbering of the part before it, the way Jellyfin's
+    metadata sources list it: if part 1 ends at episode 13, part 2 episode 1 becomes episode 14. Without the earlier part, the file is left alone."""
+    last = {}
+    for f in found:
+        if f["part"] == 1:
+            key = (f["title"].lower(), f["season"])
+            last[key, 1] = max(last.get((key, 1), 0), max(f["eps"]))
+    out = []
+    for f in sorted(found, key=lambda f: f["part"]):
+        if f["part"] > 1:
+            key = (f["title"].lower(), f["season"])
+            before = last.get((key, f["part"] - 1))
+            if before is None:
+                skipped.append((f["path"], "part %d of season %d, but no part %d of it was found to continue from" % (f["part"], f["season"], f["part"] - 1)))
+                continue
+            f["eps"] = [e + before for e in f["eps"]]
+            last[key, f["part"]] = max(last.get((key, f["part"]), 0), max(f["eps"]))
+        out.append(f)
+    return out
+
+
 def plan_shows(root):
     found, skipped = [], []
     for path, rel in video_files(root):
@@ -207,7 +233,7 @@ def plan_shows(root):
         if info is None:
             skipped.append((path, "no season and episode number found in the name"))
             continue
-        season, eps, before = info
+        season, eps, before, part = info
         title, year = "", None
         if len(rel) > 1:
             title, year = split_name(tokens(rel[0]), True)
@@ -219,7 +245,8 @@ def plan_shows(root):
         if not title:
             skipped.append((path, "no show name could be read from the file or its folder"))
             continue
-        found.append({"title": title, "year": year, "season": season, "eps": eps, "path": path, "ext": ext.lower()})
+        found.append({"title": title, "year": year, "season": season, "eps": eps, "path": path, "ext": ext.lower(), "part": part})
+    found = number_parts(found, skipped)
     years = {}
     for f in found:
         if f["year"] and f["title"].lower() not in years:

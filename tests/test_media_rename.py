@@ -117,6 +117,33 @@ class RenameTests(unittest.TestCase):
             "Frieren Beyond Journey's End/Season 02/Frieren Beyond Journey's End S02E10.mp4",
             "Show Y/Season 03/Show Y S03E04.mkv"})
 
+    def test_a_dash_and_space_between_the_season_and_the_episode_is_read(self):
+        show = "Re ZERO -Starting Life in Another World-"
+        folder = "ReZero Starting Life in Another World"
+        self.touch(self.shows, folder, show + " S01 E01 (Dub).mp4")
+        self.touch(self.shows, folder, show + " S01- E02 (Dub).mp4")
+        self.touch(self.shows, folder, show + " S01 - E03 (Dub).mp4")
+        self.do()
+        self.assertEqual(self.tree(self.shows), {"%s/Season 01/%s S01E0%d.mp4" % (folder, folder, n) for n in (1, 2, 3)})
+
+    def test_a_season_in_two_parts_goes_on_counting_after_the_first_part(self):
+        folder = "Show Z"
+        for n in range(1, 4):
+            self.touch(self.shows, folder, "Show Z Season 2 - E0%d (Dub).mp4" % n)
+        for n in range(1, 3):
+            self.touch(self.shows, folder, "Show Z Season 2 Part 2 - E0%d (Dub).mp4" % n)
+        self.do()
+        self.assertEqual(self.tree(self.shows), {"Show Z/Season 02/Show Z S02E0%d.mp4" % n for n in (1, 2, 3, 4, 5)})
+        # running it again changes nothing: the files already have their final names
+        (done, _f, _l), _g = self.do()
+        self.assertEqual(done, 0)
+
+    def test_the_second_part_alone_is_left_alone(self):
+        self.touch(self.shows, "Show Q", "Show Q Season 2 Part 2 - E01.mp4")
+        (done, _f, _l), groups = self.do()
+        self.assertEqual(done, 0)
+        self.assertEqual(self.tree(self.shows), {"Show Q/Show Q Season 2 Part 2 - E01.mp4"})
+
     def test_the_year_found_in_one_episode_names_the_whole_show(self):
         self.touch(self.shows, "Doctor.Who.2005.S01E01.mkv")
         self.touch(self.shows, "Doctor.Who.S01E02.mkv")
