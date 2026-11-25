@@ -390,7 +390,7 @@
     }
     /* Jellyfin plays per day, from Jellyfin's activity log. */
     var plays = Array.isArray(d.plays) ? d.plays : [], title = "Jellyfin plays per day";
-    var keys = [["movies", "Movies", "#f2b84b"], ["shows", "Shows", "#4fd1b0"], ["music", "Music", "#9b7bea"]];
+    var keys = [["movies", "Movies", "#f2b84b"], ["shows", "Shows", "#4fd1b0"]];
     if (plays.length < 2) { box.appendChild(hxWait(title, "No Jellyfin data yet. It arrives with the next stats run (sudo homelab-stats shows why if it does not).")); return; }
     var m = plays.length, series = keys.map(function (k) { return { name: k[1], color: k[2], vals: plays.map(function (a) { return a[k[0]]; }) }; });
     var most = Math.max.apply(null, [0].concat.apply([], series.map(function (sr) { return sr.vals.filter(hxReal); })));

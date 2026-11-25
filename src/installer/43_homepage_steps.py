@@ -241,7 +241,7 @@ class HomepageTabs(Step):
             sett, seen = layout_storage_wide(sett, seen)
             sett, seen = layout_music_wide(sett, seen)
             sett, seen = layout_storage_narrow(sett, seen)
-            sett, seen = layout_preview_narrow(sett, seen)
+            sett, seen = layout_preview_four(sett, seen)
             sett, seen = layout_calendar_on_stats(sett, seen)
             sett, seen = layout_calendar_on_home(sett, seen)
             sett, seen = layout_stats_before_links(sett, seen)

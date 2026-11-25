@@ -60,18 +60,17 @@ The numbers tab. It refreshes by itself every few minutes:
 
 | Group | What it shows |
 | :--- | :--- |
-| Preview | When the last backup ran and how it went, how many containers are running, and how many updates are waiting |
+| Preview | When the last backup ran and how it went, how many containers are running, how many updates are waiting, and how big the folders are (counted again only when something changed) |
 | Music Library | How many songs Downtify saved, and the newest ones |
 | Library Totals | Photos and videos in Immich, files and shares in Nextcloud, movies, shows and episodes in Jellyfin, and what was added to Jellyfin lately |
 | Storage | The Main pool and the Backup pool: used, free, size and health |
-| Folder Sizes | How big each folder is, counted again only when something changed |
 
 A tile that would sit alone at the end of a row stretches over the empty places, so a row never ends in a hole.
 
 Above these groups come two rows of charts. The first row is drawn from `homepage-config/images/history.json`, which the stats job fills in every 15 minutes and keeps for about a week:
 
 - **Temperature** shows the processor and every drive that gave a reading, with a gap where a drive was asleep (it is not woken up for this).
-- **Jellyfin plays per day** shows how many times something was played over the last 14 days: movies, shows and music, one smooth line each. It is read from Jellyfin's activity log, so it needs the Jellyfin card's API key like the Jellyfin numbers do. Until then the space holds a note, and `sudo homelab-stats` prints why Jellyfin could not be read.
+- **Jellyfin plays per day** shows how many times a movie or a show was played over the last 14 days, one smooth line each (music is not counted). It is read from Jellyfin's activity log, so it needs the Jellyfin card's API key like the Jellyfin numbers do. Until then the space holds a note, and `sudo homelab-stats` prints why Jellyfin could not be read.
 
 The second row shows **Docker CPU** and **Docker memory** for the last hour, one stacked area per container. Each chart gives its eight busiest containers their own color and adds the rest together as "other". Pointing at a chart lists every container's value at that minute, the biggest first, and what is inside "other". CPU is shown as a share of the whole machine (all cores together), so 100 % means every core is busy. The control panel samples `docker stats` once a minute and keeps the last 60 readings in `homepage-config/images/docker-trends.json` (a few KB). The charts start empty after an update and fill in over the first hour.
 
@@ -178,7 +177,7 @@ Some cards read live numbers from their service with a key or a password: an API
 
 Cards you add yourself and the number cards that HomeLab fills in have no key box.
 
-The number cards and the calendar that HomeLab fills in (Preview, Music Library, Library Totals, Storage, Folder Sizes and Calendar) are listed too, marked *Filled in by HomeLab*. You can rename, restyle, move and hide them. *Add From HomeLab's List* brings back a hidden card and offers extra single-number cards (Photos, Videos, Songs, Updates Waiting, Pool Health and more). *Put HomeLab's Cards Back* resets every default card and keeps your own. The first change marks the block in `services.yaml` as `customized`, so `sudo homelab-setup upgrade` stops rewriting it, and cards added in later versions appear in *Add From HomeLab's List*.
+The number cards and the calendar that HomeLab fills in (Preview, Music Library, Library Totals, Storage and Calendar) are listed too, marked *Filled in by HomeLab*. You can rename, restyle, move and hide them. *Add From HomeLab's List* brings back a hidden card and offers extra single-number cards (Photos, Videos, Songs, Updates Waiting, Pool Health and more). *Put HomeLab's Cards Back* resets every default card and keeps your own. The first change marks the block in `services.yaml` as `customized`, so `sudo homelab-setup upgrade` stops rewriting it, and cards added in later versions appear in *Add From HomeLab's List*.
 
 ### Drives
 

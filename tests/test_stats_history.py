@@ -31,14 +31,14 @@ class StatsHistory(unittest.TestCase):
 
     def test_a_second_run_within_ten_minutes_adds_no_reading_but_refreshes_the_plays(self):
         t0 = self.noon((2026, 11, 20))
-        h = self.m.history_update({}, t0, 50, {}, [{"day": "2026-11-20", "movies": 1, "shows": 0, "music": 0}])
-        h = self.m.history_update(h, t0 + 60, 50, {}, [{"day": "2026-11-20", "movies": 2, "shows": 0, "music": 0}])
+        h = self.m.history_update({}, t0, 50, {}, [{"day": "2026-11-20", "movies": 1, "shows": 0, }])
+        h = self.m.history_update(h, t0 + 60, 50, {}, [{"day": "2026-11-20", "movies": 2, "shows": 0, }])
         self.assertEqual(len(h["t"]), 1)
         self.assertEqual(h["plays"][0]["movies"], 2)
 
     def test_when_jellyfin_could_not_be_asked_the_last_plays_stay(self):
         t0 = self.noon((2026, 11, 20))
-        row = [{"day": "2026-11-20", "movies": 1, "shows": 0, "music": 0}]
+        row = [{"day": "2026-11-20", "movies": 1, "shows": 0, }]
         h = self.m.history_update({}, t0, 50, {}, row)
         h = self.m.history_update(h, t0 + 900, 50, {}, None)
         self.assertEqual(h["plays"], row)
@@ -125,7 +125,7 @@ class JellyfinTotals(unittest.TestCase):
         self.assertTrue(got["recent"][1]["label"].startswith("Show - "))
         self.assertTrue(all(h["Authorization"].startswith("MediaBrowser ") and h["Authorization"].endswith('Token="K"') and h["X-Emby-Token"] == "K" for _, h in asked))
 
-    def test_plays_per_day_split_into_movies_shows_and_music(self):
+    def test_plays_per_day_split_into_movies_and_shows_without_music(self):
         now = self.m.utc_epoch("2025-11-20T20:00:00Z")
         entries = [{"Type": "VideoPlayback", "Date": "2025-11-20T18:00:00.0000000Z", "ItemId": "aaa"},
                    {"Type": "VideoPlayback", "Date": "2025-11-20T19:00:00.0000000Z", "ItemId": "bbb"},
@@ -145,9 +145,10 @@ class JellyfinTotals(unittest.TestCase):
         rows = {r["day"]: r for r in got}
         zone = self.m.at(now).date()
         last, before = rows[zone.isoformat()], rows[(zone - datetime.timedelta(days=1)).isoformat()]
-        self.assertEqual((last["movies"], last["shows"], last["music"]), (1, 1, 0))
-        self.assertEqual((before["movies"], before["shows"], before["music"]), (1, 1, 1))  # the item Jellyfin no longer knows counts as a movie
-        self.assertEqual(sum(r["movies"] + r["shows"] + r["music"] for r in got), 5, "stops, logins and old entries are not plays")
+        self.assertEqual((last["movies"], last["shows"]), (1, 1))
+        self.assertEqual((before["movies"], before["shows"]), (1, 1))  # the item Jellyfin no longer knows counts as a movie
+        self.assertNotIn("music", last)
+        self.assertEqual(sum(r["movies"] + r["shows"] for r in got), 4, "music, stops, logins and old entries are not plays")
         self.assertTrue(any("minDate=" in u for u, _ in asked))
 
     def test_plays_are_none_when_the_log_can_not_be_read(self):

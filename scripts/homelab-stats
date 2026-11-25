@@ -15,7 +15,7 @@ What it collects:
                                 takes minutes, so it is done at the lowest priority and only when the pool's used space
                                 changed since the last count (and at most once an hour; every 7 days anyway).
 
-It also keeps history.json next to stats.json: about a week of CPU and drive temperatures (one reading per run), and how many times something was played in
+It also keeps history.json next to stats.json: about a week of CPU and drive temperatures (one reading per run), and how many times a movie or a show was played in
 Jellyfin each day (from Jellyfin's activity log). The graphs on the Stats tab are drawn from it.
 
 Usage:
@@ -363,15 +363,15 @@ def jellyfin_head(key):
 
 
 def jellyfin_plays(w, now):
-    """How many times something was played on each of the last PLAY_DAYS days, from Jellyfin's activity log: [{day, movies, shows, music}], oldest first. None when the log can not be read."""
+    """How many times a movie or a show was played on each of the last PLAY_DAYS days, from Jellyfin's activity log: [{day, movies, shows}], oldest first. Music is not counted. None when the log can not be read."""
     head = jellyfin_head(w["key"])
     since = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now - (PLAY_DAYS + 1) * 86400))
     try:
         rows = http_json(w["url"] + "/System/ActivityLog/Entries?startIndex=0&limit=2000&hasUserId=true&minDate=" + since, head).get("Items") or []
     except (OSError, ValueError, TypeError, urllib.error.URLError):
         return None
-    starts = [r for r in rows if isinstance(r, dict) and r.get("Type") in ("VideoPlayback", "AudioPlayback") and utc_epoch(r.get("Date"))]
-    ids = sorted({str(r["ItemId"]).replace("-", "").lower() for r in starts if r.get("Type") == "VideoPlayback" and r.get("ItemId")})
+    starts = [r for r in rows if isinstance(r, dict) and r.get("Type") == "VideoPlayback" and utc_epoch(r.get("Date"))]
+    ids = sorted({str(r["ItemId"]).replace("-", "").lower() for r in starts if r.get("ItemId")})
     kinds = {}
     for i in range(0, len(ids), 40):
         try:
@@ -383,15 +383,12 @@ def jellyfin_plays(w, now):
     today = at(now).date()
     days = {}
     for back in range(PLAY_DAYS - 1, -1, -1):
-        days[(today - datetime.timedelta(days=back)).isoformat()] = {"movies": 0, "shows": 0, "music": 0}
+        days[(today - datetime.timedelta(days=back)).isoformat()] = {"movies": 0, "shows": 0}
     for r in starts:
         day = at(utc_epoch(r["Date"])).date().isoformat()
         if day not in days:
             continue
-        if r["Type"] == "AudioPlayback":
-            kind = "music"
-        else:
-            kind = "shows" if kinds.get(str(r.get("ItemId")).replace("-", "").lower()) in ("Episode", "Season", "Series") else "movies"
+        kind = "shows" if kinds.get(str(r.get("ItemId")).replace("-", "").lower()) in ("Episode", "Season", "Series") else "movies"
         days[day][kind] += 1
     return [dict(v, day=d) for d, v in days.items()]
 

@@ -164,6 +164,24 @@
             - field: glance.updates
               label: Total
 
+    - Folder Sizes:
+        id: stat-folders
+        icon: mdi-folder-multiple
+        description: Counted again only when something changed
+        widget:
+          type: customapi
+          url: http://192.168.X.X:3001/images/stats.json
+          refreshInterval: 60000
+          mappings:
+            - field: folders.backup
+              label: Backup Pool
+            - field: folders.main
+              label: Main Pool
+            - field: folders.nextcloud
+              label: Nextcloud
+            - field: folders.immich
+              label: Immich
+
 - Music Library:
 
     - Downtify:
@@ -301,26 +319,6 @@
               label: Size
             - field: backup.health
               label: Health
-
-- Folder Sizes:
-
-    - Folder Sizes:
-        id: stat-folders
-        icon: mdi-folder-multiple
-        description: Counted again only when something changed
-        widget:
-          type: customapi
-          url: http://192.168.X.X:3001/images/stats.json
-          refreshInterval: 60000
-          mappings:
-            - field: folders.backup
-              label: Backup Pool
-            - field: folders.main
-              label: Main Pool
-            - field: folders.nextcloud
-              label: Nextcloud
-            - field: folders.immich
-              label: Immich
 
 # <<< homelab stats <<<
 

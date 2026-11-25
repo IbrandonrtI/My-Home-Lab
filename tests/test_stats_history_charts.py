@@ -24,7 +24,7 @@ HOME_PAGE = PAGE.replace("stat-one", "plain-one")
 def history(plays=True, readings=40):
     t0 = 1795600000
     t = [t0 + i * 900 for i in range(readings)]
-    rows = [{"day": "2026-11-%02d" % (12 + i), "movies": i % 3, "shows": (i * 2) % 5, "music": 1 if i % 4 == 0 else 0} for i in range(14)]
+    rows = [{"day": "2026-11-%02d" % (12 + i), "movies": i % 3, "shows": (i * 2) % 5} for i in range(14)]
     return {"version": 1, "updated": t[-1], "step": 900, "t": t, "cpu": [50 + (i % 7) for i in range(readings)],
             "drives": {"Storage": [36] * readings, "Backup": [None] * 10 + [31] * (readings - 10)}, "plays": rows if plays else []}
 
@@ -89,8 +89,9 @@ class HistoryCharts(unittest.TestCase):
         self.assertEqual(self.titles(pg), ["Temperature", "Jellyfin plays per day"])
         # CPU plus the two drives; a drive with a gap in front still draws.
         self.assertEqual(pg.eval_on_selector_all("#hl-history .hl-dk-card:nth-child(1) svg path:not(.hl-dk-grid)", "e => e.length"), 3)
-        # Movies, shows and music: a line and an area each.
-        self.assertEqual(pg.eval_on_selector_all("#hl-history .hl-dk-card:nth-child(2) svg path", "e => e.length"), 6)
+        # Movies and shows: a line and an area each.
+        self.assertEqual(pg.eval_on_selector_all("#hl-history .hl-dk-card:nth-child(2) svg path", "e => e.length"), 4)
+        self.assertNotIn("Music", pg.inner_text("#hl-history .hl-dk-card:nth-child(2)"))
         self.assertIn("Movies", pg.inner_text("#hl-history .hl-dk-card:nth-child(2) .hl-hx-key"))
         self.assertIn("Storage", pg.inner_text("#hl-history .hl-dk-card:nth-child(1) .hl-hx-key"))
 
