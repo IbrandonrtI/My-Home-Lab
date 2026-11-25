@@ -60,14 +60,19 @@ The numbers tab. It refreshes by itself every few minutes:
 
 | Group | What it shows |
 | :--- | :--- |
-| Preview | Library size, storage used, when the last backup ran and how many containers are running |
+| Preview | When the last backup ran and how it went, how many containers are running, and how many updates are waiting |
 | Music Library | How many songs Downtify saved, and the newest ones |
-| Library Totals | Photos and videos in Immich, files and shares in Nextcloud |
+| Library Totals | Photos and videos in Immich, files and shares in Nextcloud, movies, shows and episodes in Jellyfin, and what was added to Jellyfin lately |
 | Storage | The Main pool, the Backup pool and the temperature of every drive |
-| Backup and Updates | How the last backup went, and which containers have an update waiting |
 | Folder Sizes | How big each folder is, counted again only when something changed |
 
-Above these groups, two charts show **Docker CPU** and **Docker memory** for the last hour, one stacked area per container. Each chart gives its eight busiest containers their own color and adds the rest together as "other". Pointing at a chart lists every container's value at that minute, the biggest first, and what is inside "other". CPU is shown as a share of the whole machine (all cores together), so 100 % means every core is busy. The control panel samples `docker stats` once a minute and keeps the last 60 readings in `homepage-config/images/docker-trends.json` (a few KB). The charts start empty after an update and fill in over the first hour.
+Above these groups come two rows of charts. The first row is drawn from `homepage-config/images/history.json`, which the stats job fills in every 15 minutes and keeps for about a week:
+
+- **Temperature** shows the processor and every drive that gave a reading (a sleeping drive leaves a gap, it is not woken up for this).
+- **Network** shows the download and upload speed, averaged between two readings. A reboot or a missed run leaves a gap instead of a wrong number.
+- **Immich added per day** and **Jellyfin added per day** show how many photos and videos, or movies, shows and episodes arrived each day over the last 14 days. They are worked out from the daily totals, so the first bar appears on the second day, and a day on which something was deleted shows zero. A library that is not set up has no chart.
+
+The second row shows **Docker CPU** and **Docker memory** for the last hour, one stacked area per container. Each chart gives its eight busiest containers their own color and adds the rest together as "other". Pointing at a chart lists every container's value at that minute, the biggest first, and what is inside "other". CPU is shown as a share of the whole machine (all cores together), so 100 % means every core is busy. The control panel samples `docker stats` once a minute and keeps the last 60 readings in `homepage-config/images/docker-trends.json` (a few KB). The charts start empty after an update and fill in over the first hour.
 
 ![The Stats tab](images/homepage-stats.png)
 
@@ -172,7 +177,7 @@ Some cards read live numbers from their service with a key or a password: an API
 
 Cards you add yourself and the number cards that HomeLab fills in have no key box.
 
-The number cards and the calendar that HomeLab fills in (Preview, Music Library, Library Totals, Storage, Backup & Updates, Folder Sizes and Calendar) are listed too, marked *Filled in by HomeLab*. You can rename, restyle, move and hide them. *Add From HomeLab's List* brings back a hidden card and offers extra single-number cards (Photos, Videos, Songs, Updates Waiting, Pool Health and more). *Put HomeLab's Cards Back* resets every default card and keeps your own. The first change marks the block in `services.yaml` as `customized`, so `sudo homelab-setup upgrade` stops rewriting it, and cards added in later versions appear in *Add From HomeLab's List*.
+The number cards and the calendar that HomeLab fills in (Preview, Music Library, Library Totals, Storage, Folder Sizes and Calendar) are listed too, marked *Filled in by HomeLab*. You can rename, restyle, move and hide them. *Add From HomeLab's List* brings back a hidden card and offers extra single-number cards (Photos, Videos, Songs, Updates Waiting, Pool Health and more). *Put HomeLab's Cards Back* resets every default card and keeps your own. The first change marks the block in `services.yaml` as `customized`, so `sudo homelab-setup upgrade` stops rewriting it, and cards added in later versions appear in *Add From HomeLab's List*.
 
 ### Drives
 

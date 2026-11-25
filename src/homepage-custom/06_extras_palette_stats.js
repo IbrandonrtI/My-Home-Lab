@@ -277,6 +277,143 @@
     var key = DK.data ? DK.data.updated + ":" + DK.data.t.length : DK.at ? "none" : "wait";
     if (box.getAttribute("data-key") !== key) { box.setAttribute("data-key", key); dkDraw(box, DK.data); }
   }
+  /* Temperature, network speed and what was added each day, drawn from history.json. homelab-stats writes it every 15 minutes: the first two charts need two readings, the added-per-day charts two days of totals. */
+  var HX = { data: null, at: 0, busy: false }, HX_TEMP = ["#f08a4b", "#5b8def", "#4fd1b0", "#f2b84b", "#9b7bea", "#e27d8b", "#6ec1e4", "#b5d96b"];
+  function hxLoad() {
+    HX.busy = true;
+    fetch("/images/history.json?t=" + Date.now(), { cache: "no-store" }).then(function (r) { if (!r.ok) throw new Error("no file"); return r.json(); })
+      .then(function (d) { if (d && Array.isArray(d.t)) HX.data = d; })
+      .catch(function () { /* keep what is shown */ })
+      .then(function () { HX.busy = false; HX.at = Date.now(); soon(); });
+  }
+  function hxRate(v) { return v >= 1e6 ? (v / 1e6).toFixed(v >= 1e7 ? 0 : 1) + " MB/s" : v >= 1e3 ? Math.round(v / 1e3) + " KB/s" : Math.round(v) + " B/s"; }
+  function hxRateAxis(v) { return hxRate(v).replace("/s", ""); }
+  function hxDeg(v) { return Math.round(v) + "°C"; }
+  function hxInt(v) { return String(Math.round(v)); }
+  function hxAgo(sec) { var h = sec / 3600; return h < 48 ? Math.max(1, Math.round(h)) + " h ago" : Math.round(h / 24) + " days ago"; }
+  function hxDay(s, long) { return new Date(s + "T12:00:00").toLocaleDateString([], long ? { weekday: "short", month: "short", day: "numeric" } : { month: "short", day: "numeric" }); }
+  function hxReal(v) { return typeof v === "number" && isFinite(v); }
+  function hxCount(a) { return (a || []).filter(hxReal).length; }
+  /* One chart card. o.kind is "line" or "bars"; o.series is [{name, color, vals}]; o.title2(j) heads the hover box. */
+  function hxCard(o) {
+    var card = el("div", "hl-dk-card"), n = o.n, i, span = o.ymax - o.ymin;
+    var head = el("div", "hl-dk-head");
+    head.appendChild(el("b", "", o.title)); head.appendChild(el("span", "hl-dk-now", o.now));
+    if (o.note) head.appendChild(el("small", "", o.note));
+    card.appendChild(head);
+    var key = el("div", "hl-hx-key");
+    o.series.forEach(function (s) { var k = el("span"), dot = el("i"); dot.style.background = s.color; k.appendChild(dot); k.appendChild(document.createTextNode(s.name)); key.appendChild(k); });
+    card.appendChild(key);
+    function y(v) { return (100 - (Math.min(Math.max(v, o.ymin), o.ymax) - o.ymin) / span * 100).toFixed(2); }
+    var plot = el("div", "hl-dk-plot"), svg = dkSvg("svg", { viewBox: "0 0 1000 100", preserveAspectRatio: "none", "aria-hidden": "true" });
+    [0, 50, 100].forEach(function (g) { svg.appendChild(dkSvg("line", { x1: 0, x2: 1000, y1: g, y2: g, class: "hl-dk-grid", "vector-effect": "non-scaling-stroke" })); });
+    if (o.kind === "bars") {
+      var below = [], bw = 1000 / n * 0.62;
+      for (i = 0; i < n; i++) below.push(0);
+      o.series.forEach(function (s) {
+        for (i = 0; i < n; i++) {
+          var v = s.vals[i];
+          if (!hxReal(v) || v <= 0) continue;
+          var top = below[i] + v, x = (i + 0.5) / n * 1000 - bw / 2;
+          svg.appendChild(dkSvg("rect", { x: x.toFixed(1), y: y(top), width: bw.toFixed(1), height: (y(below[i]) - y(top)).toFixed(2), fill: s.color, "fill-opacity": "0.85" }));
+          below[i] = top;
+        }
+      });
+    } else {
+      o.series.forEach(function (s) {
+        var d = "", run = 0;
+        for (i = 0; i < n; i++) {
+          var v = s.vals[i];
+          if (!hxReal(v)) { run = 0; continue; }
+          d += (run ? " L" : " M") + (n > 1 ? i / (n - 1) * 1000 : 0).toFixed(1) + " " + y(v); run++;
+        }
+        if (d) svg.appendChild(dkSvg("path", { d: d, fill: "none", stroke: s.color, "stroke-width": "1.7", "stroke-linejoin": "round", "stroke-linecap": "round", "vector-effect": "non-scaling-stroke" }));
+      });
+    }
+    plot.appendChild(svg);
+    [0, 50, 100].forEach(function (p) { var l = el("span", "hl-dk-y", (o.axis || o.fmt)(o.ymin + span * p / 100)); l.style.bottom = p + "%"; plot.appendChild(l); });
+    var line = el("div", "hl-dk-line"), tip = el("div", "hl-dk-tip");
+    line.hidden = tip.hidden = true;
+    plot.appendChild(line); plot.appendChild(tip);
+    plot.addEventListener("mousemove", function (e) {
+      var r = plot.getBoundingClientRect(), f = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+      var j = o.kind === "bars" ? Math.min(n - 1, Math.floor(f * n)) : Math.round(f * (n - 1));
+      line.style.left = (o.kind === "bars" ? (j + 0.5) / n : n > 1 ? j / (n - 1) : 0) * 100 + "%"; line.hidden = tip.hidden = false;
+      tip.textContent = "";
+      tip.appendChild(el("b", "", o.title2(j)));
+      o.series.forEach(function (s) {
+        var row = el("div", "hl-dk-row"), dot = el("i");
+        dot.style.background = s.color;
+        row.appendChild(dot); row.appendChild(el("span", "", s.name)); row.appendChild(el("em", "", hxReal(s.vals[j]) ? o.fmt(s.vals[j]) : "–"));
+        tip.appendChild(row);
+      });
+      tip.style.left = (f > 0.6 ? "auto" : "calc(" + f * 100 + "% + 14px)"); tip.style.right = (f > 0.6 ? "calc(" + (100 - f * 100) + "% + 14px)" : "auto");
+    });
+    plot.addEventListener("mouseleave", function () { line.hidden = tip.hidden = true; });
+    card.appendChild(plot);
+    var ax = el("div", "hl-dk-x");
+    ax.appendChild(el("span", "", o.x0)); ax.appendChild(el("span", "", o.x1));
+    card.appendChild(ax);
+    return card;
+  }
+  function hxWait(title, text) {
+    var card = el("div", "hl-dk-card"), head = el("div", "hl-dk-head");
+    head.appendChild(el("b", "", title));
+    card.appendChild(head); card.appendChild(el("p", "hl-hx-wait", text));
+    return card;
+  }
+  function hxDraw(box, d) {
+    box.textContent = "";
+    if (!d) { box.appendChild(el("p", "hl-dk-empty", HX.at ? "No history yet. The stats job writes it every 15 minutes (or run sudo homelab-stats)." : "Loading history…")); return; }
+    var n = d.t.length;
+    /* Temperature: the processor and every drive that gave a reading. */
+    var temps = [], hot = 0;
+    if (hxCount(d.cpu) > 1) temps.push({ name: "CPU", color: HX_TEMP[0], vals: d.cpu });
+    Object.keys(d.drives || {}).sort().forEach(function (nm) { if (hxCount(d.drives[nm]) > 1) temps.push({ name: nm, color: HX_TEMP[1 + hot++ % (HX_TEMP.length - 1)], vals: d.drives[nm] }); });
+    if (n < 2 || !temps.length) box.appendChild(hxWait("Temperature", "Collecting data. A reading is taken every 15 minutes."));
+    else {
+      var all = [];
+      temps.forEach(function (s) { s.vals.forEach(function (v) { if (hxReal(v)) all.push(v); }); });
+      var lo = Math.floor((Math.min.apply(null, all) - 2) / 5) * 5, hi = Math.ceil((Math.max.apply(null, all) + 2) / 5) * 5;
+      hi = lo + Math.max(20, Math.ceil((hi - lo) / 10) * 10);
+      var cpuNow = d.cpu.filter(hxReal).pop();
+      box.appendChild(hxCard({ title: "Temperature", now: hxReal(cpuNow) ? "CPU " + hxDeg(cpuNow) : "Drives", note: "", kind: "line", n: n, series: temps, ymin: lo, ymax: hi, fmt: hxDeg,
+        title2: function (j) { return new Date(d.t[j] * 1000).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" }); }, x0: hxAgo(d.t[n - 1] - d.t[0]), x1: "now" }));
+    }
+    /* Network: the average speed between two readings. */
+    if (n < 2 || hxCount(d.rx) + hxCount(d.tx) < 2) box.appendChild(hxWait("Network", "Collecting data. The speed is worked out between two readings."));
+    else {
+      var peak = Math.max.apply(null, d.rx.concat(d.tx).filter(hxReal)), rxNow = d.rx.filter(hxReal).pop();
+      box.appendChild(hxCard({ title: "Network", now: "↓ " + hxRate(rxNow || 0), note: "average per 15 min", kind: "line", n: n,
+        series: [{ name: "Download", color: "#5b8def", vals: d.rx }, { name: "Upload", color: "#4fd1b0", vals: d.tx }], ymin: 0, ymax: dkNice(Math.max(10000, peak * 1.1)), fmt: hxRate, axis: hxRateAxis,
+        title2: function (j) { return new Date(d.t[j] * 1000).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" }); }, x0: hxAgo(d.t[n - 1] - d.t[0]), x1: "now" }));
+    }
+    /* Added per day: Immich and Jellyfin, only where that library reports totals. */
+    var act = d.activity || [], days = d.days || {};
+    [{ title: "Immich added per day", keys: [["photos", "Photos", "#5b8def"], ["videos", "Videos", "#9b7bea"]] },
+     { title: "Jellyfin added per day", keys: [["movies", "Movies", "#f2b84b"], ["shows", "Shows", "#4fd1b0"], ["episodes", "Episodes", "#6ec1e4"]] }].forEach(function (c) {
+      var has = Object.keys(days).some(function (dy) { return c.keys.some(function (k) { return hxReal(days[dy][k[0]]); }); });
+      if (!has) return;
+      var m = act.length, series = c.keys.map(function (k) { return { name: k[1], color: k[2], vals: act.map(function (a) { return a[k[0]]; }) }; });
+      var totals = act.map(function (a) { return c.keys.reduce(function (t, k) { return t + (hxReal(a[k[0]]) ? a[k[0]] : 0); }, 0); });
+      if (!m || !series.some(function (s) { return hxCount(s.vals) > 0; })) { box.appendChild(hxWait(c.title, "Fills in once the totals of two days are known.")); return; }
+      var week = totals.slice(-7).reduce(function (a, b) { return a + b; }, 0);
+      box.appendChild(hxCard({ title: c.title, now: week + " this week", note: "last " + m + " days", kind: "bars", n: m, series: series, ymin: 0, ymax: dkNice(Math.max(10, Math.max.apply(null, totals) * 1.1)), fmt: hxInt,
+        title2: function (j) { return hxDay(act[j].day, true); }, x0: hxDay(act[0].day), x1: "today" }));
+    });
+  }
+  function historyCharts() {
+    var lg = document.getElementById("layout-groups"), box = document.getElementById("hl-history");
+    var on = lg && lg.parentNode && lg.querySelector("li[id^='stat-']");
+    if (!on) { if (box && !box.hidden) box.hidden = true; return; }
+    if (!box) { box = el("section"); box.id = "hl-history"; box.setAttribute("aria-label", "Temperature, network and library activity"); }
+    var dk = document.getElementById("hl-docker"), after = dk && dk.parentNode === lg.parentNode ? dk : lg;
+    if (box.parentNode !== lg.parentNode || box.nextSibling !== after) lg.parentNode.insertBefore(box, after);
+    if (box.hidden) box.hidden = false;
+    if (!HX.busy && Date.now() - HX.at > 60000) hxLoad();
+    var key = HX.data ? HX.data.updated + ":" + HX.data.t.length : HX.at ? "none" : "wait";
+    if (box.getAttribute("data-key") !== key) { box.setAttribute("data-key", key); hxDraw(box, HX.data); }
+  }
   function stats() {
     var wrap = document.getElementById("widgets-wrap");
     if (!wrap) return;
@@ -373,7 +510,7 @@
 
   function run() {
     queued = false;
-    dots(); waiting(); status(); hello(); dock(); find(); jellyfin(); stats(); dockerCharts(); counting();
+    dots(); waiting(); status(); hello(); dock(); find(); jellyfin(); stats(); dockerCharts(); historyCharts(); counting();
     if (!TR.busy && Date.now() - TR.at > 30000) trendsLoad();
   }
   function soon() { if (!queued) { queued = true; window.requestAnimationFrame(run); } }

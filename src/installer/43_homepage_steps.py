@@ -35,8 +35,10 @@ def widgets_for_machine(body):
 # Homepage serves a file under /images only if the file already existed when Homepage started. The progress ring and the header graphs read these files,
 # so they are created empty before Homepage first starts (or, on a machine where Homepage already runs, once, with a restart of Homepage).
 # trends.json is the short history of CPU, memory, network and temperature that the control panel keeps, for the small graphs in the header.
+# history.json is the week of temperatures, network speed and daily additions that homelab-stats keeps, for the graphs on the Stats tab.
 DASH_PLACEHOLDERS = {"install-status.json": "{}\n", "job-status.json": '{"version": 1, "updated": 0, "jobs": []}\n',
-                     "trends.json": '{"version": 1, "updated": 0, "step": 30, "cpu": [], "mem": [], "rx": [], "tx": [], "temp": []}\n'}
+                     "trends.json": '{"version": 1, "updated": 0, "step": 30, "cpu": [], "mem": [], "rx": [], "tx": [], "temp": []}\n',
+                     "history.json": '{"version": 1, "updated": 0, "step": 900, "t": [], "cpu": [], "rx": [], "tx": [], "drives": {}, "days": {}, "activity": []}\n'}
 
 
 def dashboard_placeholders():

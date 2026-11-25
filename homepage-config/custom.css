@@ -572,10 +572,11 @@ body { --icon-color: #c9d6f2; }
 #inner_wrapper .bookmark-description { color: var(--lk-muted) !important; }
 
 li[id^="stat-"], li[id^="cal-"] { position: relative !important; background-color: transparent !important; --accent: 148, 163, 184; }
-#stat-library, #stat-immich { --accent: 209, 18, 18; }
-#stat-storage, #stat-mainpool { --accent: 107, 97, 223; }
-#stat-lastbackup, #stat-backup, #stat-backuppool { --accent: 34, 197, 94; }
+#stat-immich { --accent: 209, 18, 18; }
+#stat-mainpool { --accent: 107, 97, 223; }
+#stat-lastbackup, #stat-backuppool { --accent: 34, 197, 94; }
 #stat-containers, #stat-updates { --accent: 0, 197, 253; }
+#stat-jellyfin, #stat-added { --accent: 150, 110, 235; }
 #stat-nextcloud { --accent: 36, 140, 255; }
 #stat-folders { --accent: 214, 90, 22; }
 #stat-music, #stat-songs { --accent: 236, 72, 153; }
@@ -1436,34 +1437,38 @@ html.hl-jf-side #hl-jf-slot { display: block; flex: 1 1 auto; min-height: 340px;
   #inner_wrapper #widgets-wrap.hl-stats-on #hl-stats .hl-g-up { flex-grow: 0.55; }
 }
 
-/* Docker CPU and memory per container on the Stats tab (drawn by custom.js from docker-trends.json). */
-#hl-docker { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: 18px var(--lk-side) 6px; }
-#hl-docker[hidden] { display: none; }
-#hl-docker .hl-dk-empty { grid-column: 1 / -1; margin: 0; padding: 18px; text-align: center; color: var(--lk-muted); font-size: 0.9rem; border-radius: 18px; border: 1px solid var(--lk-line); background: rgba(var(--lk-glass), var(--lk-glass-a)); }
-#hl-docker .hl-dk-card { min-width: 0; padding: 14px 16px 12px; border-radius: 18px; border: 1px solid var(--lk-line); background: rgba(var(--lk-glass), var(--lk-glass-a)); box-shadow: 0 16px 36px -22px rgba(var(--lk-shadow, 0, 0, 0), 0.75), var(--lk-rim, 0 0 0 0 transparent); -webkit-backdrop-filter: blur(var(--lk-blur, 14px)) saturate(var(--lk-sat, 125%)); backdrop-filter: blur(var(--lk-blur, 14px)) saturate(var(--lk-sat, 125%)); font-variant-numeric: tabular-nums; }
-#hl-docker .hl-dk-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; }
-#hl-docker .hl-dk-head b { font-size: 0.95rem; font-weight: 650; color: var(--lk-text); }
-#hl-docker .hl-dk-now { font-size: 1.3rem; font-weight: 650; color: var(--lk-text); }
-#hl-docker .hl-dk-head small { margin-left: auto; font-size: 0.75rem; color: var(--lk-muted); }
-#hl-docker .hl-dk-plot { position: relative; height: 230px; margin: 14px 0 0 46px; cursor: crosshair; }
-#hl-docker .hl-dk-plot svg { display: block; width: 100%; height: 100%; overflow: visible; }
-#hl-docker .hl-dk-grid { stroke: rgba(var(--lk-ink, 255, 255, 255), 0.14); stroke-dasharray: 3 4; }
-#hl-docker .hl-dk-y { position: absolute; left: -46px; width: 40px; text-align: right; transform: translateY(50%); font-size: 11px; line-height: 1; color: var(--lk-muted); pointer-events: none; }
-#hl-docker .hl-dk-line { position: absolute; top: 0; bottom: 0; width: 1px; background: rgba(var(--lk-ink, 255, 255, 255), 0.45); pointer-events: none; }
+/* Docker CPU and memory per container (drawn by custom.js from docker-trends.json) and the temperature, network and added-per-day charts (from history.json) on the Stats tab. */
+#hl-docker, #hl-history { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: 18px var(--lk-side) 6px; }
+#hl-docker[hidden], #hl-history[hidden] { display: none; }
+:is(#hl-docker, #hl-history) .hl-dk-empty { grid-column: 1 / -1; margin: 0; padding: 18px; text-align: center; color: var(--lk-muted); font-size: 0.9rem; border-radius: 18px; border: 1px solid var(--lk-line); background: rgba(var(--lk-glass), var(--lk-glass-a)); }
+:is(#hl-docker, #hl-history) .hl-dk-card { min-width: 0; padding: 14px 16px 12px; border-radius: 18px; border: 1px solid var(--lk-line); background: rgba(var(--lk-glass), var(--lk-glass-a)); box-shadow: 0 16px 36px -22px rgba(var(--lk-shadow, 0, 0, 0), 0.75), var(--lk-rim, 0 0 0 0 transparent); -webkit-backdrop-filter: blur(var(--lk-blur, 14px)) saturate(var(--lk-sat, 125%)); backdrop-filter: blur(var(--lk-blur, 14px)) saturate(var(--lk-sat, 125%)); font-variant-numeric: tabular-nums; }
+:is(#hl-docker, #hl-history) .hl-dk-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; }
+:is(#hl-docker, #hl-history) .hl-dk-head b { font-size: 0.95rem; font-weight: 650; color: var(--lk-text); }
+:is(#hl-docker, #hl-history) .hl-dk-now { font-size: 1.3rem; font-weight: 650; color: var(--lk-text); }
+:is(#hl-docker, #hl-history) .hl-dk-head small { margin-left: auto; font-size: 0.75rem; color: var(--lk-muted); }
+:is(#hl-docker, #hl-history) .hl-dk-plot { position: relative; height: 230px; margin: 14px 0 0 46px; cursor: crosshair; }
+:is(#hl-docker, #hl-history) .hl-dk-plot svg { display: block; width: 100%; height: 100%; overflow: visible; }
+:is(#hl-docker, #hl-history) .hl-dk-grid { stroke: rgba(var(--lk-ink, 255, 255, 255), 0.14); stroke-dasharray: 3 4; }
+:is(#hl-docker, #hl-history) .hl-dk-y { position: absolute; left: -46px; width: 40px; text-align: right; transform: translateY(50%); font-size: 11px; line-height: 1; color: var(--lk-muted); pointer-events: none; }
+:is(#hl-docker, #hl-history) .hl-dk-line { position: absolute; top: 0; bottom: 0; width: 1px; background: rgba(var(--lk-ink, 255, 255, 255), 0.45); pointer-events: none; }
 /* The hover box is solid and uses the pop-up colors (the same as the bell and the search box), so its text stays readable on a light or a dark theme. */
-#hl-docker .hl-dk-tip { position: absolute; top: 4px; z-index: 3; min-width: 170px; padding: 8px 10px; border-radius: 10px; border: 1px solid rgba(var(--lk-ink, 255, 255, 255), 0.18); background: color-mix(in srgb, rgb(var(--lk-accent, 138, 180, 255)) 11%, var(--lk-popbase, #0b101c)); box-shadow: 0 10px 28px -10px rgba(0, 0, 0, 0.6); font-size: 12px; color: var(--lk-hi, #f3f6fb); pointer-events: none; }
-#hl-docker .hl-dk-tip .hl-dk-row span, #hl-docker .hl-dk-tip .hl-dk-sub { color: var(--lk-popmuted, #bcc6d6); }
-#hl-docker .hl-dk-tip b { display: block; margin-bottom: 5px; font-weight: 650; }
-#hl-docker .hl-dk-row { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: center; gap: 8px; line-height: 1.5; }
-#hl-docker .hl-dk-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--lk-muted); }
-#hl-docker .hl-dk-row em { font-style: normal; font-weight: 600; }
-#hl-docker .hl-dk-row i { display: inline-block; width: 8px; height: 8px; border-radius: 3px; }
-#hl-docker .hl-dk-x { display: flex; justify-content: space-between; margin: 5px 0 0 46px; font-size: 11px; color: var(--lk-muted); }
-#hl-docker .hl-dk-sub { display: flex; justify-content: space-between; gap: 12px; padding-left: 16px; font-size: 11.5px; line-height: 1.45; color: var(--lk-muted); }
-#hl-docker .hl-dk-sub span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-#hl-docker .hl-dk-sub em { font-style: normal; flex: none; }
-@media (max-width: 1000px) { #hl-docker { grid-template-columns: minmax(0, 1fr); } }
-@media (max-width: 700px) { #hl-docker .hl-dk-plot { height: 170px; } }
+:is(#hl-docker, #hl-history) .hl-dk-tip { position: absolute; top: 4px; z-index: 3; min-width: 170px; padding: 8px 10px; border-radius: 10px; border: 1px solid rgba(var(--lk-ink, 255, 255, 255), 0.18); background: color-mix(in srgb, rgb(var(--lk-accent, 138, 180, 255)) 11%, var(--lk-popbase, #0b101c)); box-shadow: 0 10px 28px -10px rgba(0, 0, 0, 0.6); font-size: 12px; color: var(--lk-hi, #f3f6fb); pointer-events: none; }
+:is(#hl-docker, #hl-history) .hl-dk-tip .hl-dk-row span, :is(#hl-docker, #hl-history) .hl-dk-tip .hl-dk-sub { color: var(--lk-popmuted, #bcc6d6); }
+:is(#hl-docker, #hl-history) .hl-dk-tip b { display: block; margin-bottom: 5px; font-weight: 650; }
+:is(#hl-docker, #hl-history) .hl-dk-row { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: center; gap: 8px; line-height: 1.5; }
+:is(#hl-docker, #hl-history) .hl-dk-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--lk-muted); }
+:is(#hl-docker, #hl-history) .hl-dk-row em { font-style: normal; font-weight: 600; }
+:is(#hl-docker, #hl-history) .hl-dk-row i { display: inline-block; width: 8px; height: 8px; border-radius: 3px; }
+:is(#hl-docker, #hl-history) .hl-dk-x { display: flex; justify-content: space-between; margin: 5px 0 0 46px; font-size: 11px; color: var(--lk-muted); }
+:is(#hl-docker, #hl-history) .hl-dk-sub { display: flex; justify-content: space-between; gap: 12px; padding-left: 16px; font-size: 11.5px; line-height: 1.45; color: var(--lk-muted); }
+:is(#hl-docker, #hl-history) .hl-dk-sub span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+:is(#hl-docker, #hl-history) .hl-dk-sub em { font-style: normal; flex: none; }
+@media (max-width: 1000px) { #hl-docker, #hl-history { grid-template-columns: minmax(0, 1fr); } }
+:is(#hl-docker, #hl-history) .hl-hx-key { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 6px; font-size: 0.75rem; color: var(--lk-muted); }
+:is(#hl-docker, #hl-history) .hl-hx-key span { display: inline-flex; align-items: center; gap: 6px; }
+:is(#hl-docker, #hl-history) .hl-hx-key i { display: inline-block; width: 8px; height: 8px; border-radius: 3px; }
+:is(#hl-docker, #hl-history) .hl-hx-wait { margin: 18px 0 8px; padding: 26px 8px; text-align: center; color: var(--lk-muted); font-size: 0.88rem; border-radius: 12px; border: 1px dashed var(--lk-line); }
+@media (max-width: 700px) { :is(#hl-docker, #hl-history) .hl-dk-plot { height: 170px; } }
 
 /* The status strip above the cards, and the slim player bar. */
 #hl-status {

@@ -1,4 +1,4 @@
-"""The hover box of the Docker charts must stay readable on every theme: solid, in the pop-up colors, never in the card glass color (a light glass with light text was unreadable)."""
+"""The hover box of the Docker charts and of the history charts (temperature, network, added per day) must stay readable on every theme: solid, in the pop-up colors, never in the card glass color (a light glass with light text was unreadable)."""
 import os
 import re
 import unittest
@@ -10,7 +10,7 @@ class DockTooltipTests(unittest.TestCase):
     def rule(self):
         with open(os.path.join(helpers.ROOT, "homepage-config", "custom.css"), encoding="utf-8") as f:
             css = f.read()
-        m = re.search(r"#hl-docker \.hl-dk-tip \{([^}]*)\}", css)
+        m = re.search(r":is\(#hl-docker, #hl-history\) \.hl-dk-tip \{([^}]*)\}", css)
         self.assertTrue(m, "the tooltip rule is missing")
         return m.group(1)
 

@@ -5,7 +5,7 @@ Runs from root's crontab every 15 minutes and writes ONE small file, stats.json,
 (~/homepage-config/images/stats.json). The STATS tab reads that file; nothing else is changed.
 
 What it collects:
-  Immich and Nextcloud totals   asked from the two programs, with the keys already in the Homepage cards
+  Immich, Nextcloud, Jellyfin   totals asked from the programs, with the keys already in the Homepage cards; for Jellyfin also what was added lately
   Main pool and Backup pool     space used / free, and drive health (smartctl; a sleeping drive is never woken)
   Last backup                   when it ran, how it ended, how big the backup is (from homelab-backup)
   Containers and updates        running / stopped, waiting container and system updates (from homelab-update)
@@ -15,6 +15,9 @@ What it collects:
                                 takes minutes, so it is done at the lowest priority and only when the pool's used space
                                 changed since the last count (and at most once an hour; every 7 days anyway).
 
+It also keeps history.json next to stats.json: about a week of CPU and drive temperatures and network speed (one reading per run), and how many photos,
+videos, movies and episodes were added each day (the growth of the totals). The graphs on the Stats tab are drawn from it.
+
 Usage:
   sudo homelab-stats           collect everything now and print a short summary
   sudo homelab-stats quick     the same without counting folder sizes (the installer uses this)
@@ -22,7 +25,9 @@ Usage:
   homelab-stats version
 """
 
+import calendar
 import datetime
+import glob
 import json
 import os
 import tempfile
@@ -41,6 +46,13 @@ BACKUP_POOL = os.environ.get("HOMELAB_BACKUP_POOL", "/mnt/backup")
 BACKUP_STATUS = os.environ.get("HLU_BACKUP_STATUS", "/var/lib/homelab-backup/last-run")
 LOCKFILE = os.environ.get("HOMELAB_STATS_LOCK", "/run/homelab-stats.lock")
 FOLDER_CACHE = os.path.join(STATE_DIR, "stats-folders.json")
+HISTORY_POINTS = 672  # a week of readings, one every 15 minutes
+HISTORY_MIN_GAP = 600  # a run closer than this to the last reading only refreshes the day totals
+HISTORY_DAYS = 31
+ACTIVITY_DAYS = 14
+RECENT_ITEMS = 6
+PROC = os.environ.get("HOMELAB_PROC", "/proc")
+SYS = os.environ.get("HOMELAB_SYS", "/sys")
 RECOUNT_MIN_SECONDS = 3600
 RECOUNT_EARLY_SECONDS = 600  # a big change in used space (a backup, an import) is counted again after 10 minutes, not an hour
 RECOUNT_MAX_SECONDS = 7 * 86400
@@ -276,7 +288,7 @@ def output_path():
 
 
 def widgets_from_services(hp):
-    """Return {'immich': {'url':..., 'key':...}, 'nextcloud': {...}} from the cards in services.yaml."""
+    """Return {'immich': {'url':..., 'key':...}, 'nextcloud': {...}, 'jellyfin': {...}} from the cards in services.yaml."""
     found = {}
     text = read(os.path.join(hp, "services.yaml")) if hp else ""
     if not text:
@@ -289,7 +301,7 @@ def widgets_from_services(hp):
                 for item in items if isinstance(items, list) else []:
                     for card in (item.values() if isinstance(item, dict) else []):
                         w = card.get("widget") if isinstance(card, dict) else None
-                        if isinstance(w, dict) and w.get("type") in ("immich", "nextcloud") and w.get("url") and w.get("key"):
+                        if isinstance(w, dict) and w.get("type") in ("immich", "nextcloud", "jellyfin") and w.get("url") and w.get("key"):
                             found.setdefault(w["type"], {"url": str(w["url"]).rstrip("/"), "key": str(w["key"])})
         return found
     except Exception:
@@ -306,7 +318,7 @@ def widgets_from_services(hp):
         m = re.match(r"^\s+key:\s*(\S+)", line)
         if m and kind:
             key = m.group(1).strip("\"'")
-        if kind in ("immich", "nextcloud") and url and key:
+        if kind in ("immich", "nextcloud", "jellyfin") and url and key:
             found.setdefault(kind, {"url": url.rstrip("/"), "key": key})
             kind = None
     return found
@@ -333,6 +345,36 @@ def get_nextcloud(w):
     return {"files": num(nc["storage"]["num_files"]), "users": num((data.get("activeUsers") or {}).get("last24hours")),
             "shares": num(nc["shares"]["num_shares"]), "free": human(nc["system"]["freespace"]),
             "files_raw": nc["storage"]["num_files"]}
+
+
+def utc_epoch(text):
+    """The time in an ISO date such as 2025-11-20T18:22:11.1234567Z as seconds since 1970 (Jellyfin writes seven decimals), or None."""
+    m = re.match(r"^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d):(\d\d)", str(text or ""))
+    if not m:
+        return None
+    try:
+        return calendar.timegm(tuple(int(x) for x in m.groups()))
+    except (ValueError, OverflowError):
+        return None
+
+
+def get_jellyfin(w, now):
+    head = {"X-Emby-Token": w["key"]}
+    counts = http_json(w["url"] + "/Items/Counts", head)
+    query = "/Items?Recursive=true&IncludeItemTypes=Movie,Series&SortBy=DateCreated&SortOrder=Descending&Fields=DateCreated&Limit=%d" % RECENT_ITEMS
+    rows = []
+    for it in (http_json(w["url"] + query, head).get("Items") or []):
+        name = str(it.get("Name") or "").strip()
+        if not name:
+            continue
+        show = it.get("Type") == "Series"
+        when = utc_epoch(it.get("DateCreated"))
+        year = it.get("ProductionYear")
+        rows.append({"name": name + (" (%d)" % year if isinstance(year, int) and not show else ""),
+                     "label": ("Show" if show else "Movie") + (" - " + song_age(when, now) if when else "")})
+    return {"movies": num(counts.get("MovieCount")), "shows": num(counts.get("SeriesCount")), "episodes": num(counts.get("EpisodeCount")),
+            "movies_raw": counts.get("MovieCount"), "shows_raw": counts.get("SeriesCount"), "episodes_raw": counts.get("EpisodeCount"),
+            "recent": rows or [{"name": "Nothing added yet", "label": ""}]}
 
 
 def pool_space(path):
@@ -736,15 +778,18 @@ def collect(quick):
     keys = widgets_from_services(hp)
 
     res = {"version": 1, "updated": int(now), "updated_text": clock(now)}
-    for name, fn in (("immich", get_immich), ("nextcloud", get_nextcloud)):
+    nothing = {"immich": {"photos": "-", "videos": "-", "users": "-", "storage": "-", "photos_raw": None, "videos_raw": None},
+               "nextcloud": {"files": "-", "users": "-", "shares": "-", "free": "-", "files_raw": None},
+               "jellyfin": {"movies": "-", "shows": "-", "episodes": "-", "movies_raw": None, "shows_raw": None, "episodes_raw": None,
+                            "recent": [{"name": "Jellyfin is not set up yet", "label": ""}]}}
+    for name, fn in (("immich", get_immich), ("nextcloud", get_nextcloud), ("jellyfin", lambda w: get_jellyfin(w, now))):
         try:
             if name not in keys:
                 raise KeyError(name)
             res[name] = fn(keys[name])
         except (OSError, ValueError, KeyError, TypeError, urllib.error.URLError):
             prev = old.get(name) if isinstance(old.get(name), dict) else None
-            res[name] = prev or ({"photos": "-", "videos": "-", "users": "-", "storage": "-", "photos_raw": None, "videos_raw": None}
-                                 if name == "immich" else {"files": "-", "users": "-", "shares": "-", "free": "-", "files_raw": None})
+            res[name] = prev or nothing[name]
 
     roles = drive_roles()
     old_drives = old.get("drives") if isinstance(old.get("drives"), list) else []
@@ -768,6 +813,131 @@ def collect(quick):
         "containers": res["containers"]["running"], "updates": res["updates"]["total"],
     }
     return res, out_path, spaces, pending
+
+
+def net_counters():
+    """Bytes received and sent since boot by the real network cards (not loopback, Docker or VPN interfaces)."""
+    rx = tx = 0
+    try:
+        with open(os.path.join(PROC, "net", "dev")) as f:
+            lines = f.readlines()[2:]
+    except OSError:
+        return None
+    for line in lines:
+        name, _, rest = line.partition(":")
+        name = name.strip()
+        if not rest or name == "lo" or name.startswith(("docker", "veth", "br-", "virbr", "tailscale", "wg", "tun", "zt")):
+            continue
+        c = rest.split()
+        try:
+            rx += int(c[0])
+            tx += int(c[8])
+        except (ValueError, IndexError):
+            continue
+    return rx, tx
+
+
+def cpu_temp():
+    """The hottest reading of the processor sensors in degrees, or None."""
+    for pattern in ("class/hwmon/hwmon*/temp*_input", "class/thermal/thermal_zone*/temp"):
+        best = None
+        for path in glob.glob(os.path.join(SYS, pattern)):
+            try:
+                c = int(read(path).strip()) / 1000.0
+            except ValueError:
+                continue
+            if 1 < c < 130 and (best is None or c > best):
+                best = c
+        if best is not None:
+            return round(best, 1)
+    return None
+
+
+def drive_temps():
+    """{drive name: degrees or None} from the readings homelab-sample saved; a sleeping drive or one without a reading is None."""
+    out = {}
+    for line in read(os.path.join(STATE_DIR, "temps")).splitlines():
+        f = line.split("|")
+        if len(f) >= 3:
+            out[drive_name(f[0])] = int(f[2]) if f[2].isdigit() else None
+    return out
+
+
+def history_activity(days, today):
+    """What was added on each of the last ACTIVITY_DAYS days, from the last total of each day: today's total minus the day before's. None when either day is missing."""
+    keys = ("photos", "videos", "movies", "shows", "episodes")
+    rows = []
+    for back in range(ACTIVITY_DAYS - 1, -1, -1):
+        day = today - datetime.timedelta(days=back)
+        cur, before = days.get(day.isoformat()), days.get((day - datetime.timedelta(days=1)).isoformat())
+        row = {"day": day.isoformat()}
+        for k in keys:
+            a, b = (cur or {}).get(k), (before or {}).get(k)
+            row[k] = max(0, a - b) if isinstance(a, int) and isinstance(b, int) else None
+        rows.append(row)
+    return rows
+
+
+def history_update(old, now, net, cpu, drives, totals):
+    """The history file with one more reading. old is the file as it was (any dictionary), net is (received, sent) bytes since boot, totals holds what the libraries count."""
+    h = {"version": 1, "t": [], "cpu": [], "rx": [], "tx": [], "drives": {}, "counters": {}, "days": {}}
+    if isinstance(old, dict):
+        for k in ("t", "cpu", "rx", "tx"):
+            if isinstance(old.get(k), list):
+                h[k] = old[k][-HISTORY_POINTS:]
+        if isinstance(old.get("drives"), dict):
+            h["drives"] = {str(k): v[-HISTORY_POINTS:] for k, v in old["drives"].items() if isinstance(v, list)}
+        if isinstance(old.get("counters"), dict):
+            h["counters"] = old["counters"]
+        if isinstance(old.get("days"), dict):
+            h["days"] = {k: v for k, v in old["days"].items() if isinstance(v, dict)}
+    n = len(h["t"])
+    if not (len(h["cpu"]) == len(h["rx"]) == len(h["tx"]) == n) or any(len(v) != n for v in h["drives"].values()):
+        h.update(t=[], cpu=[], rx=[], tx=[], drives={})
+        n = 0
+    last = h["t"][-1] if h["t"] else 0
+    if now - last >= HISTORY_MIN_GAP:
+        prev = h["counters"]
+        rx = tx = None
+        if net and isinstance(prev.get("t"), (int, float)) and 0 < now - prev["t"] <= 3600 and net[0] >= prev.get("rx", 1 << 62) and net[1] >= prev.get("tx", 1 << 62):
+            rx, tx = int((net[0] - prev["rx"]) / (now - prev["t"])), int((net[1] - prev["tx"]) / (now - prev["t"]))
+        h["t"] = (h["t"] + [int(now)])[-HISTORY_POINTS:]
+        h["cpu"] = (h["cpu"] + [cpu])[-HISTORY_POINTS:]
+        h["rx"] = (h["rx"] + [rx])[-HISTORY_POINTS:]
+        h["tx"] = (h["tx"] + [tx])[-HISTORY_POINTS:]
+        for name in set(h["drives"]) | set(drives):
+            series = h["drives"].get(name) or [None] * n
+            h["drives"][name] = (series + [drives.get(name)])[-HISTORY_POINTS:]
+        h["drives"] = {k: v for k, v in h["drives"].items() if any(x is not None for x in v)}
+        h["counters"] = {"t": now, "rx": net[0], "tx": net[1]} if net else {}
+    today = at(now).date()
+    seen = {k: int(v) for k, v in (totals or {}).items() if isinstance(v, (int, float))}
+    if seen:
+        h["days"][today.isoformat()] = dict(h["days"].get(today.isoformat()) or {}, **seen)
+    cut = (today - datetime.timedelta(days=HISTORY_DAYS)).isoformat()
+    h["days"] = {k: v for k, v in h["days"].items() if k >= cut}
+    h["updated"] = int(now)
+    h["step"] = 900
+    h["activity"] = history_activity(h["days"], today)
+    return h
+
+
+def history_path(out_path):
+    forced = os.environ.get("HOMELAB_HISTORY_OUT")
+    if forced:
+        return forced
+    return os.path.join(os.path.dirname(out_path), "history.json") if out_path else ""
+
+
+def write_history(res, out_path):
+    """Add this run's readings to history.json. A failure here never stops the stats file from being saved."""
+    path = history_path(out_path)
+    if not path:
+        return
+    im, jf = res.get("immich") or {}, res.get("jellyfin") or {}
+    totals = {"photos": im.get("photos_raw"), "videos": im.get("videos_raw"), "movies": jf.get("movies_raw"), "shows": jf.get("shows_raw"), "episodes": jf.get("episodes_raw")}
+    h = history_update(load_json(path), time.time(), net_counters(), cpu_temp(), drive_temps(), totals)
+    write_file_safely(path, json.dumps(h, separators=(",", ":")))
 
 
 def save(res, out_path):
@@ -816,6 +986,10 @@ def main(argv):
     if not saved:
         print("homelab-stats: could not find the Homepage folder, so nothing was saved.", file=sys.stderr)
         return 1
+    try:
+        write_history(res, out_path)
+    except (OSError, ValueError, TypeError) as err:
+        print("homelab-stats: the history was not saved (%s)." % err, file=sys.stderr)
     if arg != "quick":
         texts, _ = folder_sizes(time.time(), spaces, False)
         if texts != res["folders"]:

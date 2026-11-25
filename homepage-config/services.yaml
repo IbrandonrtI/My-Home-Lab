@@ -116,40 +116,10 @@
 
 - Preview:
 
-    - Library:
-        id: stat-library
-        icon: mdi-image-multiple
-        description: Photos, videos and files
-        widget:
-          type: customapi
-          url: http://192.168.X.X:3001/images/stats.json
-          refreshInterval: 60000
-          mappings:
-            - field: glance.photos
-              label: Photos
-            - field: glance.videos
-              label: Videos
-            - field: glance.files
-              label: Files
-
-    - Storage Used:
-        id: stat-storage
-        icon: mdi-harddisk
-        description: How full the pools are
-        widget:
-          type: customapi
-          url: http://192.168.X.X:3001/images/stats.json
-          refreshInterval: 60000
-          mappings:
-            - field: glance.main_pct
-              label: Main Pool
-            - field: glance.backup_pct
-              label: Backup Pool
-
     - Last Backup:
         id: stat-lastbackup
         icon: mdi-backup-restore
-        description: When it ran and how big it is
+        description: When it ran and how it went
         widget:
           type: customapi
           url: http://192.168.X.X:3001/images/stats.json
@@ -157,15 +127,15 @@
           mappings:
             - field: glance.backup_when
               label: Ran
-            - field: glance.backup_size
-              label: Size
-            - field: glance.backup_saved
-              label: Saved To
+            - field: last_backup.result
+              label: Result
+            - field: last_backup.took
+              label: Took
 
     - Containers:
         id: stat-containers
         icon: mdi-docker
-        description: Running now, and updates waiting
+        description: Running now, and any with problems
         widget:
           type: customapi
           url: http://192.168.X.X:3001/images/stats.json
@@ -173,10 +143,26 @@
           mappings:
             - field: glance.containers
               label: Running
-            - field: glance.updates
-              label: Waiting
+            - field: containers.problems
+              label: Problems
             - field: updated_text
               label: Refreshed
+
+    - Updates:
+        id: stat-updates
+        icon: mdi-update
+        description: Checked automatically
+        widget:
+          type: customapi
+          url: http://192.168.X.X:3001/images/stats.json
+          refreshInterval: 60000
+          mappings:
+            - field: updates.images
+              label: Containers
+            - field: updates.system
+              label: System
+            - field: glance.updates
+              label: Total
 
 - Music Library:
 
@@ -248,6 +234,36 @@
             - field: nextcloud.free
               label: Free
 
+    - Jellyfin:
+        id: stat-jellyfin
+        icon: jellyfin.svg
+        description: Movies and shows
+        widget:
+          type: customapi
+          url: http://192.168.X.X:3001/images/stats.json
+          refreshInterval: 60000
+          mappings:
+            - field: jellyfin.movies
+              label: Movies
+            - field: jellyfin.shows
+              label: Shows
+            - field: jellyfin.episodes
+              label: Episodes
+
+    - Recently Added:
+        id: stat-added
+        icon: mdi-movie-open-plus
+        description: The newest movies and shows in Jellyfin
+        widget:
+          type: customapi
+          url: http://192.168.X.X:3001/images/stats.json
+          refreshInterval: 60000
+          display: dynamic-list
+          mappings:
+            items: jellyfin.recent
+            name: name
+            label: label
+
 - Storage:
 
     - Main Pool:
@@ -299,38 +315,6 @@
             items: temps
             name: name
             label: label
-
-- Backup & Updates:
-
-    - Last Backup:
-        id: stat-backup
-        icon: mdi-backup-restore
-        description: How the last backup went
-        widget:
-          type: customapi
-          url: http://192.168.X.X:3001/images/stats.json
-          refreshInterval: 60000
-          mappings:
-            - field: last_backup.result
-              label: Result
-            - field: last_backup.took
-              label: Took
-
-    - Containers & Updates:
-        id: stat-updates
-        icon: mdi-docker
-        description: Checked Automatically
-        widget:
-          type: customapi
-          url: http://192.168.X.X:3001/images/stats.json
-          refreshInterval: 60000
-          mappings:
-            - field: containers.problems
-              label: Problems
-            - field: updates.images
-              label: Container Updates
-            - field: updates.system
-              label: System Updates
 
 - Folder Sizes:
 
