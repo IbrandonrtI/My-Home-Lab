@@ -833,10 +833,11 @@
     });
   }
 
-  /* A strip above the cards that says whether every service answers. It counts the status dots of the cards on the page, so it follows the tab: a tab with
-     no dots (Stats, Links) shows no strip. Just after the page opens, a red dot is shown as "checking", because services that are still starting look the same. */
+  /* A small pill at the end of the tab bar that says whether every service answers ("13/13"). It counts the status dots of the cards on the page, so it follows the tab:
+     a tab with no dots (Stats, Links) shows no pill. Pressing it lists what is not answering, and each name scrolls to its card. Just after the page opens, a red dot is
+     shown as "checking", because services that are still starting look the same. */
   function status() {
-    var lg = document.getElementById("layout-groups"), box = document.getElementById("hl-status"), up = 0, down = [];
+    var tabs = document.getElementById("tabs"), box = document.getElementById("hl-status"), up = 0, down = [];
     all(".service").forEach(function (li) {
       var seen = "";
       all('[class*="-status"] > div', li).forEach(function (d) {
@@ -848,31 +849,60 @@
       else if (seen === "down") { var a = li.querySelector(".service-title-text, .service-title a, .service-name"); down.push({ li: li, name: ((a && a.textContent) || li.id.replace(/-card$/, "")).trim() }); }
     });
     var total = up + down.length;
-    if (!lg || !lg.parentNode || total === 0) { if (box && !box.hidden) box.hidden = true; return; }
+    if (!tabs || total === 0) { if (box && !box.hidden) box.hidden = true; return; }
     var state = !down.length ? "ok" : (Date.now() - T0 < GRACE ? "wait" : "bad");
     var key = state + "|" + up + "|" + down.map(function (x) { return x.name; }).join(",");
-    if (!box) { box = el("div"); box.id = "hl-status"; box.setAttribute("role", "status"); }
+    if (!box) {
+      box = el("div", "hl-stwrap");
+      box.id = "hl-status";
+      var btn = el("button");
+      btn.type = "button";
+      btn.setAttribute("aria-haspopup", "true");
+      btn.setAttribute("aria-expanded", "false");
+      btn.appendChild(el("span", "hl-st-dot"));
+      btn.appendChild(el("span", "hl-st-n"));
+      btn.onclick = function () {
+        var open = !box.classList.contains("hl-open");
+        box.classList.toggle("hl-open", open);
+        btn.setAttribute("aria-expanded", String(open));
+      };
+      box.appendChild(btn);
+      var pop = el("div", "hl-bellpop");
+      pop.setAttribute("role", "region");
+      pop.setAttribute("aria-label", "Service status");
+      box.appendChild(pop);
+      document.addEventListener("click", function (e) { var b = document.getElementById("hl-status"); if (b && !b.contains(e.target)) { b.classList.remove("hl-open"); b.querySelector("button").setAttribute("aria-expanded", "false"); } });
+      document.addEventListener("keydown", function (e) { if (e.key === "Escape") { var b = document.getElementById("hl-status"); if (b) b.classList.remove("hl-open"); } });
+    }
     if (box.getAttribute("data-key") !== key) {
       box.setAttribute("data-key", key);
-      box.className = "hl-st-" + state;
-      var sub = state === "ok" ? up + " of " + total + " answering" : state === "wait" ? "Some services are still starting." : "";
+      ["ok", "wait", "bad"].forEach(function (k) { box.classList.toggle("hl-st-" + k, k === state); });
       var head = state === "ok" ? "All services are healthy" : state === "wait" ? "Checking the services…" : down.length + (down.length === 1 ? " service is" : " services are") + " not answering";
-      box.textContent = "";
-      box.appendChild(el("span", "hl-st-dot"));
-      box.appendChild(el("b", "", head));
-      if (sub) box.appendChild(el("span", "hl-st-sub", sub));
-      if (state === "bad") down.forEach(function (x) {
-        var b = el("button", "hl-st-chip", x.name);
-        b.type = "button";
-        b.addEventListener("click", function () {
-          x.li.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "center" });
-          x.li.classList.add("hl-flash");
-          window.setTimeout(function () { x.li.classList.remove("hl-flash"); }, 1800);
+      var sub = state === "ok" ? up + " of " + total + " answering" : state === "wait" ? "Some services are still starting." : "";
+      box.querySelector(".hl-st-n").textContent = state === "ok" ? up + "/" + total : state === "wait" ? "…" : down.length + " down";
+      box.querySelector("button").setAttribute("aria-label", head + (sub ? ". " + sub : ""));
+      box.querySelector("button").title = head;
+      var pop2 = box.querySelector(".hl-bellpop"), top = el("div", "hl-sthead");
+      pop2.textContent = "";
+      top.appendChild(el("b", "", head));
+      if (sub) top.appendChild(el("small", "", sub));
+      pop2.appendChild(top);
+      if (state === "bad") {
+        var list = el("div", "hl-stlist");
+        down.forEach(function (x) {
+          var b = el("button", "hl-st-chip", x.name);
+          b.type = "button";
+          b.addEventListener("click", function () {
+            x.li.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "center" });
+            x.li.classList.add("hl-flash");
+            window.setTimeout(function () { x.li.classList.remove("hl-flash"); }, 1800);
+          });
+          list.appendChild(b);
         });
-        box.appendChild(b);
-      });
+        pop2.appendChild(list);
+      }
     }
-    if (box.parentNode !== lg.parentNode || box.nextSibling !== lg) lg.parentNode.insertBefore(box, lg);
+    if (tabs.lastElementChild !== box) tabs.appendChild(box);
     if (box.hidden) box.hidden = false;
   }
 
@@ -1620,7 +1650,7 @@
     var key = DK.data ? DK.data.updated + ":" + DK.data.t.length : DK.at ? "none" : "wait";
     if (box.getAttribute("data-key") !== key) { box.setAttribute("data-key", key); dkDraw(box, DK.data); }
   }
-  /* Drive and processor temperature and what was added to Jellyfin each day, drawn from history.json. homelab-stats writes it every 15 minutes: the temperature chart needs two readings, the added-per-day chart two days of totals. */
+  /* Drive and processor temperature, and Jellyfin plays per day, drawn from history.json. homelab-stats writes it every 15 minutes: the temperature chart needs two readings; the plays come from Jellyfin's activity log. */
   var HX = { data: null, at: 0, busy: false }, HX_TEMP = ["#f08a4b", "#5b8def", "#4fd1b0", "#f2b84b", "#9b7bea", "#e27d8b", "#6ec1e4", "#b5d96b"];
   function hxLoad() {
     HX.busy = true;
@@ -1635,7 +1665,7 @@
   function hxDay(s, long) { return new Date(s + "T12:00:00").toLocaleDateString([], long ? { weekday: "short", month: "short", day: "numeric" } : { month: "short", day: "numeric" }); }
   function hxReal(v) { return typeof v === "number" && isFinite(v); }
   function hxCount(a) { return (a || []).filter(hxReal).length; }
-  /* One chart card. o.kind is "line" or "bars"; o.series is [{name, color, vals}]; o.title2(j) heads the hover box. */
+  /* One chart card. o.kind is "line", "area" (smooth lines with the area under them) or "bars"; o.series is [{name, color, vals}]; o.title2(j) heads the hover box. */
   function hxCard(o) {
     var card = el("div", "hl-dk-card"), n = o.n, i, span = o.ymax - o.ymin;
     var head = el("div", "hl-dk-head");
@@ -1659,6 +1689,16 @@
           svg.appendChild(dkSvg("rect", { x: x.toFixed(1), y: y(top), width: bw.toFixed(1), height: (y(below[i]) - y(top)).toFixed(2), fill: s.color, "fill-opacity": "0.85" }));
           below[i] = top;
         }
+      });
+    } else if (o.kind === "area") {
+      o.series.forEach(function (s) {
+        var pts = [];
+        for (i = 0; i < n; i++) if (hxReal(s.vals[i])) pts.push([n > 1 ? i / (n - 1) * 1000 : 0, parseFloat(y(s.vals[i]))]);
+        if (pts.length < 2) return;
+        var d = "M" + pts[0][0].toFixed(1) + " " + pts[0][1].toFixed(2);
+        for (i = 1; i < pts.length; i++) { var mid = (pts[i - 1][0] + pts[i][0]) / 2; d += " C" + mid.toFixed(1) + " " + pts[i - 1][1].toFixed(2) + " " + mid.toFixed(1) + " " + pts[i][1].toFixed(2) + " " + pts[i][0].toFixed(1) + " " + pts[i][1].toFixed(2); }
+        svg.appendChild(dkSvg("path", { d: d + " L" + pts[pts.length - 1][0].toFixed(1) + " 100 L" + pts[0][0].toFixed(1) + " 100 Z", fill: s.color, "fill-opacity": "0.16", stroke: "none" }));
+        svg.appendChild(dkSvg("path", { d: d, fill: "none", stroke: s.color, "stroke-width": "1.7", "stroke-linejoin": "round", "stroke-linecap": "round", "vector-effect": "non-scaling-stroke" }));
       });
     } else {
       o.series.forEach(function (s) {
@@ -1721,16 +1761,15 @@
       box.appendChild(hxCard({ title: "Temperature", now: hxReal(cpuNow) ? "CPU " + hxDeg(cpuNow) : "Drives", note: "", kind: "line", n: n, series: temps, ymin: lo, ymax: hi, fmt: hxDeg,
         title2: function (j) { return new Date(d.t[j] * 1000).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" }); }, x0: hxAgo(d.t[n - 1] - d.t[0]), x1: "now" }));
     }
-    /* Added per day: only where Jellyfin reports totals. */
-    var act = d.activity || [], days = d.days || {}, keys = [["movies", "Movies", "#f2b84b"], ["shows", "Shows", "#4fd1b0"], ["episodes", "Episodes", "#6ec1e4"]], title = "Jellyfin added per day";
-    var has = Object.keys(days).some(function (dy) { return keys.some(function (k) { return hxReal(days[dy][k[0]]); }); });
-    if (!has) return;
-    var m = act.length, series = keys.map(function (k) { return { name: k[1], color: k[2], vals: act.map(function (a) { return a[k[0]]; }) }; });
-    var totals = act.map(function (a) { return keys.reduce(function (t, k) { return t + (hxReal(a[k[0]]) ? a[k[0]] : 0); }, 0); });
-    if (!m || !series.some(function (sr) { return hxCount(sr.vals) > 0; })) { box.appendChild(hxWait(title, "Fills in once the totals of two days are known.")); return; }
-    var week = totals.slice(-7).reduce(function (a, b) { return a + b; }, 0);
-    box.appendChild(hxCard({ title: title, now: week + " this week", note: "last " + m + " days", kind: "bars", n: m, series: series, ymin: 0, ymax: dkNice(Math.max(10, Math.max.apply(null, totals) * 1.1)), fmt: hxInt,
-      title2: function (j) { return hxDay(act[j].day, true); }, x0: hxDay(act[0].day), x1: "today" }));
+    /* Jellyfin plays per day, from Jellyfin's activity log. */
+    var plays = Array.isArray(d.plays) ? d.plays : [], title = "Jellyfin plays per day";
+    var keys = [["movies", "Movies", "#f2b84b"], ["shows", "Shows", "#4fd1b0"], ["music", "Music", "#9b7bea"]];
+    if (plays.length < 2) { box.appendChild(hxWait(title, "No Jellyfin data yet. It arrives with the next stats run (sudo homelab-stats shows why if it does not).")); return; }
+    var m = plays.length, series = keys.map(function (k) { return { name: k[1], color: k[2], vals: plays.map(function (a) { return a[k[0]]; }) }; });
+    var most = Math.max.apply(null, [0].concat.apply([], series.map(function (sr) { return sr.vals.filter(hxReal); })));
+    var week = plays.slice(-7).reduce(function (t, a) { return t + keys.reduce(function (u, k) { return u + (hxReal(a[k[0]]) ? a[k[0]] : 0); }, 0); }, 0);
+    box.appendChild(hxCard({ title: title, now: week + " this week", note: "last " + m + " days", kind: "area", n: m, series: series, ymin: 0, ymax: Math.max(4, Math.ceil(most / 4) * 4), fmt: hxInt,
+      title2: function (j) { return hxDay(plays[j].day, true); }, x0: hxDay(plays[0].day), x1: "today" }));
   }
   function historyCharts() {
     var lg = document.getElementById("layout-groups"), box = document.getElementById("hl-history");
@@ -1743,6 +1782,18 @@
     if (!HX.busy && Date.now() - HX.at > 60000) hxLoad();
     var key = HX.data ? HX.data.updated + ":" + HX.data.t.length : HX.at ? "none" : "wait";
     if (box.getAttribute("data-key") !== key) { box.setAttribute("data-key", key); hxDraw(box, HX.data); }
+  }
+  /* On the Stats tab, a tile alone (or with one other) in the last row of its group stretches over the empty places, so no hole is left at the end of a row. */
+  function fillRows() {
+    all(".services-list").forEach(function (ul) {
+      if (!ul.querySelector("li[id^='stat-']")) return;
+      /* Take the stretch off first: a tile that spans too far makes the grid add columns of its own, and those must not be counted. */
+      Array.prototype.forEach.call(ul.children, function (li) { if (li.getAttribute("data-hl-span")) { li.style.gridColumn = ""; li.removeAttribute("data-hl-span"); } });
+      var cs = window.getComputedStyle(ul), cols = cs.display === "grid" ? cs.gridTemplateColumns.split(/\s+/).filter(function (t) { return /^[\d.]/.test(t); }).length : 0;
+      var items = Array.prototype.filter.call(ul.children, function (li) { return li.tagName === "LI" && li.offsetParent !== null; }), last = items[items.length - 1];
+      var span = last && cols > 1 ? cols - (items.length - 1) % cols : 1;
+      if (span > 1) { last.style.gridColumn = "span " + span; last.setAttribute("data-hl-span", "1"); }
+    });
   }
   function stats() {
     var wrap = document.getElementById("widgets-wrap");
@@ -1840,7 +1891,7 @@
 
   function run() {
     queued = false;
-    dots(); waiting(); status(); hello(); dock(); find(); jellyfin(); stats(); dockerCharts(); historyCharts(); counting();
+    dots(); waiting(); status(); hello(); dock(); find(); jellyfin(); stats(); dockerCharts(); historyCharts(); fillRows(); counting();
     if (!TR.busy && Date.now() - TR.at > 30000) trendsLoad();
   }
   function soon() { if (!queued) { queued = true; window.requestAnimationFrame(run); } }

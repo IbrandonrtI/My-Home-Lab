@@ -341,10 +341,11 @@
     });
   }
 
-  /* A strip above the cards that says whether every service answers. It counts the status dots of the cards on the page, so it follows the tab: a tab with
-     no dots (Stats, Links) shows no strip. Just after the page opens, a red dot is shown as "checking", because services that are still starting look the same. */
+  /* A small pill at the end of the tab bar that says whether every service answers ("13/13"). It counts the status dots of the cards on the page, so it follows the tab:
+     a tab with no dots (Stats, Links) shows no pill. Pressing it lists what is not answering, and each name scrolls to its card. Just after the page opens, a red dot is
+     shown as "checking", because services that are still starting look the same. */
   function status() {
-    var lg = document.getElementById("layout-groups"), box = document.getElementById("hl-status"), up = 0, down = [];
+    var tabs = document.getElementById("tabs"), box = document.getElementById("hl-status"), up = 0, down = [];
     all(".service").forEach(function (li) {
       var seen = "";
       all('[class*="-status"] > div', li).forEach(function (d) {
@@ -356,31 +357,60 @@
       else if (seen === "down") { var a = li.querySelector(".service-title-text, .service-title a, .service-name"); down.push({ li: li, name: ((a && a.textContent) || li.id.replace(/-card$/, "")).trim() }); }
     });
     var total = up + down.length;
-    if (!lg || !lg.parentNode || total === 0) { if (box && !box.hidden) box.hidden = true; return; }
+    if (!tabs || total === 0) { if (box && !box.hidden) box.hidden = true; return; }
     var state = !down.length ? "ok" : (Date.now() - T0 < GRACE ? "wait" : "bad");
     var key = state + "|" + up + "|" + down.map(function (x) { return x.name; }).join(",");
-    if (!box) { box = el("div"); box.id = "hl-status"; box.setAttribute("role", "status"); }
+    if (!box) {
+      box = el("div", "hl-stwrap");
+      box.id = "hl-status";
+      var btn = el("button");
+      btn.type = "button";
+      btn.setAttribute("aria-haspopup", "true");
+      btn.setAttribute("aria-expanded", "false");
+      btn.appendChild(el("span", "hl-st-dot"));
+      btn.appendChild(el("span", "hl-st-n"));
+      btn.onclick = function () {
+        var open = !box.classList.contains("hl-open");
+        box.classList.toggle("hl-open", open);
+        btn.setAttribute("aria-expanded", String(open));
+      };
+      box.appendChild(btn);
+      var pop = el("div", "hl-bellpop");
+      pop.setAttribute("role", "region");
+      pop.setAttribute("aria-label", "Service status");
+      box.appendChild(pop);
+      document.addEventListener("click", function (e) { var b = document.getElementById("hl-status"); if (b && !b.contains(e.target)) { b.classList.remove("hl-open"); b.querySelector("button").setAttribute("aria-expanded", "false"); } });
+      document.addEventListener("keydown", function (e) { if (e.key === "Escape") { var b = document.getElementById("hl-status"); if (b) b.classList.remove("hl-open"); } });
+    }
     if (box.getAttribute("data-key") !== key) {
       box.setAttribute("data-key", key);
-      box.className = "hl-st-" + state;
-      var sub = state === "ok" ? up + " of " + total + " answering" : state === "wait" ? "Some services are still starting." : "";
+      ["ok", "wait", "bad"].forEach(function (k) { box.classList.toggle("hl-st-" + k, k === state); });
       var head = state === "ok" ? "All services are healthy" : state === "wait" ? "Checking the services…" : down.length + (down.length === 1 ? " service is" : " services are") + " not answering";
-      box.textContent = "";
-      box.appendChild(el("span", "hl-st-dot"));
-      box.appendChild(el("b", "", head));
-      if (sub) box.appendChild(el("span", "hl-st-sub", sub));
-      if (state === "bad") down.forEach(function (x) {
-        var b = el("button", "hl-st-chip", x.name);
-        b.type = "button";
-        b.addEventListener("click", function () {
-          x.li.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "center" });
-          x.li.classList.add("hl-flash");
-          window.setTimeout(function () { x.li.classList.remove("hl-flash"); }, 1800);
+      var sub = state === "ok" ? up + " of " + total + " answering" : state === "wait" ? "Some services are still starting." : "";
+      box.querySelector(".hl-st-n").textContent = state === "ok" ? up + "/" + total : state === "wait" ? "…" : down.length + " down";
+      box.querySelector("button").setAttribute("aria-label", head + (sub ? ". " + sub : ""));
+      box.querySelector("button").title = head;
+      var pop2 = box.querySelector(".hl-bellpop"), top = el("div", "hl-sthead");
+      pop2.textContent = "";
+      top.appendChild(el("b", "", head));
+      if (sub) top.appendChild(el("small", "", sub));
+      pop2.appendChild(top);
+      if (state === "bad") {
+        var list = el("div", "hl-stlist");
+        down.forEach(function (x) {
+          var b = el("button", "hl-st-chip", x.name);
+          b.type = "button";
+          b.addEventListener("click", function () {
+            x.li.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "center" });
+            x.li.classList.add("hl-flash");
+            window.setTimeout(function () { x.li.classList.remove("hl-flash"); }, 1800);
+          });
+          list.appendChild(b);
         });
-        box.appendChild(b);
-      });
+        pop2.appendChild(list);
+      }
     }
-    if (box.parentNode !== lg.parentNode || box.nextSibling !== lg) lg.parentNode.insertBefore(box, lg);
+    if (tabs.lastElementChild !== box) tabs.appendChild(box);
     if (box.hidden) box.hidden = false;
   }
 

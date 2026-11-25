@@ -1,4 +1,4 @@
-"""The temperature and Jellyfin added-per-day charts on the Stats tab, drawn from images/history.json. Needs Python Playwright and a Chromium browser, and is skipped without them."""
+"""The temperature and Jellyfin plays-per-day charts on the Stats tab, drawn from images/history.json. Needs Python Playwright and a Chromium browser, and is skipped without them."""
 import functools
 import http.server
 import json
@@ -21,16 +21,12 @@ PAGE = ('<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet"
 HOME_PAGE = PAGE.replace("stat-one", "plain-one")
 
 
-def history(days=3, readings=40):
+def history(plays=True, readings=40):
     t0 = 1795600000
     t = [t0 + i * 900 for i in range(readings)]
-    act = []
-    for i in range(14):
-        on = i >= 14 - days
-        act.append({"day": "2026-11-%02d" % (12 + i), "movies": 1 if on else None, "shows": 0 if on else None, "episodes": 5 if on else None})
+    rows = [{"day": "2026-11-%02d" % (12 + i), "movies": i % 3, "shows": (i * 2) % 5, "music": 1 if i % 4 == 0 else 0} for i in range(14)]
     return {"version": 1, "updated": t[-1], "step": 900, "t": t, "cpu": [50 + (i % 7) for i in range(readings)],
-            "drives": {"Storage": [36] * readings, "Backup": [None] * 10 + [31] * (readings - 10)},
-            "days": {"2026-11-25": {"movies": 50, "shows": 9, "episodes": 300}}, "activity": act}
+            "drives": {"Storage": [36] * readings, "Backup": [None] * 10 + [31] * (readings - 10)}, "plays": rows if plays else []}
 
 
 @unittest.skipUnless(sync_playwright, "Python Playwright is not installed")
@@ -88,13 +84,14 @@ class HistoryCharts(unittest.TestCase):
     def titles(self, pg):
         return pg.eval_on_selector_all("#hl-history .hl-dk-head b", "els => els.map(e => e.textContent)")
 
-    def test_a_line_chart_and_a_bar_chart(self):
+    def test_a_line_chart_and_a_play_chart(self):
         pg = self.open(history())
-        self.assertEqual(self.titles(pg), ["Temperature", "Jellyfin added per day"])
+        self.assertEqual(self.titles(pg), ["Temperature", "Jellyfin plays per day"])
         # CPU plus the two drives; a drive with a gap in front still draws.
         self.assertEqual(pg.eval_on_selector_all("#hl-history .hl-dk-card:nth-child(1) svg path:not(.hl-dk-grid)", "e => e.length"), 3)
-        self.assertGreater(pg.eval_on_selector_all("#hl-history .hl-dk-card:nth-child(2) svg rect", "e => e.length"), 0)
-        self.assertIn("CPU", pg.inner_text("#hl-history .hl-dk-card:nth-child(1) .hl-hx-key"))
+        # Movies, shows and music: a line and an area each.
+        self.assertEqual(pg.eval_on_selector_all("#hl-history .hl-dk-card:nth-child(2) svg path", "e => e.length"), 6)
+        self.assertIn("Movies", pg.inner_text("#hl-history .hl-dk-card:nth-child(2) .hl-hx-key"))
         self.assertIn("Storage", pg.inner_text("#hl-history .hl-dk-card:nth-child(1) .hl-hx-key"))
 
     def test_it_sits_before_the_docker_charts_and_the_cards(self):
@@ -105,22 +102,29 @@ class HistoryCharts(unittest.TestCase):
             self.assertEqual(order.index("hl-history") + 1, order.index("hl-docker"))
             self.assertEqual(order.index("hl-docker") + 1, order.index("layout-groups"))
 
-    def test_added_per_day_waits_for_two_days_of_totals(self):
-        pg = self.open(history(days=0))
-        card = pg.inner_text("#hl-history .hl-dk-card:nth-child(2)")
-        self.assertIn("Jellyfin added per day", card)
-        self.assertIn("two days", card)
-        self.assertEqual(pg.eval_on_selector_all("#hl-history .hl-dk-card:nth-child(2) svg", "e => e.length"), 0)
+    def test_the_two_charts_sit_side_by_side(self):
+        pg = self.open(history())
+        a, b = [pg.eval_on_selector("#hl-history .hl-dk-card:nth-child(%d)" % n, "e => { const r = e.getBoundingClientRect(); return [r.left, r.top, r.width]; }") for n in (1, 2)]
+        self.assertEqual(round(a[1]), round(b[1]))
+        self.assertLess(a[0], b[0])
 
-    def test_without_jellyfin_there_is_no_added_chart(self):
-        data = history()
-        data["days"] = {}
-        pg = self.open(data)
-        self.assertEqual(self.titles(pg), ["Temperature"])
+    def test_without_plays_the_space_holds_a_note(self):
+        pg = self.open(history(plays=False))
+        self.assertEqual(self.titles(pg), ["Temperature", "Jellyfin plays per day"])
+        self.assertIn("No Jellyfin data yet", pg.inner_text("#hl-history .hl-dk-card:nth-child(2)"))
+
+    def test_hover_on_the_plays_shows_the_day(self):
+        pg = self.open(history())
+        box = pg.eval_on_selector("#hl-history .hl-dk-card:nth-child(2) .hl-dk-plot", "e => { const r = e.getBoundingClientRect(); return [r.left, r.top, r.width, r.height]; }")
+        pg.mouse.move(box[0] + box[2] * 0.99, box[1] + box[3] * 0.5)
+        pg.wait_for_timeout(200)
+        tip = pg.inner_text("#hl-history .hl-dk-card:nth-child(2) .hl-dk-tip")
+        self.assertIn("Nov 25", tip)
+        self.assertIn("Shows", tip)
 
     def test_no_readings_yet_says_it_is_collecting(self):
-        pg = self.open({"version": 1, "updated": 0, "step": 900, "t": [], "cpu": [], "drives": {}, "days": {}, "activity": []})
-        self.assertEqual(self.titles(pg), ["Temperature"])
+        pg = self.open({"version": 1, "updated": 0, "step": 900, "t": [], "cpu": [], "drives": {}, "plays": []})
+        self.assertEqual(self.titles(pg), ["Temperature", "Jellyfin plays per day"])
         self.assertIn("Collecting data", pg.inner_text("#hl-history"))
 
     def test_a_missing_file_shows_a_note_and_the_page_still_works(self):

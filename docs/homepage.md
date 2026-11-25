@@ -44,7 +44,7 @@ This is where the services live, in groups:
 
 Each card has a dot that shows whether the service is up, and most show live numbers. The AdGuard card shows how many queries it has blocked, the Immich card counts photos and videos, and so on. Click a card to open the service.
 
-A strip above the cards sums up those dots. It says *All services are healthy*, or how many are not answering with a button for each one that scrolls to its card. For the first seconds after the page opens (or after the dashboard restarts) a red dot is shown as *Checking the services*, because a service that is still starting looks the same. The strip shows only on a tab that has status dots, so Stats and Links have none.
+A small pill at the end of the tab bar sums up those dots, for example `13/13`. Pressing it says *All services are healthy*, or how many are not answering with a button for each one that scrolls to its card; the pill turns red and reads `2 down` when something is not answering. For the first seconds after the page opens (or after the dashboard restarts) a red dot is shown as *Checking the services*, because a service that is still starting looks the same. The pill shows only on a tab that has status dots, so Stats and Links have none.
 
 The Navidrome card is a bit different. It has the music player inside it, so songs play without leaving the dashboard. The player starts as a slim bar. Press the arrow or the bar (*Open the player*) to open it, and the same arrow closes it again. Closing it doesn't stop the music, and the choice is remembered in that browser. Another small button changes the player's height.
 
@@ -66,10 +66,12 @@ The numbers tab. It refreshes by itself every few minutes:
 | Storage | The Main pool and the Backup pool: used, free, size and health |
 | Folder Sizes | How big each folder is, counted again only when something changed |
 
+A tile that would sit alone at the end of a row stretches over the empty places, so a row never ends in a hole.
+
 Above these groups come two rows of charts. The first row is drawn from `homepage-config/images/history.json`, which the stats job fills in every 15 minutes and keeps for about a week:
 
 - **Temperature** shows the processor and every drive that gave a reading, with a gap where a drive was asleep (it is not woken up for this).
-- **Jellyfin added per day** shows how many movies, shows and episodes arrived each day over the last 14 days. It is worked out from the daily totals, so the first bar appears on the second day, and a day on which something was deleted shows zero. Without Jellyfin set up, this chart is not shown.
+- **Jellyfin plays per day** shows how many times something was played over the last 14 days: movies, shows and music, one smooth line each. It is read from Jellyfin's activity log, so it needs the Jellyfin card's API key like the Jellyfin numbers do. Until then the space holds a note, and `sudo homelab-stats` prints why Jellyfin could not be read.
 
 The second row shows **Docker CPU** and **Docker memory** for the last hour, one stacked area per container. Each chart gives its eight busiest containers their own color and adds the rest together as "other". Pointing at a chart lists every container's value at that minute, the biggest first, and what is inside "other". CPU is shown as a share of the whole machine (all cores together), so 100 % means every core is busy. The control panel samples `docker stats` once a minute and keeps the last 60 readings in `homepage-config/images/docker-trends.json` (a few KB). The charts start empty after an update and fill in over the first hour.
 

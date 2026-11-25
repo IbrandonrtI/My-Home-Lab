@@ -1,4 +1,4 @@
-"""The Home tab's status strip ("All services are healthy" or which ones are not answering) and the music player that starts as a slim bar. Needs Python
+"""The small status pill in the tab bar ("13/13", and which services are not answering when you press it) and the music player that starts as a slim bar. Needs Python
 Playwright and a Chromium browser, and is skipped without them."""
 import os
 import shutil
@@ -72,34 +72,50 @@ class HomeStripAndPlayerBar(unittest.TestCase):
     def strip(self, page_):
         return page_.eval_on_selector("#hl-status", "e => e.hidden ? '' : e.textContent")
 
+    def pill(self, page_):
+        return page_.eval_on_selector("#hl-status > button", "e => e.textContent.trim()")
+
     def test_all_services_up(self):
         page_ = self.open(page([card("a", "Alpha", "up"), card("b", "Beta", "up")]))
         self.assertIn("All services are healthy", self.strip(page_))
         self.assertIn("2 of 2 answering", self.strip(page_))
-        self.assertEqual(page_.evaluate("document.getElementById('hl-status').nextElementSibling.id"), "layout-groups")
+        self.assertEqual(self.pill(page_), "2/2")
+        self.assertEqual(page_.evaluate("document.getElementById('hl-status').parentNode.id"), "tabs", "it sits in the tab bar, not above the cards")
+        box = page_.eval_on_selector("#hl-status", "e => { const r = e.getBoundingClientRect(); return [r.width, r.height]; }")
+        self.assertLess(box[0], 120)
+        self.assertLess(box[1], 60)
+        self.assertFalse(page_.is_visible("#hl-status .hl-bellpop"), "the details stay closed until it is pressed")
+        page_.click("#hl-status > button")
+        self.assertTrue(page_.is_visible("#hl-status .hl-bellpop"))
+        page_.keyboard.press("Escape")
+        self.assertFalse(page_.is_visible("#hl-status .hl-bellpop"))
 
     def test_a_down_service_is_named_and_the_chip_points_to_its_card(self):
         page_ = self.open(page([card("a", "Alpha", "up"), card("b", "Beta", "down")]))
         self.assertIn("Checking the services", self.strip(page_), "just after the page opens a red dot is not yet an alarm")
+        self.assertEqual(self.pill(page_), "…")
         self.later(page_)
         self.poke(page_)
         text = self.strip(page_)
         self.assertIn("1 service is not answering", text)
         self.assertIn("Beta", text)
         self.assertNotIn("Alpha", text)
+        self.assertEqual(self.pill(page_), "1 down")
+        page_.click("#hl-status > button")
         page_.click("#hl-status .hl-st-chip")
         self.assertTrue(page_.evaluate("document.getElementById('b-card').classList.contains('hl-flash')"))
 
-    def test_the_strip_follows_the_dots_and_hides_without_any(self):
+    def test_the_pill_follows_the_dots_and_hides_without_any(self):
         page_ = self.open(page([card("a", "Alpha", "up"), card("b", "Beta", "up")]))
         self.later(page_)
         page_.evaluate("document.querySelector('#a-card .site-monitor-status div').className = 'bg-rose-500'")
         page_.evaluate("document.querySelector('#b-card .site-monitor-status div').className = 'bg-rose-500'")
         self.poke(page_)
         self.assertIn("2 services are not answering", self.strip(page_))
+        self.assertEqual(self.pill(page_), "2 down")
         page_.evaluate("document.querySelectorAll('.site-monitor-status').forEach(e => e.remove())")
         page_.wait_for_timeout(300)
-        self.assertEqual(self.strip(page_), "", "a tab without status dots has no strip")
+        self.assertEqual(self.strip(page_), "", "a tab without status dots has no pill")
 
     def test_the_player_starts_as_a_slim_bar_and_remembers_the_choice(self):
         page_ = self.open(page([card("a", "Alpha", "up")], player=True), "player.html")

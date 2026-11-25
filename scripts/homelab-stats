@@ -5,7 +5,7 @@ Runs from root's crontab every 15 minutes and writes ONE small file, stats.json,
 (~/homepage-config/images/stats.json). The STATS tab reads that file; nothing else is changed.
 
 What it collects:
-  Immich, Nextcloud, Jellyfin   totals asked from the programs, with the keys already in the Homepage cards; for Jellyfin also what was added lately
+  Immich, Nextcloud, Jellyfin   totals asked from the programs, with the keys already in the Homepage cards; for Jellyfin also what was added lately and the plays per day
   Main pool and Backup pool     space used / free, and drive health (smartctl; a sleeping drive is never woken)
   Last backup                   when it ran, how it ended, how big the backup is (from homelab-backup)
   Containers and updates        running / stopped, waiting container and system updates (from homelab-update)
@@ -15,8 +15,8 @@ What it collects:
                                 takes minutes, so it is done at the lowest priority and only when the pool's used space
                                 changed since the last count (and at most once an hour; every 7 days anyway).
 
-It also keeps history.json next to stats.json: about a week of CPU and drive temperatures (one reading per run), and how many movies, shows and
-episodes were added to Jellyfin each day (the growth of its totals). The graphs on the Stats tab are drawn from it.
+It also keeps history.json next to stats.json: about a week of CPU and drive temperatures (one reading per run), and how many times something was played in
+Jellyfin each day (from Jellyfin's activity log). The graphs on the Stats tab are drawn from it.
 
 Usage:
   sudo homelab-stats           collect everything now and print a short summary
@@ -48,9 +48,9 @@ LOCKFILE = os.environ.get("HOMELAB_STATS_LOCK", "/run/homelab-stats.lock")
 FOLDER_CACHE = os.path.join(STATE_DIR, "stats-folders.json")
 HISTORY_POINTS = 672  # a week of readings, one every 15 minutes
 HISTORY_MIN_GAP = 600  # a run closer than this to the last reading only refreshes the day totals
-HISTORY_DAYS = 31
-ACTIVITY_DAYS = 14
+PLAY_DAYS = 14
 RECENT_ITEMS = 6
+PROBLEMS = []  # what could not be read in this run, shown when it is run by hand
 SYS = os.environ.get("HOMELAB_SYS", "/sys")
 RECOUNT_MIN_SECONDS = 3600
 RECOUNT_EARLY_SECONDS = 600  # a big change in used space (a backup, an import) is counted again after 10 minutes, not an hour
@@ -357,6 +357,40 @@ def utc_epoch(text):
         return None
 
 
+def jellyfin_plays(w, now):
+    """How many times something was played on each of the last PLAY_DAYS days, from Jellyfin's activity log: [{day, movies, shows, music}], oldest first. None when the log can not be read."""
+    head = {"X-Emby-Token": w["key"]}
+    since = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now - (PLAY_DAYS + 1) * 86400))
+    try:
+        rows = http_json(w["url"] + "/System/ActivityLog/Entries?startIndex=0&limit=2000&hasUserId=true&minDate=" + since, head).get("Items") or []
+    except (OSError, ValueError, TypeError, urllib.error.URLError):
+        return None
+    starts = [r for r in rows if isinstance(r, dict) and r.get("Type") in ("VideoPlayback", "AudioPlayback") and utc_epoch(r.get("Date"))]
+    ids = sorted({str(r["ItemId"]).replace("-", "").lower() for r in starts if r.get("Type") == "VideoPlayback" and r.get("ItemId")})
+    kinds = {}
+    for i in range(0, len(ids), 40):
+        try:
+            items = http_json(w["url"] + "/Items?Ids=" + ",".join(ids[i:i + 40]), head).get("Items") or []
+        except (OSError, ValueError, TypeError, urllib.error.URLError):
+            break
+        for it in items:
+            kinds[str(it.get("Id")).replace("-", "").lower()] = it.get("Type")
+    today = at(now).date()
+    days = {}
+    for back in range(PLAY_DAYS - 1, -1, -1):
+        days[(today - datetime.timedelta(days=back)).isoformat()] = {"movies": 0, "shows": 0, "music": 0}
+    for r in starts:
+        day = at(utc_epoch(r["Date"])).date().isoformat()
+        if day not in days:
+            continue
+        if r["Type"] == "AudioPlayback":
+            kind = "music"
+        else:
+            kind = "shows" if kinds.get(str(r.get("ItemId")).replace("-", "").lower()) in ("Episode", "Season", "Series") else "movies"
+        days[day][kind] += 1
+    return [dict(v, day=d) for d, v in days.items()]
+
+
 def get_jellyfin(w, now):
     head = {"X-Emby-Token": w["key"]}
     counts = http_json(w["url"] + "/Items/Counts", head)
@@ -372,8 +406,7 @@ def get_jellyfin(w, now):
         rows.append({"name": name + (" (%d)" % year if isinstance(year, int) and not show else ""),
                      "label": ("Show" if show else "Movie") + (" - " + song_age(when, now) if when else "")})
     return {"movies": num(counts.get("MovieCount")), "shows": num(counts.get("SeriesCount")), "episodes": num(counts.get("EpisodeCount")),
-            "movies_raw": counts.get("MovieCount"), "shows_raw": counts.get("SeriesCount"), "episodes_raw": counts.get("EpisodeCount"),
-            "recent": rows or [{"name": "Nothing added yet", "label": ""}]}
+            "recent": rows or [{"name": "Nothing added yet", "label": ""}], "plays": jellyfin_plays(w, now)}
 
 
 def pool_space(path):
@@ -779,14 +812,14 @@ def collect(quick):
     res = {"version": 1, "updated": int(now), "updated_text": clock(now)}
     nothing = {"immich": {"photos": "-", "videos": "-", "users": "-", "storage": "-", "photos_raw": None, "videos_raw": None},
                "nextcloud": {"files": "-", "users": "-", "shares": "-", "free": "-", "files_raw": None},
-               "jellyfin": {"movies": "-", "shows": "-", "episodes": "-", "movies_raw": None, "shows_raw": None, "episodes_raw": None,
-                            "recent": [{"name": "Jellyfin is not set up yet", "label": ""}]}}
+               "jellyfin": {"movies": "-", "shows": "-", "episodes": "-", "recent": [{"name": "Jellyfin is not set up yet", "label": ""}], "plays": None}}
     for name, fn in (("immich", get_immich), ("nextcloud", get_nextcloud), ("jellyfin", lambda w: get_jellyfin(w, now))):
         try:
             if name not in keys:
                 raise KeyError(name)
             res[name] = fn(keys[name])
-        except (OSError, ValueError, KeyError, TypeError, urllib.error.URLError):
+        except (OSError, ValueError, KeyError, TypeError, urllib.error.URLError) as err:
+            PROBLEMS.append("%s: %s" % (name.capitalize(), "there is no card with a key for it in services.yaml" if isinstance(err, KeyError) else "could not be read (%s)" % err))
             prev = old.get(name) if isinstance(old.get(name), dict) else None
             res[name] = prev or nothing[name]
 
@@ -840,24 +873,9 @@ def drive_temps():
     return out
 
 
-def history_activity(days, today):
-    """What was added on each of the last ACTIVITY_DAYS days, from the last total of each day: today's total minus the day before's. None when either day is missing."""
-    keys = ("movies", "shows", "episodes")
-    rows = []
-    for back in range(ACTIVITY_DAYS - 1, -1, -1):
-        day = today - datetime.timedelta(days=back)
-        cur, before = days.get(day.isoformat()), days.get((day - datetime.timedelta(days=1)).isoformat())
-        row = {"day": day.isoformat()}
-        for k in keys:
-            a, b = (cur or {}).get(k), (before or {}).get(k)
-            row[k] = max(0, a - b) if isinstance(a, int) and isinstance(b, int) else None
-        rows.append(row)
-    return rows
-
-
-def history_update(old, now, cpu, drives, totals):
-    """The history file with one more reading. old is the file as it was (any dictionary), totals holds what Jellyfin counts."""
-    h = {"version": 1, "t": [], "cpu": [], "drives": {}, "days": {}}
+def history_update(old, now, cpu, drives, plays):
+    """The history file with one more reading. old is the file as it was (any dictionary); plays is what jellyfin_plays gave, or None to keep the last list."""
+    h = {"version": 1, "t": [], "cpu": [], "drives": {}, "plays": []}
     if isinstance(old, dict):
         if isinstance(old.get("t"), list):
             h["t"] = old["t"][-HISTORY_POINTS:]
@@ -865,8 +883,8 @@ def history_update(old, now, cpu, drives, totals):
             h["cpu"] = old["cpu"][-HISTORY_POINTS:]
         if isinstance(old.get("drives"), dict):
             h["drives"] = {str(k): v[-HISTORY_POINTS:] for k, v in old["drives"].items() if isinstance(v, list)}
-        if isinstance(old.get("days"), dict):
-            h["days"] = {k: v for k, v in old["days"].items() if isinstance(v, dict)}
+        if isinstance(old.get("plays"), list):
+            h["plays"] = [r for r in old["plays"] if isinstance(r, dict)]
     n = len(h["t"])
     if len(h["cpu"]) != n or any(len(v) != n for v in h["drives"].values()):
         h.update(t=[], cpu=[], drives={})
@@ -878,15 +896,10 @@ def history_update(old, now, cpu, drives, totals):
             series = h["drives"].get(name) or [None] * n
             h["drives"][name] = (series + [drives.get(name)])[-HISTORY_POINTS:]
         h["drives"] = {k: v for k, v in h["drives"].items() if any(x is not None for x in v)}
-    today = at(now).date()
-    seen = {k: int(v) for k, v in (totals or {}).items() if isinstance(v, (int, float))}
-    if seen:
-        h["days"][today.isoformat()] = dict(h["days"].get(today.isoformat()) or {}, **seen)
-    cut = (today - datetime.timedelta(days=HISTORY_DAYS)).isoformat()
-    h["days"] = {k: v for k, v in h["days"].items() if k >= cut}
+    if plays is not None:
+        h["plays"] = plays
     h["updated"] = int(now)
     h["step"] = 900
-    h["activity"] = history_activity(h["days"], today)
     return h
 
 
@@ -902,9 +915,8 @@ def write_history(res, out_path):
     path = history_path(out_path)
     if not path:
         return
-    jf = res.get("jellyfin") or {}
-    totals = {"movies": jf.get("movies_raw"), "shows": jf.get("shows_raw"), "episodes": jf.get("episodes_raw")}
-    h = history_update(load_json(path), time.time(), cpu_temp(), drive_temps(), totals)
+    plays = (res.get("jellyfin") or {}).get("plays")
+    h = history_update(load_json(path), time.time(), cpu_temp(), drive_temps(), plays if isinstance(plays, list) else None)
     write_file_safely(path, json.dumps(h, separators=(",", ":")))
 
 
@@ -971,6 +983,8 @@ def main(argv):
                 return 1
     if sys.stdout.isatty():
         print("Saved %s" % out_path)
+        for line in PROBLEMS:
+            print("  Not read: " + line)
         g = res["glance"]
         print("  Photos %s, videos %s, files %s" % (g["photos"], g["videos"], g["files"]))
         print("  Main pool %s used (%s), Backup pool %s used (%s)" % (g["main_pct"], res["main"]["health"], g["backup_pct"], res["backup"]["health"]))
