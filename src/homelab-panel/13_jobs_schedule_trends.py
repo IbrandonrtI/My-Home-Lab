@@ -158,12 +158,12 @@ def schedule_write(sch):
 
 
 def schedule_package(raw, what):
-    """Check what the page sends for the day or the night: the theme (one of the built-in ones), its look and its picture sliders."""
+    """Check what the page sends for the day or the night: the theme (one from the list), its look and its picture sliders."""
     if not isinstance(raw, dict):
         raise Fail("Choose the %s theme first." % what)
     t = next((x for x in LOOK_THEMES if x["id"] == raw.get("theme")), None)
     if not t:
-        raise Fail("The %s theme must be one of the built-in themes." % what)
+        raise Fail("The %s theme must be one of the themes in the list." % what)
     sliders = raw.get("bg") if isinstance(raw.get("bg"), dict) else {}
     sliders = {k: sliders[k] for k in ("blur", "saturate", "brightness", "opacity") if k in sliders}
     bg_numbers(sliders, "")

@@ -381,7 +381,7 @@
   var logoShown = "";
   function logo() {
     var N = theNames(), wrap = document.getElementById("widgets-wrap"), el = document.getElementById("hl-logo");
-    var tile = wrap ? wrap.querySelector(":scope > .widget-container:has(.information-widget-resource)") || wrap.querySelector(":scope > .widget-container") : null;
+    var tile = wrap;
     var ok = N.src && /^(https?:\/\/[^\s"'()\\<>]+|data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+\/]+={0,2})$/.test(N.src);
     var link = N.link && /^https?:\/\/[^\s"'()\\<>]+$/.test(N.link) ? N.link : "";
     if (!tile || !ok) {

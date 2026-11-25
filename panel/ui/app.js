@@ -2154,7 +2154,7 @@ function namesCard() {
         lookChanged(); refresh(); toast("The logo is ready. Press Save to keep it.");
       } catch (e) { fail(e); }
     } }, h("img", { src: logoArt(i, color, 40), alt: "", width: 40, height: 40 }))));
-  const pick = h("input", { type: "color", value: color, "aria-label": "Color of the built-in logos" });
+  const pick = h("input", { type: "color", value: color, "aria-label": "Color of the ready-made logos" });
   pick.addEventListener("input", async () => {
     logoPick.color = pick.value;
     tiles.forEach((t, i) => { t.firstChild.src = logoArt(i, pick.value, 40); });
@@ -2165,9 +2165,9 @@ function namesCard() {
   const url = h("input", { type: "url", placeholder: "https://…", "aria-label": "Address of a logo picture on the web" });
   const menu = h("details", { class: "logo-menu" },
     h("summary", {}, now, h("b", {}, "Choose a Logo"), nowName),
-    h("div", { class: "field" }, h("div", { class: "lab" }, "Built-In Logos"),
+    h("div", { class: "field" }, h("div", { class: "lab" }, "Ready-Made Logos"),
       h("div", { class: "logo-tiles" }, tiles),
-      h("div", { class: "row", style: { marginTop: "8px", alignItems: "center" } }, pick, h("span", { class: "small muted" }, "Color of the built-in logos"))),
+      h("div", { class: "row", style: { marginTop: "8px", alignItems: "center" } }, pick, h("span", { class: "small muted" }, "Color of the ready-made logos"))),
     h("div", { class: "field" }, h("div", { class: "lab" }, "Your Own Picture"),
       h("div", { class: "row" }, h("button", { class: "primary", onclick: () => file.click() }, "Choose a Picture from This Computer…"), file),
       h("div", { class: "row", style: { marginTop: "8px" } }, h("div", { class: "grow" }, url), h("button", { onclick: () => {
@@ -2176,7 +2176,24 @@ function namesCard() {
         L.logo.src = v; delete L.logo.off; logoPick.i = -1; lookChanged(); refresh(); toast("Press Save to keep it.");
       } }, "Use This Address")),
       h("div", { class: "hint" }, "A picture from the web needs an address that starts with http:// or https://.")));
+  // What the top left of the page shows: the name, the logo, both, or neither.
+  const nameInp = h("input", { type: "text", maxlength: 24, value: L.helloName || "", placeholder: S.look.helloDefault || "Your name", "aria-label": "Name at the top of the page",
+    oninput: ev => { L.helloName = ev.target.value.replace(/\s+/g, " ").trim(); lookChanged(); } });
+  const top = h("div", { class: "field" });
+  function drawTop() {
+    const has = !!L.logo.src, logoOn = has && !L.logo.off, nameOn = L.hello !== false;
+    nameInp.disabled = !nameOn;
+    put(top, h("div", { class: "lab" }, "Top of the Page"),
+      h("label", { class: "row check" }, h("input", { type: "checkbox", checked: nameOn, "aria-label": "Show the name at the top of the page",
+        onchange: ev => { L.hello = ev.target.checked; lookChanged(); drawTop(); } }), h("span", {}, "Show a Name")),
+      nameInp,
+      h("label", { class: "row check", style: { marginTop: "8px" } }, h("input", { type: "checkbox", checked: logoOn, disabled: !has, "aria-label": "Show the logo at the top of the page",
+        onchange: ev => { if (ev.target.checked) delete L.logo.off; else L.logo.off = true; lookChanged(); refresh(); } }), h("span", {}, "Show the Logo")),
+      h("div", { class: "hint" }, has ? "Tick both to show the logo and the name side by side, one of them to show only that, or neither to leave the top of the page empty. Leave the name empty to use the admin name from the installer (or the account the panel runs as)."
+        : "Choose a logo below to be able to show it. Leave the name empty to use the admin name from the installer (or the account the panel runs as)."));
+  }
   function refresh() {
+    drawTop();
     const has = !!L.logo.src, on = has && !L.logo.off;
     const shown = has && logoPick.i >= 0 && logoPick.src === L.logo.src;
     put(now, has ? h("img", { src: L.logo.src, alt: "", style: { opacity: on ? 1 : 0.4 } }) : h("span", { class: "small muted" }, "None"));
@@ -2188,9 +2205,7 @@ function namesCard() {
     put(status,
       h("div", { class: "lab" }, "Logo"),
       has ? [
-        h("div", { class: "row logo-state" },
-          h("button", { class: "chip logo-switch", "aria-pressed": String(on), onclick: () => { if (L.logo.off) delete L.logo.off; else L.logo.off = true; lookChanged(); refresh(); } }, on ? "Logo: On" : "Logo: Off"),
-          h("span", { class: "small muted" }, on ? "Shown at the top left of the dashboard." : "Hidden. It is kept and can be turned on again.")),
+        h("p", { class: "small muted" }, on ? "Shown at the top left of the dashboard." : "Hidden. It is kept and can be shown again under Top of the Page."),
         h("div", { class: "field" }, h("div", { class: "lab" }, "Web Address the Logo Opens"), link,
           h("div", { class: "hint" }, "Optional. Leave it empty for a logo that only shows.")),
         h("div", { class: "field" }, h("div", { class: "slider" }, h("span", { class: "lab" }, "Logo Size"), val,
@@ -2199,12 +2214,12 @@ function namesCard() {
       ] : h("p", { class: "muted small" }, "There is no logo yet. Open “Choose a Logo” below to pick one."));
   }
   refresh();
-  return h("details", { class: "card" }, h("summary", {}, h("b", {}, "Names and Logo"), saveTag("save"), h("span", { class: "muted small" }, "Name the server and drives, add a logo")),
-    h("p", { class: "muted" }, "Set custom names for the server and the two drives, and show a logo at the top left of the dashboard. Nothing is saved until “Save” is pressed."),
+  return h("details", { class: "card" }, h("summary", {}, h("b", {}, "Names and Logo"), saveTag("save"), h("span", { class: "muted small" }, "Name the server and drives, the name and logo at the top")),
+    h("p", { class: "muted" }, "Set custom names for the server and the two drives, and choose what the top left of the dashboard shows: your name, a logo, both or neither. Nothing is saved until “Save” is pressed."),
     h("div", { class: "grid cols2" },
       h("div", {}, inputs.map(x => x[2]),
         h("div", { class: "row" }, h("button", { class: "small", onclick: () => { L.names = {}; inputs.forEach(x => { x[1].value = ""; }); lookChanged(); } }, "Restore Original Names"))),
-      status),
+      h("div", {}, top, status)),
     menu);
 }
 
@@ -2395,7 +2410,7 @@ function themesCard() {
     h("p", { class: "muted small" }, "Each theme has a matching background picture. When the box is selected, the picture and its sliders change when a theme is chosen. Clear the box to keep the current picture. Names and the logo are never changed. Colors set for single cards are replaced by the theme’s colors. Any setting below can still be changed after choosing a theme."));
 }
 
-// Motion, icons, greeting and quick launch.
+// Motion, icons and quick launch.
 function polishCard() {
   const L = lookW;
   const box = h("div", {});
@@ -2411,12 +2426,6 @@ function polishCard() {
       h("div", { class: "field" }, h("div", { class: "lab" }, "Icons"),
         h("div", { class: "chips" }, chip((L.iconStyle || "plate") === "plate", "Glass Plates", () => { L.iconStyle = "plate"; }), chip(L.iconStyle === "none", "Plain", () => { L.iconStyle = "none"; })),
         h("div", { class: "hint" }, "Glass Plates puts every icon on the same rounded glass tile, so icons of different shapes and colors look like a set. Plain shows the icons as they are.")),
-      h("div", { class: "field" }, h("div", { class: "lab" }, "Greeting"),
-        h("label", { class: "row check" }, h("input", { type: "checkbox", checked: L.hello !== false, "aria-label": "Show a greeting at the top of the page", onchange: ev => { L.hello = ev.target.checked; lookChanged(); } }),
-          h("span", {}, "Show a Greeting at the Top of the Page")),
-        h("input", { type: "text", maxlength: 24, value: L.helloName || "", placeholder: S.look.helloDefault || "Your name", "aria-label": "Name in the greeting",
-          oninput: ev => { L.helloName = ev.target.value.replace(/\s+/g, " ").trim(); lookChanged(); } }),
-        h("div", { class: "hint" }, "The page shows just this name at the top, with no “Good morning” in front. Leave it empty to use the admin name you typed in the installer (or, if there is none, the name of the account the panel runs as). The name and the quick launch icons appear after Save.")),
       h("div", { class: "field" }, h("div", { class: "lab" }, "Quick Launch"),
         h("div", { class: "chips" }, [["auto", "Most Visited"], ["custom", "Choose Cards"], ["off", "Off"]].map(([k, t]) => chip(mode === k, t, () => { L.dockMode = k; }))),
         h("div", { class: "hint" }, "A row of icons in the bar next to the search icon that opens a service with one click. Most Visited starts with Jellyfin, Immich, Nextcloud, FileBrowser and Portainer, then moves the services you open most often to the front (counted in this browser only). Choose Cards lets you pick up to 12 (the order is the order you tick them). Off hides the row and its three-dot menu. The three-dot menu at the end of the row lets you add your own links and reorder the icons in this browser. It is not shown on a phone.")),
@@ -2431,7 +2440,7 @@ function polishCard() {
       })) : null);
   }
   draw();
-  return h("div", { class: "card" }, cardHead("Motion, Icons and Greeting", "save"), box);
+  return h("div", { class: "card" }, cardHead("Motion, Icons and Quick Launch", "save"), box);
 }
 
 // Day and night: the server changes the theme at sunrise and sunset.
@@ -3067,7 +3076,6 @@ function viewItems(kind) {
       : h("span", { class: "handle off", "aria-hidden": "true" }, "⠿");
     add(row, grip, iconEl(it.icon),
       h("div", { class: "txt" }, h("b", {}, it.name), h("span", {}, [it.description, it.href].filter(Boolean).join("  ·  ") || "No address")),
-      isCards && it.managed ? h("span", { class: "badge", title: "Created by HomeLab; it keeps the address up to date" }, "Built-In") : null,
       isCards && !it.locked ? h("button", { class: "small", onclick: () => quickIcon(g, it) }, "Icon…") : null,
       h("button", { class: "small", onclick: () => editor(g, it) }, "Change"),
       h("button", { class: "small danger", onclick: () => remove(g, it) }, it.hl ? "Hide" : "Remove"));

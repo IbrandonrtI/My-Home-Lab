@@ -478,7 +478,6 @@ function viewItems(kind) {
       : h("span", { class: "handle off", "aria-hidden": "true" }, "⠿");
     add(row, grip, iconEl(it.icon),
       h("div", { class: "txt" }, h("b", {}, it.name), h("span", {}, [it.description, it.href].filter(Boolean).join("  ·  ") || "No address")),
-      isCards && it.managed ? h("span", { class: "badge", title: "Created by HomeLab; it keeps the address up to date" }, "Built-In") : null,
       isCards && !it.locked ? h("button", { class: "small", onclick: () => quickIcon(g, it) }, "Icon…") : null,
       h("button", { class: "small", onclick: () => editor(g, it) }, "Change"),
       h("button", { class: "small danger", onclick: () => remove(g, it) }, it.hl ? "Hide" : "Remove"));

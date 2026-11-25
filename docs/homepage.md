@@ -78,7 +78,7 @@ The second row shows **Docker CPU** and **Docker memory** for the last hour, one
 
 ### Links
 
-Bookmarks, in groups, each with its logo. The Edit Links box adds, changes or removes bookmarks without editing a file. Drag a link by its handle to change the order, or drop it on another group to move it. With the keyboard, select the handle and press the up or down arrow key. Nothing changes on the dashboard until you press **Save** in the bar at the top of the box, which stays in view while the list scrolls. One save is one reload of the dashboard, and **Discard Changes** goes back to the saved list. A new link gets the color of the other links in its group, so it matches your theme. From the terminal, use `homelab bookmark add NAME URL`. If an older version gave a bookmark a shared logo link that no longer works, `homelab bookmark icons` lists it and `homelab bookmark icons --apply` switches it to a built-in icon.
+Bookmarks, in groups, each with its logo. The Edit Links box adds, changes or removes bookmarks without editing a file. Drag a link by its handle to change the order, or drop it on another group to move it. With the keyboard, select the handle and press the up or down arrow key. Nothing changes on the dashboard until you press **Save** in the bar at the top of the box, which stays in view while the list scrolls. One save is one reload of the dashboard, and **Discard Changes** goes back to the saved list. A new link gets the color of the other links in its group, so it matches your theme. From the terminal, use `homelab bookmark add NAME URL`. If an older version gave a bookmark a shared logo link that no longer works, `homelab bookmark icons` lists it and `homelab bookmark icons --apply` switches it to a matching icon from the icon set.
 
 ### Customize
 
@@ -116,7 +116,7 @@ The ring turns amber when an install step failed, is waiting for something you n
 
 ## Motion, graphs and search
 
-A few touches make the page feel alive. All of them follow the theme and can be turned down or off under **Look → Motion, Icons and Greeting**.
+A few touches make the page feel alive. All of them follow the theme and can be turned down or off under **Look → Motion, Icons and Quick Launch**.
 
 - Cards lift a little when you point at them, and a soft light follows the pointer across the glass.
 - A slow glow drifts behind the cards, tinted with the colors of the theme.
@@ -130,7 +130,7 @@ A few touches make the page feel alive. All of them follow the theme and can be 
 - Pointing at the Jellyfin library, the music player, Terminal, Customize or Edit Links keeps the page itself still, so scrolling to the top or bottom of one of them does not move the dashboard. Move the pointer off the frame to scroll the page again.
 - Press `Ctrl+K` (or select the search icon in the bar) to search every card, bookmark and tab, then `Enter` to open it. This is in addition to the Quick Launch that starts when you type.
 
-Motion is Subtle by default. A device that is set to reduce motion always gets none of the movement. The greeting, the quick launch row and the magnifier are hidden on a phone, where the page's own search bar stays.
+Motion is Subtle by default. A device that is set to reduce motion always gets none of the movement. The name at the top, the quick launch row and the magnifier are hidden on a phone, where the page's own search bar stays.
 
 ## On a phone
 
@@ -148,10 +148,10 @@ Everything about how the dashboard looks. A row of buttons at the top picks one 
 
 - Themes: there are ten ready-made looks: Pastel Night, Violet Glow, Arctic Slate, City Lights, Retro Amber, Deep Teal, Frosted Wave, Mica Blue, Crystal Glass (light, clear glass with raised edges and dark text) and Crystal Night (the same glass in a dark version). Several are based on well-known color schemes (Catppuccin Mocha, Dracula, Nord, Tokyo Night, Gruvbox and Solarized Dark). A theme sets the colors, the glass, the shapes, the text style, the background picture and the panel itself. A look saved with an older theme keeps working until another theme is chosen.
 - Day and Night: the dashboard switches to one theme by day and another at night, for everyone who has it open. It uses sunrise and sunset at the weather city (or two fixed times). The switch is made by the control panel, so it works while no browser is open. Names, the logo, motion and quick launch are never changed by it, and a theme you choose yourself stays until the next switch. Its settings are in `homepage-config/.panel-schedule.json`.
-- Motion, Icons and Greeting: Off, Subtle or Lively motion; every icon on the same glass tile or shown as it is; the name at the top and which name it shows; and which cards are in the quick launch row (the most visited services, or up to 12 that you choose, or off).
+- Motion, Icons and Quick Launch: Off, Subtle or Lively motion; every icon on the same glass tile or shown as it is; and which cards are in the quick launch row (the most visited services, or up to 12 that you choose, or off).
 - Your own themes: *Make a Theme from These Settings* saves the current look under *Your Themes*, optionally with the background, the layout and the list of cards. Choosing one asks first, and Undo reverts the layout and cards in one step. A theme never overwrites a card's address or widget settings. Custom themes live in `homepage-config/.panel-themes.json`, so a backup of that folder keeps them.
 - Shape and colors: sliders for rounded corners, glass clarity and blur, the shine and the raised edge of the glass, a glow around the cards, and how dark the layer over the picture is, with a live preview. A Light or Dark choice and a text style (Apple, Windows, monospace or rounded, using fonts already on the device) are there too. You can set one color for everything or a different color for a single card, tile, bookmark or group label.
-- Names and Logo: your own names for the server and the drives, and a logo at the top left.
+- Names and Logo: your own names for the server and the drives, and what the top left of the page shows: your name, a logo, both side by side, or neither. The name can be changed or left empty to use the admin name.
 - Time Zone and City: the install finds both from your internet connection. This card changes the clock's time zone and the weather city.
 - Background Picture: pick a picture and set how blurry, bright and colorful it's. The installer stores all ten theme pictures (kept in the `theme-pictures` folder of the repository) before Homepage starts, so picking a theme doesn't restart the dashboard. If one is missing, the dashboard loads it from its web address until `sudo homelab-setup refresh` stores them all (that restarts Homepage once). Choosing a theme never restarts the dashboard.
 

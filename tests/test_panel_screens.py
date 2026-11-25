@@ -157,6 +157,42 @@ class PanelScreens(unittest.TestCase):
         self.assertEqual(page.locator("summary:has-text('Time Zone and City') .stag").inner_text(), "Saves Now")
         self.assertEqual(page.locator("summary:has-text('Names and Logo') .stag").inner_text(), "Needs Save")
 
+    def test_top_of_the_page_can_show_the_name_the_logo_both_or_neither(self):
+        page = self.open("look")
+        page.get_by_role("button", name="Names and Place").click()
+        page.locator("summary:has-text('Names and Logo')").click()
+        name = page.get_by_role("checkbox", name="Show the name at the top of the page")
+        logo = page.get_by_role("checkbox", name="Show the logo at the top of the page")
+        self.assertTrue(name.is_checked())
+        self.assertTrue(logo.is_disabled(), "with no logo chosen there is nothing to show")
+        page.locator("summary:has-text('Choose a Logo')").click()
+        page.locator(".logo-tile").first.click()
+        page.wait_for_timeout(400)
+        self.assertTrue(name.is_checked() and logo.is_checked())
+        page.get_by_role("textbox", name="Name at the top of the page").fill("Brandon  Lab")
+        self.assertEqual(page.evaluate("lookW.helloName"), "Brandon Lab")
+        name.uncheck()
+        self.assertEqual(page.evaluate("lookW.hello"), False)
+        self.assertTrue(page.get_by_role("textbox", name="Name at the top of the page").is_disabled())
+        self.assertFalse(page.evaluate("!!lookW.logo.off"), "only the logo is left")
+        logo.uncheck()
+        self.assertTrue(page.evaluate("lookW.logo.off"))
+        self.assertTrue(page.evaluate("!!lookW.logo.src"), "the picture is kept")
+        name.check()
+        logo.check()
+        self.assertTrue(page.evaluate("lookW.hello !== false && !lookW.logo.off"))
+        self.assertEqual(page.locator(".logo-switch").count(), 0)
+        self.assertEqual(self.errors, [])
+
+    def test_no_built_in_label_is_left(self):
+        page = self.open("look")
+        page.get_by_role("button", name="Names and Place").click()
+        page.locator("summary:has-text('Names and Logo')").click()
+        page.locator("summary:has-text('Choose a Logo')").click()
+        text = page.locator("#look-names").inner_text()
+        self.assertNotIn("built-in", text.lower())
+        self.assertIn("Ready-Made Logos", text)
+
 
 if __name__ == "__main__":
     unittest.main()

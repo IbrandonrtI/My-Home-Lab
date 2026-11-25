@@ -141,7 +141,7 @@ function themesCard() {
     h("p", { class: "muted small" }, "Each theme has a matching background picture. When the box is selected, the picture and its sliders change when a theme is chosen. Clear the box to keep the current picture. Names and the logo are never changed. Colors set for single cards are replaced by the theme’s colors. Any setting below can still be changed after choosing a theme."));
 }
 
-// Motion, icons, greeting and quick launch.
+// Motion, icons and quick launch.
 function polishCard() {
   const L = lookW;
   const box = h("div", {});
@@ -157,12 +157,6 @@ function polishCard() {
       h("div", { class: "field" }, h("div", { class: "lab" }, "Icons"),
         h("div", { class: "chips" }, chip((L.iconStyle || "plate") === "plate", "Glass Plates", () => { L.iconStyle = "plate"; }), chip(L.iconStyle === "none", "Plain", () => { L.iconStyle = "none"; })),
         h("div", { class: "hint" }, "Glass Plates puts every icon on the same rounded glass tile, so icons of different shapes and colors look like a set. Plain shows the icons as they are.")),
-      h("div", { class: "field" }, h("div", { class: "lab" }, "Greeting"),
-        h("label", { class: "row check" }, h("input", { type: "checkbox", checked: L.hello !== false, "aria-label": "Show a greeting at the top of the page", onchange: ev => { L.hello = ev.target.checked; lookChanged(); } }),
-          h("span", {}, "Show a Greeting at the Top of the Page")),
-        h("input", { type: "text", maxlength: 24, value: L.helloName || "", placeholder: S.look.helloDefault || "Your name", "aria-label": "Name in the greeting",
-          oninput: ev => { L.helloName = ev.target.value.replace(/\s+/g, " ").trim(); lookChanged(); } }),
-        h("div", { class: "hint" }, "The page shows just this name at the top, with no “Good morning” in front. Leave it empty to use the admin name you typed in the installer (or, if there is none, the name of the account the panel runs as). The name and the quick launch icons appear after Save.")),
       h("div", { class: "field" }, h("div", { class: "lab" }, "Quick Launch"),
         h("div", { class: "chips" }, [["auto", "Most Visited"], ["custom", "Choose Cards"], ["off", "Off"]].map(([k, t]) => chip(mode === k, t, () => { L.dockMode = k; }))),
         h("div", { class: "hint" }, "A row of icons in the bar next to the search icon that opens a service with one click. Most Visited starts with Jellyfin, Immich, Nextcloud, FileBrowser and Portainer, then moves the services you open most often to the front (counted in this browser only). Choose Cards lets you pick up to 12 (the order is the order you tick them). Off hides the row and its three-dot menu. The three-dot menu at the end of the row lets you add your own links and reorder the icons in this browser. It is not shown on a phone.")),
@@ -177,7 +171,7 @@ function polishCard() {
       })) : null);
   }
   draw();
-  return h("div", { class: "card" }, cardHead("Motion, Icons and Greeting", "save"), box);
+  return h("div", { class: "card" }, cardHead("Motion, Icons and Quick Launch", "save"), box);
 }
 
 // Day and night: the server changes the theme at sunrise and sunset.
