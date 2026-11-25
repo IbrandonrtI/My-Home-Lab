@@ -15,8 +15,8 @@ What it collects:
                                 takes minutes, so it is done at the lowest priority and only when the pool's used space
                                 changed since the last count (and at most once an hour; every 7 days anyway).
 
-It also keeps history.json next to stats.json: about a week of CPU and drive temperatures and network speed (one reading per run), and how many photos,
-videos, movies and episodes were added each day (the growth of the totals). The graphs on the Stats tab are drawn from it.
+It also keeps history.json next to stats.json: about a week of CPU and drive temperatures (one reading per run), and how many movies, shows and
+episodes were added to Jellyfin each day (the growth of its totals). The graphs on the Stats tab are drawn from it.
 
 Usage:
   sudo homelab-stats           collect everything now and print a short summary
@@ -51,7 +51,6 @@ HISTORY_MIN_GAP = 600  # a run closer than this to the last reading only refresh
 HISTORY_DAYS = 31
 ACTIVITY_DAYS = 14
 RECENT_ITEMS = 6
-PROC = os.environ.get("HOMELAB_PROC", "/proc")
 SYS = os.environ.get("HOMELAB_SYS", "/sys")
 RECOUNT_MIN_SECONDS = 3600
 RECOUNT_EARLY_SECONDS = 600  # a big change in used space (a backup, an import) is counted again after 10 minutes, not an hour
@@ -815,28 +814,6 @@ def collect(quick):
     return res, out_path, spaces, pending
 
 
-def net_counters():
-    """Bytes received and sent since boot by the real network cards (not loopback, Docker or VPN interfaces)."""
-    rx = tx = 0
-    try:
-        with open(os.path.join(PROC, "net", "dev")) as f:
-            lines = f.readlines()[2:]
-    except OSError:
-        return None
-    for line in lines:
-        name, _, rest = line.partition(":")
-        name = name.strip()
-        if not rest or name == "lo" or name.startswith(("docker", "veth", "br-", "virbr", "tailscale", "wg", "tun", "zt")):
-            continue
-        c = rest.split()
-        try:
-            rx += int(c[0])
-            tx += int(c[8])
-        except (ValueError, IndexError):
-            continue
-    return rx, tx
-
-
 def cpu_temp():
     """The hottest reading of the processor sensors in degrees, or None."""
     for pattern in ("class/hwmon/hwmon*/temp*_input", "class/thermal/thermal_zone*/temp"):
@@ -865,7 +842,7 @@ def drive_temps():
 
 def history_activity(days, today):
     """What was added on each of the last ACTIVITY_DAYS days, from the last total of each day: today's total minus the day before's. None when either day is missing."""
-    keys = ("photos", "videos", "movies", "shows", "episodes")
+    keys = ("movies", "shows", "episodes")
     rows = []
     for back in range(ACTIVITY_DAYS - 1, -1, -1):
         day = today - datetime.timedelta(days=back)
@@ -878,38 +855,29 @@ def history_activity(days, today):
     return rows
 
 
-def history_update(old, now, net, cpu, drives, totals):
-    """The history file with one more reading. old is the file as it was (any dictionary), net is (received, sent) bytes since boot, totals holds what the libraries count."""
-    h = {"version": 1, "t": [], "cpu": [], "rx": [], "tx": [], "drives": {}, "counters": {}, "days": {}}
+def history_update(old, now, cpu, drives, totals):
+    """The history file with one more reading. old is the file as it was (any dictionary), totals holds what Jellyfin counts."""
+    h = {"version": 1, "t": [], "cpu": [], "drives": {}, "days": {}}
     if isinstance(old, dict):
-        for k in ("t", "cpu", "rx", "tx"):
-            if isinstance(old.get(k), list):
-                h[k] = old[k][-HISTORY_POINTS:]
+        if isinstance(old.get("t"), list):
+            h["t"] = old["t"][-HISTORY_POINTS:]
+        if isinstance(old.get("cpu"), list):
+            h["cpu"] = old["cpu"][-HISTORY_POINTS:]
         if isinstance(old.get("drives"), dict):
             h["drives"] = {str(k): v[-HISTORY_POINTS:] for k, v in old["drives"].items() if isinstance(v, list)}
-        if isinstance(old.get("counters"), dict):
-            h["counters"] = old["counters"]
         if isinstance(old.get("days"), dict):
             h["days"] = {k: v for k, v in old["days"].items() if isinstance(v, dict)}
     n = len(h["t"])
-    if not (len(h["cpu"]) == len(h["rx"]) == len(h["tx"]) == n) or any(len(v) != n for v in h["drives"].values()):
-        h.update(t=[], cpu=[], rx=[], tx=[], drives={})
+    if len(h["cpu"]) != n or any(len(v) != n for v in h["drives"].values()):
+        h.update(t=[], cpu=[], drives={})
         n = 0
-    last = h["t"][-1] if h["t"] else 0
-    if now - last >= HISTORY_MIN_GAP:
-        prev = h["counters"]
-        rx = tx = None
-        if net and isinstance(prev.get("t"), (int, float)) and 0 < now - prev["t"] <= 3600 and net[0] >= prev.get("rx", 1 << 62) and net[1] >= prev.get("tx", 1 << 62):
-            rx, tx = int((net[0] - prev["rx"]) / (now - prev["t"])), int((net[1] - prev["tx"]) / (now - prev["t"]))
+    if now - (h["t"][-1] if h["t"] else 0) >= HISTORY_MIN_GAP:
         h["t"] = (h["t"] + [int(now)])[-HISTORY_POINTS:]
         h["cpu"] = (h["cpu"] + [cpu])[-HISTORY_POINTS:]
-        h["rx"] = (h["rx"] + [rx])[-HISTORY_POINTS:]
-        h["tx"] = (h["tx"] + [tx])[-HISTORY_POINTS:]
         for name in set(h["drives"]) | set(drives):
             series = h["drives"].get(name) or [None] * n
             h["drives"][name] = (series + [drives.get(name)])[-HISTORY_POINTS:]
         h["drives"] = {k: v for k, v in h["drives"].items() if any(x is not None for x in v)}
-        h["counters"] = {"t": now, "rx": net[0], "tx": net[1]} if net else {}
     today = at(now).date()
     seen = {k: int(v) for k, v in (totals or {}).items() if isinstance(v, (int, float))}
     if seen:
@@ -934,9 +902,9 @@ def write_history(res, out_path):
     path = history_path(out_path)
     if not path:
         return
-    im, jf = res.get("immich") or {}, res.get("jellyfin") or {}
-    totals = {"photos": im.get("photos_raw"), "videos": im.get("videos_raw"), "movies": jf.get("movies_raw"), "shows": jf.get("shows_raw"), "episodes": jf.get("episodes_raw")}
-    h = history_update(load_json(path), time.time(), net_counters(), cpu_temp(), drive_temps(), totals)
+    jf = res.get("jellyfin") or {}
+    totals = {"movies": jf.get("movies_raw"), "shows": jf.get("shows_raw"), "episodes": jf.get("episodes_raw")}
+    h = history_update(load_json(path), time.time(), cpu_temp(), drive_temps(), totals)
     write_file_safely(path, json.dumps(h, separators=(",", ":")))
 
 

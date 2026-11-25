@@ -1,4 +1,4 @@
-"""The temperature, network and added-per-day charts on the Stats tab, drawn from images/history.json. Needs Python Playwright and a Chromium browser, and is skipped without them."""
+"""The temperature and Jellyfin added-per-day charts on the Stats tab, drawn from images/history.json. Needs Python Playwright and a Chromium browser, and is skipped without them."""
 import functools
 import http.server
 import json
@@ -27,11 +27,10 @@ def history(days=3, readings=40):
     act = []
     for i in range(14):
         on = i >= 14 - days
-        act.append({"day": "2026-11-%02d" % (12 + i), "photos": 10 + i if on else None, "videos": 2 if on else None,
-                    "movies": 1 if on else None, "shows": 0 if on else None, "episodes": 5 if on else None})
-    return {"version": 1, "updated": t[-1], "step": 900, "t": t, "cpu": [50 + (i % 7) for i in range(readings)], "rx": [None] + [200000 + i * 1000 for i in range(readings - 1)],
-            "tx": [None] + [50000] * (readings - 1), "drives": {"Storage": [36] * readings, "Backup": [None] * 10 + [31] * (readings - 10)},
-            "days": {"2026-11-25": {"photos": 400, "videos": 20, "movies": 50, "shows": 9, "episodes": 300}}, "activity": act}
+        act.append({"day": "2026-11-%02d" % (12 + i), "movies": 1 if on else None, "shows": 0 if on else None, "episodes": 5 if on else None})
+    return {"version": 1, "updated": t[-1], "step": 900, "t": t, "cpu": [50 + (i % 7) for i in range(readings)],
+            "drives": {"Storage": [36] * readings, "Backup": [None] * 10 + [31] * (readings - 10)},
+            "days": {"2026-11-25": {"movies": 50, "shows": 9, "episodes": 300}}, "activity": act}
 
 
 @unittest.skipUnless(sync_playwright, "Python Playwright is not installed")
@@ -89,13 +88,12 @@ class HistoryCharts(unittest.TestCase):
     def titles(self, pg):
         return pg.eval_on_selector_all("#hl-history .hl-dk-head b", "els => els.map(e => e.textContent)")
 
-    def test_four_charts_with_lines_and_bars(self):
+    def test_a_line_chart_and_a_bar_chart(self):
         pg = self.open(history())
-        self.assertEqual(self.titles(pg), ["Temperature", "Network", "Immich added per day", "Jellyfin added per day"])
+        self.assertEqual(self.titles(pg), ["Temperature", "Jellyfin added per day"])
         # CPU plus the two drives; a drive with a gap in front still draws.
         self.assertEqual(pg.eval_on_selector_all("#hl-history .hl-dk-card:nth-child(1) svg path:not(.hl-dk-grid)", "e => e.length"), 3)
-        self.assertEqual(pg.eval_on_selector_all("#hl-history .hl-dk-card:nth-child(2) svg path", "e => e.length"), 2)
-        self.assertGreater(pg.eval_on_selector_all("#hl-history .hl-dk-card:nth-child(3) svg rect", "e => e.length"), 0)
+        self.assertGreater(pg.eval_on_selector_all("#hl-history .hl-dk-card:nth-child(2) svg rect", "e => e.length"), 0)
         self.assertIn("CPU", pg.inner_text("#hl-history .hl-dk-card:nth-child(1) .hl-hx-key"))
         self.assertIn("Storage", pg.inner_text("#hl-history .hl-dk-card:nth-child(1) .hl-hx-key"))
 
@@ -109,20 +107,20 @@ class HistoryCharts(unittest.TestCase):
 
     def test_added_per_day_waits_for_two_days_of_totals(self):
         pg = self.open(history(days=0))
-        card = pg.inner_text("#hl-history .hl-dk-card:nth-child(3)")
-        self.assertIn("Immich added per day", card)
+        card = pg.inner_text("#hl-history .hl-dk-card:nth-child(2)")
+        self.assertIn("Jellyfin added per day", card)
         self.assertIn("two days", card)
-        self.assertEqual(pg.eval_on_selector_all("#hl-history .hl-dk-card:nth-child(3) svg", "e => e.length"), 0)
+        self.assertEqual(pg.eval_on_selector_all("#hl-history .hl-dk-card:nth-child(2) svg", "e => e.length"), 0)
 
-    def test_a_library_that_is_not_set_up_has_no_chart(self):
+    def test_without_jellyfin_there_is_no_added_chart(self):
         data = history()
-        data["days"] = {"2026-11-25": {"photos": 400, "videos": 20}}
+        data["days"] = {}
         pg = self.open(data)
-        self.assertEqual(self.titles(pg), ["Temperature", "Network", "Immich added per day"])
+        self.assertEqual(self.titles(pg), ["Temperature"])
 
     def test_no_readings_yet_says_it_is_collecting(self):
-        pg = self.open({"version": 1, "updated": 0, "step": 900, "t": [], "cpu": [], "rx": [], "tx": [], "drives": {}, "days": {}, "activity": []})
-        self.assertEqual(self.titles(pg), ["Temperature", "Network"])
+        pg = self.open({"version": 1, "updated": 0, "step": 900, "t": [], "cpu": [], "drives": {}, "days": {}, "activity": []})
+        self.assertEqual(self.titles(pg), ["Temperature"])
         self.assertIn("Collecting data", pg.inner_text("#hl-history"))
 
     def test_a_missing_file_shows_a_note_and_the_page_still_works(self):

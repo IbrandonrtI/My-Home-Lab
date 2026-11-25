@@ -73,10 +73,12 @@ def js_groups_block(live, shipped):
 
 STATS_BEGIN, STATS_END = "# >>> homelab stats >>>", "# <<< homelab stats <<<"
 STATS_GROUPS = {"Preview": ("mdi-view-dashboard", 3), "Music Library": ("mdi-music", 2), "Library Totals": ("mdi-image-multiple", 2),
-                "Storage": ("mdi-harddisk", 3), "Folder Sizes": ("mdi-folder-multiple", 1)}
+                "Storage": ("mdi-harddisk", 2), "Folder Sizes": ("mdi-folder-multiple", 1)}
 STATS_AFTER = {"Music Library": "Preview"}
 MUSIC_WIDE = "~music-2-columns"
 STORAGE_WIDE = "~storage-3-columns"
+STORAGE_NARROW = "~storage-2-columns"
+PREVIEW_NARROW = "~preview-3-columns"
 
 
 CAL_BEGIN, CAL_END = "# >>> homelab calendar >>>", "# <<< homelab calendar <<<"
@@ -455,6 +457,14 @@ def layout_columns_changed(settings, seen, group, old, new, marker):
 
 def layout_storage_wide(settings, seen):
     return layout_columns_changed(settings, seen, "Storage", 2, 3, STORAGE_WIDE)
+
+
+def layout_storage_narrow(settings, seen):
+    return layout_columns_changed(settings, seen, "Storage", 3, 2, STORAGE_NARROW)
+
+
+def layout_preview_narrow(settings, seen):
+    return layout_columns_changed(settings, seen, "Preview", 4, 3, PREVIEW_NARROW)
 
 
 def layout_music_wide(settings, seen):

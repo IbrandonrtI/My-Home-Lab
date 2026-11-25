@@ -580,7 +580,6 @@ li[id^="stat-"], li[id^="cal-"] { position: relative !important; background-colo
 #stat-nextcloud { --accent: 36, 140, 255; }
 #stat-folders { --accent: 214, 90, 22; }
 #stat-music, #stat-songs { --accent: 236, 72, 153; }
-#stat-temps { --accent: 245, 158, 11; }
 #cal-month { --accent: 36, 140, 255; }
 #cal-agenda { --accent: 147, 51, 234; }
 .services-group:has(li[id^="stat-"]), .services-group:has(li[id^="cal-"]) { padding-bottom: 1.1rem !important; }
@@ -1437,7 +1436,7 @@ html.hl-jf-side #hl-jf-slot { display: block; flex: 1 1 auto; min-height: 340px;
   #inner_wrapper #widgets-wrap.hl-stats-on #hl-stats .hl-g-up { flex-grow: 0.55; }
 }
 
-/* Docker CPU and memory per container (drawn by custom.js from docker-trends.json) and the temperature, network and added-per-day charts (from history.json) on the Stats tab. */
+/* Docker CPU and memory per container (drawn by custom.js from docker-trends.json) and the temperature and added-per-day charts (from history.json) on the Stats tab. */
 #hl-docker, #hl-history { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 14px var(--lk-side) 6px; }
 #hl-docker[hidden], #hl-history[hidden] { display: none; }
 :is(#hl-docker, #hl-history) .hl-dk-empty { grid-column: 1 / -1; margin: 0; padding: 18px; text-align: center; color: var(--lk-muted); font-size: 0.9rem; border-radius: 18px; border: 1px solid var(--lk-line); background: rgba(var(--lk-glass), var(--lk-glass-a)); }

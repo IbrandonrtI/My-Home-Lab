@@ -1620,7 +1620,7 @@
     var key = DK.data ? DK.data.updated + ":" + DK.data.t.length : DK.at ? "none" : "wait";
     if (box.getAttribute("data-key") !== key) { box.setAttribute("data-key", key); dkDraw(box, DK.data); }
   }
-  /* Temperature, network speed and what was added each day, drawn from history.json. homelab-stats writes it every 15 minutes: the first two charts need two readings, the added-per-day charts two days of totals. */
+  /* Drive and processor temperature and what was added to Jellyfin each day, drawn from history.json. homelab-stats writes it every 15 minutes: the temperature chart needs two readings, the added-per-day chart two days of totals. */
   var HX = { data: null, at: 0, busy: false }, HX_TEMP = ["#f08a4b", "#5b8def", "#4fd1b0", "#f2b84b", "#9b7bea", "#e27d8b", "#6ec1e4", "#b5d96b"];
   function hxLoad() {
     HX.busy = true;
@@ -1629,8 +1629,6 @@
       .catch(function () { /* keep what is shown */ })
       .then(function () { HX.busy = false; HX.at = Date.now(); soon(); });
   }
-  function hxRate(v) { return v >= 1e6 ? (v / 1e6).toFixed(v >= 1e7 ? 0 : 1) + " MB/s" : v >= 1e3 ? Math.round(v / 1e3) + " KB/s" : Math.round(v) + " B/s"; }
-  function hxRateAxis(v) { return hxRate(v).replace("/s", ""); }
   function hxDeg(v) { return Math.round(v) + "°C"; }
   function hxInt(v) { return String(Math.round(v)); }
   function hxAgo(sec) { var h = sec / 3600; return h < 48 ? Math.max(1, Math.round(h)) + " h ago" : Math.round(h / 24) + " days ago"; }
@@ -1674,7 +1672,7 @@
       });
     }
     plot.appendChild(svg);
-    [0, 50, 100].forEach(function (p) { var l = el("span", "hl-dk-y", (o.axis || o.fmt)(o.ymin + span * p / 100)); l.style.bottom = p + "%"; plot.appendChild(l); });
+    [0, 50, 100].forEach(function (p) { var l = el("span", "hl-dk-y", o.fmt(o.ymin + span * p / 100)); l.style.bottom = p + "%"; plot.appendChild(l); });
     var line = el("div", "hl-dk-line"), tip = el("div", "hl-dk-tip");
     line.hidden = tip.hidden = true;
     plot.appendChild(line); plot.appendChild(tip);
@@ -1723,33 +1721,22 @@
       box.appendChild(hxCard({ title: "Temperature", now: hxReal(cpuNow) ? "CPU " + hxDeg(cpuNow) : "Drives", note: "", kind: "line", n: n, series: temps, ymin: lo, ymax: hi, fmt: hxDeg,
         title2: function (j) { return new Date(d.t[j] * 1000).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" }); }, x0: hxAgo(d.t[n - 1] - d.t[0]), x1: "now" }));
     }
-    /* Network: the average speed between two readings. */
-    if (n < 2 || hxCount(d.rx) + hxCount(d.tx) < 2) box.appendChild(hxWait("Network", "Collecting data. The speed is worked out between two readings."));
-    else {
-      var peak = Math.max.apply(null, d.rx.concat(d.tx).filter(hxReal)), rxNow = d.rx.filter(hxReal).pop();
-      box.appendChild(hxCard({ title: "Network", now: "↓ " + hxRate(rxNow || 0), note: "average per 15 min", kind: "line", n: n,
-        series: [{ name: "Download", color: "#5b8def", vals: d.rx }, { name: "Upload", color: "#4fd1b0", vals: d.tx }], ymin: 0, ymax: dkNice(Math.max(10000, peak * 1.1)), fmt: hxRate, axis: hxRateAxis,
-        title2: function (j) { return new Date(d.t[j] * 1000).toLocaleString([], { weekday: "short", hour: "numeric", minute: "2-digit" }); }, x0: hxAgo(d.t[n - 1] - d.t[0]), x1: "now" }));
-    }
-    /* Added per day: Immich and Jellyfin, only where that library reports totals. */
-    var act = d.activity || [], days = d.days || {};
-    [{ title: "Immich added per day", keys: [["photos", "Photos", "#5b8def"], ["videos", "Videos", "#9b7bea"]] },
-     { title: "Jellyfin added per day", keys: [["movies", "Movies", "#f2b84b"], ["shows", "Shows", "#4fd1b0"], ["episodes", "Episodes", "#6ec1e4"]] }].forEach(function (c) {
-      var has = Object.keys(days).some(function (dy) { return c.keys.some(function (k) { return hxReal(days[dy][k[0]]); }); });
-      if (!has) return;
-      var m = act.length, series = c.keys.map(function (k) { return { name: k[1], color: k[2], vals: act.map(function (a) { return a[k[0]]; }) }; });
-      var totals = act.map(function (a) { return c.keys.reduce(function (t, k) { return t + (hxReal(a[k[0]]) ? a[k[0]] : 0); }, 0); });
-      if (!m || !series.some(function (s) { return hxCount(s.vals) > 0; })) { box.appendChild(hxWait(c.title, "Fills in once the totals of two days are known.")); return; }
-      var week = totals.slice(-7).reduce(function (a, b) { return a + b; }, 0);
-      box.appendChild(hxCard({ title: c.title, now: week + " this week", note: "last " + m + " days", kind: "bars", n: m, series: series, ymin: 0, ymax: dkNice(Math.max(10, Math.max.apply(null, totals) * 1.1)), fmt: hxInt,
-        title2: function (j) { return hxDay(act[j].day, true); }, x0: hxDay(act[0].day), x1: "today" }));
-    });
+    /* Added per day: only where Jellyfin reports totals. */
+    var act = d.activity || [], days = d.days || {}, keys = [["movies", "Movies", "#f2b84b"], ["shows", "Shows", "#4fd1b0"], ["episodes", "Episodes", "#6ec1e4"]], title = "Jellyfin added per day";
+    var has = Object.keys(days).some(function (dy) { return keys.some(function (k) { return hxReal(days[dy][k[0]]); }); });
+    if (!has) return;
+    var m = act.length, series = keys.map(function (k) { return { name: k[1], color: k[2], vals: act.map(function (a) { return a[k[0]]; }) }; });
+    var totals = act.map(function (a) { return keys.reduce(function (t, k) { return t + (hxReal(a[k[0]]) ? a[k[0]] : 0); }, 0); });
+    if (!m || !series.some(function (sr) { return hxCount(sr.vals) > 0; })) { box.appendChild(hxWait(title, "Fills in once the totals of two days are known.")); return; }
+    var week = totals.slice(-7).reduce(function (a, b) { return a + b; }, 0);
+    box.appendChild(hxCard({ title: title, now: week + " this week", note: "last " + m + " days", kind: "bars", n: m, series: series, ymin: 0, ymax: dkNice(Math.max(10, Math.max.apply(null, totals) * 1.1)), fmt: hxInt,
+      title2: function (j) { return hxDay(act[j].day, true); }, x0: hxDay(act[0].day), x1: "today" }));
   }
   function historyCharts() {
     var lg = document.getElementById("layout-groups"), box = document.getElementById("hl-history");
     var on = lg && lg.parentNode && lg.querySelector("li[id^='stat-']");
     if (!on) { if (box && !box.hidden) box.hidden = true; return; }
-    if (!box) { box = el("section"); box.id = "hl-history"; box.setAttribute("aria-label", "Temperature, network and library activity"); }
+    if (!box) { box = el("section"); box.id = "hl-history"; box.setAttribute("aria-label", "Temperature and library activity"); }
     var dk = document.getElementById("hl-docker"), after = dk && dk.parentNode === lg.parentNode ? dk : lg;
     if (box.parentNode !== lg.parentNode || box.nextSibling !== after) lg.parentNode.insertBefore(box, after);
     if (box.hidden) box.hidden = false;

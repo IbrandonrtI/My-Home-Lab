@@ -63,14 +63,13 @@ The numbers tab. It refreshes by itself every few minutes:
 | Preview | When the last backup ran and how it went, how many containers are running, and how many updates are waiting |
 | Music Library | How many songs Downtify saved, and the newest ones |
 | Library Totals | Photos and videos in Immich, files and shares in Nextcloud, movies, shows and episodes in Jellyfin, and what was added to Jellyfin lately |
-| Storage | The Main pool, the Backup pool and the temperature of every drive |
+| Storage | The Main pool and the Backup pool: used, free, size and health |
 | Folder Sizes | How big each folder is, counted again only when something changed |
 
 Above these groups come two rows of charts. The first row is drawn from `homepage-config/images/history.json`, which the stats job fills in every 15 minutes and keeps for about a week:
 
-- **Temperature** shows the processor and every drive that gave a reading (a sleeping drive leaves a gap, it is not woken up for this).
-- **Network** shows the download and upload speed, averaged between two readings. A reboot or a missed run leaves a gap instead of a wrong number.
-- **Immich added per day** and **Jellyfin added per day** show how many photos and videos, or movies, shows and episodes arrived each day over the last 14 days. They are worked out from the daily totals, so the first bar appears on the second day, and a day on which something was deleted shows zero. A library that is not set up has no chart.
+- **Temperature** shows the processor and every drive that gave a reading, with a gap where a drive was asleep (it is not woken up for this).
+- **Jellyfin added per day** shows how many movies, shows and episodes arrived each day over the last 14 days. It is worked out from the daily totals, so the first bar appears on the second day, and a day on which something was deleted shows zero. Without Jellyfin set up, this chart is not shown.
 
 The second row shows **Docker CPU** and **Docker memory** for the last hour, one stacked area per container. Each chart gives its eight busiest containers their own color and adds the rest together as "other". Pointing at a chart lists every container's value at that minute, the biggest first, and what is inside "other". CPU is shown as a share of the whole machine (all cores together), so 100 % means every core is busy. The control panel samples `docker stats` once a minute and keeps the last 60 readings in `homepage-config/images/docker-trends.json` (a few KB). The charts start empty after an update and fill in over the first hour.
 
