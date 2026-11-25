@@ -416,6 +416,8 @@ def stack_text(name):
         text = text.replace('user: "1000:1000"', 'user: "%d:%d"' % (Ctx.uid, Ctx.gid))
     if name == "jellyfin":
         text = jellyfin_text(text)
+    if name == "immich":
+        text = immich_text(text)
     if name == "beszel-agent":
         text = re.sub(r"(\n\s*KEY:\s*)'[^']*'", lambda m: "%s'%s'" % (m.group(1), Secrets.get("BESZEL_KEY")), text)
         text = re.sub(r"(\n\s*TOKEN:\s*)\S+", lambda m: "%s%s" % (m.group(1), Secrets.get("BESZEL_TOKEN")), text)
@@ -451,6 +453,18 @@ def jellyfin_text(text):
         if gids:
             extra += "    group_add:\n" + "".join('      - "%d"\n' % g for g in gids)
         text = text.replace("    ports:\n", extra + "    ports:\n", 1)
+    return text
+
+
+def immich_text(text):
+    """Give Immich the graphics chip when the machine has one: the server uses it for video conversion and the machine learning container
+    switches to the OpenVINO build of the same release, which runs its models on the chip. Without a chip the file is used as it is."""
+    if jellyfin_graphics() is None:
+        return text
+    devices = "    devices:\n      - /dev/dri:/dev/dri\n"
+    text = text.replace("    ports:\n      - '2283:2283'\n", devices + "    ports:\n      - '2283:2283'\n", 1)
+    text = text.replace("immich-machine-learning:${IMMICH_VERSION:-release}\n", "immich-machine-learning:${IMMICH_VERSION:-release}-openvino\n", 1)
+    text = text.replace("    volumes:\n      - model-cache:/cache\n", devices + "    volumes:\n      - model-cache:/cache\n", 1)
     return text
 
 

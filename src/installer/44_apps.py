@@ -525,6 +525,52 @@ def immich_ocr_off(pw):
         warn("Immich text recognition (OCR) could not be switched off (HTTP %s). Turn it off in Immich: Administration, Settings, Machine Learning." % st)
 
 
+def immich_graphics_on(pw):
+    """Switch Immich's video conversion to Intel QuickSync. Only when it is still off, so a choice made in Immich is kept. True when it is on."""
+    st, js, _ = http("POST", url("immich", "/api/auth/login"), body={"email": Ctx.email, "password": pw}, timeout=30)
+    token = js.get("accessToken") if st in (200, 201) and isinstance(js, dict) else None
+    auth = {"Authorization": "Bearer " + str(token)}
+    st, cfg, _ = http("GET", url("immich", "/api/system-config"), headers=auth, timeout=30) if token else (0, None, None)
+    ff = cfg.get("ffmpeg") if st == 200 and isinstance(cfg, dict) else None
+    if not isinstance(ff, dict):
+        warn("Immich's video conversion could not be set to use the graphics chip (Immich did not give its settings). Choose it in Immich: Administration, Settings, Video Transcoding, Hardware acceleration.")
+        return False
+    if ff.get("accel") not in (None, "disabled"):
+        return True
+    ff["accel"] = "qsv"
+    ff["accelDecode"] = True
+    st, _, _ = http("PUT", url("immich", "/api/system-config"), body=cfg, headers=auth, timeout=30)
+    if st != 200:
+        warn("Immich's video conversion could not be set to use the graphics chip (HTTP %s). Choose it in Immich: Administration, Settings, Video Transcoding, Hardware acceleration." % st)
+        return False
+    return True
+
+
+@step
+class ImmichGraphics(Step):
+    """Tell Immich to use the graphics chip for video conversion. The stack already passes the chip into the containers."""
+    id, group = "immich-graphics", "Logins and keys"
+    title = "Immich video conversion set to use the graphics chip"
+    needs = ("stack-immich", "immich-admin")
+
+    def applies(self):
+        return jellyfin_graphics() is not None and not immich_restored()
+
+    def probe(self):
+        return "done" if State.data.get("immich_graphics") else "todo"
+
+    def run(self):
+        if Opt.dry:
+            out("      would set Immich's hardware acceleration to Intel QuickSync")
+            return
+        if not docker_answers():
+            raise Abort(DOCKER_DOWN)
+        pw = need_password("to log in to Immich and turn on the graphics chip")
+        if immich_graphics_on(pw):
+            State.data["immich_graphics"] = True
+            State.save()
+
+
 def nc_installed():
     st, js, _ = http("GET", url("nextcloud", "/status.php"), timeout=10)
     return st == 200 and isinstance(js, dict) and js.get("installed") is True

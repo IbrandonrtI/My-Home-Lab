@@ -403,6 +403,30 @@ class StackStep(Step):
         wait_for(lambda: stack_up(self.name), "the %s containers to start" % self.name, self.wait)
 
 
+class ImmichStack(StackStep):
+    """The Immich stack. Its Compose file differs between machines with and without a graphics chip, so a change is deployed again."""
+
+    def stamp(self):
+        env = "".join(v for _, v in stack_env("immich"))
+        return hashlib.md5((stack_text("immich") + env).encode()).hexdigest()
+
+    def probe(self):
+        if not stack_up(self.name):
+            return "todo"
+        saved = State.data.get("immich_stack")
+        if saved is None and jellyfin_graphics() is None:
+            return "done"
+        return "done" if saved == self.stamp() else "todo"
+
+    def run(self):
+        saved = State.data.get("immich_stack")
+        # a changed Compose file must be deployed; an unchanged one is only started again
+        StackStep.run(self, start_first=saved == self.stamp() or (saved is None and jellyfin_graphics() is None))
+        if not Opt.dry:
+            State.data["immich_stack"] = self.stamp()
+            State.save()
+
+
 def _register_stacks():
     """Create one checklist step for every Portainer stack."""
     base = ("portainer-env", "folders")
@@ -418,7 +442,7 @@ def _register_stacks():
         ("beszel-agent", base + ("beszel-agent-key",), "Beszel agent stack"),
     ]
     for name, needs, title in spec:
-        register(StackStep(name, needs, title, 900 if name == "nextcloud" else 300))
+        register((ImmichStack if name == "immich" else StackStep)(name, needs, title, 900 if name == "nextcloud" else 300))
 
 
 _register_stacks()

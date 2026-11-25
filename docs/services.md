@@ -92,6 +92,10 @@ I switched off Immich's text recognition (OCR). On a small machine with a spinni
 
 Photos can also be sent from the dashboard, using the Upload card in the Customize panel.
 
+**Graphics chip.** If the machine has one (`/dev/dri`), the installer passes it to the Immich server and switches the machine learning container to the OpenVINO build of the same release, so face and search models run on the chip instead of the processor. The installer also sets Immich's video conversion to Intel QuickSync, unless you already chose a method there. Photo thumbnails are still made by the processor. When you run `sudo homelab-setup refresh` on a machine set up before this, the Immich stack is deployed once more to add the chip, and the first start downloads the larger OpenVINO image.
+
+**A busy processor during the first upload.** The first big upload makes Immich create thumbnails, read metadata and run the machine learning models for every photo, so the processor can stay near 100% until it is done. On a 4-core machine, lower the job limits in Immich under Administration, Settings, Job Settings: thumbnail generation 2, metadata extraction 2, smart search 1, face detection 1 and video conversion 1. The uploads take longer, and the machine stays responsive.
+
 ![The Immich photo timeline](images/Immich.png)
 
 ### Nextcloud
