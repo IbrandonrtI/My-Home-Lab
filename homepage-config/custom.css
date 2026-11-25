@@ -1438,15 +1438,15 @@ html.hl-jf-side #hl-jf-slot { display: block; flex: 1 1 auto; min-height: 340px;
 }
 
 /* Docker CPU and memory per container (drawn by custom.js from docker-trends.json) and the temperature, network and added-per-day charts (from history.json) on the Stats tab. */
-#hl-docker, #hl-history { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin: 18px var(--lk-side) 6px; }
+#hl-docker, #hl-history { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 14px var(--lk-side) 6px; }
 #hl-docker[hidden], #hl-history[hidden] { display: none; }
 :is(#hl-docker, #hl-history) .hl-dk-empty { grid-column: 1 / -1; margin: 0; padding: 18px; text-align: center; color: var(--lk-muted); font-size: 0.9rem; border-radius: 18px; border: 1px solid var(--lk-line); background: rgba(var(--lk-glass), var(--lk-glass-a)); }
-:is(#hl-docker, #hl-history) .hl-dk-card { min-width: 0; padding: 14px 16px 12px; border-radius: 18px; border: 1px solid var(--lk-line); background: rgba(var(--lk-glass), var(--lk-glass-a)); box-shadow: 0 16px 36px -22px rgba(var(--lk-shadow, 0, 0, 0), 0.75), var(--lk-rim, 0 0 0 0 transparent); -webkit-backdrop-filter: blur(var(--lk-blur, 14px)) saturate(var(--lk-sat, 125%)); backdrop-filter: blur(var(--lk-blur, 14px)) saturate(var(--lk-sat, 125%)); font-variant-numeric: tabular-nums; }
+:is(#hl-docker, #hl-history) .hl-dk-card { min-width: 0; padding: 12px 16px 10px; border-radius: 18px; border: 1px solid var(--lk-line); background: rgba(var(--lk-glass), var(--lk-glass-a)); box-shadow: 0 16px 36px -22px rgba(var(--lk-shadow, 0, 0, 0), 0.75), var(--lk-rim, 0 0 0 0 transparent); -webkit-backdrop-filter: blur(var(--lk-blur, 14px)) saturate(var(--lk-sat, 125%)); backdrop-filter: blur(var(--lk-blur, 14px)) saturate(var(--lk-sat, 125%)); font-variant-numeric: tabular-nums; }
 :is(#hl-docker, #hl-history) .hl-dk-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; }
 :is(#hl-docker, #hl-history) .hl-dk-head b { font-size: 0.95rem; font-weight: 650; color: var(--lk-text); }
 :is(#hl-docker, #hl-history) .hl-dk-now { font-size: 1.3rem; font-weight: 650; color: var(--lk-text); }
 :is(#hl-docker, #hl-history) .hl-dk-head small { margin-left: auto; font-size: 0.75rem; color: var(--lk-muted); }
-:is(#hl-docker, #hl-history) .hl-dk-plot { position: relative; height: 230px; margin: 14px 0 0 46px; cursor: crosshair; }
+:is(#hl-docker, #hl-history) .hl-dk-plot { position: relative; height: 120px; margin: 16px 0 0 46px; cursor: crosshair; }
 :is(#hl-docker, #hl-history) .hl-dk-plot svg { display: block; width: 100%; height: 100%; overflow: visible; }
 :is(#hl-docker, #hl-history) .hl-dk-grid { stroke: rgba(var(--lk-ink, 255, 255, 255), 0.14); stroke-dasharray: 3 4; }
 :is(#hl-docker, #hl-history) .hl-dk-y { position: absolute; left: -46px; width: 40px; text-align: right; transform: translateY(50%); font-size: 11px; line-height: 1; color: var(--lk-muted); pointer-events: none; }
@@ -1467,8 +1467,8 @@ html.hl-jf-side #hl-jf-slot { display: block; flex: 1 1 auto; min-height: 340px;
 :is(#hl-docker, #hl-history) .hl-hx-key { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 6px; font-size: 0.75rem; color: var(--lk-muted); }
 :is(#hl-docker, #hl-history) .hl-hx-key span { display: inline-flex; align-items: center; gap: 6px; }
 :is(#hl-docker, #hl-history) .hl-hx-key i { display: inline-block; width: 8px; height: 8px; border-radius: 3px; }
-:is(#hl-docker, #hl-history) .hl-hx-wait { margin: 18px 0 8px; padding: 26px 8px; text-align: center; color: var(--lk-muted); font-size: 0.88rem; border-radius: 12px; border: 1px dashed var(--lk-line); }
-@media (max-width: 700px) { :is(#hl-docker, #hl-history) .hl-dk-plot { height: 170px; } }
+:is(#hl-docker, #hl-history) .hl-hx-wait { margin: 10px 0 6px; padding: 22px 8px; text-align: center; color: var(--lk-muted); font-size: 0.88rem; border-radius: 12px; border: 1px dashed var(--lk-line); }
+@media (max-width: 700px) { :is(#hl-docker, #hl-history) .hl-dk-plot { height: 100px; } }
 
 /* The status strip above the cards, and the slim player bar. */
 #hl-status {
