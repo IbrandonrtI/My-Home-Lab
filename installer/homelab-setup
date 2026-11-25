@@ -4342,9 +4342,11 @@ def widgets_for_machine(body):
 # so they are created empty before Homepage first starts (or, on a machine where Homepage already runs, once, with a restart of Homepage).
 # trends.json is the short history of CPU, memory, network and temperature that the control panel keeps, for the small graphs in the header.
 # history.json is the week of temperatures and the plays per day in Jellyfin that homelab-stats keeps, for the graphs on the Stats tab.
+# watching.json and watching-posters.json are the half-watched titles in Jellyfin and their small pictures, for the Continue watching row on the Home tab.
 DASH_PLACEHOLDERS = {"install-status.json": "{}\n", "job-status.json": '{"version": 1, "updated": 0, "jobs": []}\n',
                      "trends.json": '{"version": 1, "updated": 0, "step": 30, "cpu": [], "mem": [], "rx": [], "tx": [], "temp": []}\n',
-                     "history.json": '{"version": 1, "updated": 0, "step": 900, "t": [], "cpu": [], "drives": {}, "plays": []}\n'}
+                     "history.json": '{"version": 1, "updated": 0, "step": 900, "t": [], "cpu": [], "drives": {}, "plays": []}\n',
+                     "watching.json": '{"version": 1, "updated": 0, "items": []}\n', "watching-posters.json": "{}\n"}
 
 
 def dashboard_placeholders():
@@ -6489,6 +6491,7 @@ class BackupConf(Step):
 CRON_LINES = [
     ("homelab-sample", "*/15 * * * * /usr/local/sbin/homelab-sample >/dev/null 2>&1"),
     ("homelab-stats", "5,20,35,50 * * * * /usr/local/sbin/homelab-stats >/dev/null 2>&1"),
+    ("homelab-stats watching", "* * * * * /usr/local/sbin/homelab-stats watching >/dev/null 2>&1"),
     ("homelab-alerts", "*/5 * * * * /usr/local/sbin/homelab-alerts >/dev/null 2>&1"),
     ("homelab-calendar build", "30 3 * * 1 /usr/local/bin/homelab-calendar build >/dev/null 2>&1"),
     ("homelab-calendar sync", "40 4 * * * /usr/local/bin/homelab-calendar sync >/dev/null 2>&1"),
@@ -9887,7 +9890,7 @@ def un_remove_files(f, wipe_data, keep_drives_tool):
         un_rm(p)
     files = ["/etc/homelab-backup.conf", "/etc/homelab-backup-tasks.json", "/etc/homelab-update.conf", "/var/lib/homelab", "/var/lib/homelab-backup",
              "/etc/homelab-drive-names", "/var/log/homelab-backup.log", "/var/log/homelab-backup-tasks.log", "/var/log/homelab-cards.log",
-             "/var/log/homelab-restore-configs.log", "/run/homelab-terminal", "/run/homelab-stats", "/run/homelab-update"]
+             "/var/log/homelab-restore-configs.log", "/run/homelab-terminal", "/run/homelab-stats", "/run/homelab-watching.lock", "/run/homelab-update"]
     if not keep_drives_tool:
         files += ["/var/lib/homelab-drives", "/var/log/homelab-drives.log", "/etc/homelab-drives"]
     for p in files:

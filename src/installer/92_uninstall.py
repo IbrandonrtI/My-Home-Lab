@@ -488,7 +488,7 @@ def un_remove_files(f, wipe_data, keep_drives_tool):
         un_rm(p)
     files = ["/etc/homelab-backup.conf", "/etc/homelab-backup-tasks.json", "/etc/homelab-update.conf", "/var/lib/homelab", "/var/lib/homelab-backup",
              "/etc/homelab-drive-names", "/var/log/homelab-backup.log", "/var/log/homelab-backup-tasks.log", "/var/log/homelab-cards.log",
-             "/var/log/homelab-restore-configs.log", "/run/homelab-terminal", "/run/homelab-stats", "/run/homelab-update"]
+             "/var/log/homelab-restore-configs.log", "/run/homelab-terminal", "/run/homelab-stats", "/run/homelab-watching.lock", "/run/homelab-update"]
     if not keep_drives_tool:
         files += ["/var/lib/homelab-drives", "/var/log/homelab-drives.log", "/etc/homelab-drives"]
     for p in files:

@@ -121,6 +121,16 @@ class Stacks(unittest.TestCase):
 
 class PageScripts(unittest.TestCase):
     @unittest.skipUnless(shutil.which("node"), "Node is not installed")
+    def test_continue_watching_files_and_schedule_agree(self):
+        """The dashboard reads two files that homelab-stats writes; Homepage only serves a file that existed when it started, so the installer must create both, and cron must run the command every minute."""
+        js, setup, stats = read("homepage-config/custom.js"), read("installer/homelab-setup"), read("scripts/homelab-stats")
+        for name in ("watching.json", "watching-posters.json"):
+            self.assertIn("/images/" + name, js)
+            self.assertIn('"%s"' % name, setup, name + " is not among the files created before Homepage starts")
+            self.assertIn(name, stats)
+        self.assertIn('"watching"', stats)
+        self.assertIn('("homelab-stats watching", "* * * * * /usr/local/sbin/homelab-stats watching >/dev/null 2>&1")', setup)
+
     def test_the_browser_scripts_parse(self):
         for rel in ("homepage-config/custom.js", "panel/ui/app.js"):
             r = subprocess.run(["node", "--check", os.path.join(ROOT, rel)], capture_output=True, text=True)

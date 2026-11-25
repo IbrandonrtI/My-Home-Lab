@@ -36,9 +36,11 @@ def widgets_for_machine(body):
 # so they are created empty before Homepage first starts (or, on a machine where Homepage already runs, once, with a restart of Homepage).
 # trends.json is the short history of CPU, memory, network and temperature that the control panel keeps, for the small graphs in the header.
 # history.json is the week of temperatures and the plays per day in Jellyfin that homelab-stats keeps, for the graphs on the Stats tab.
+# watching.json and watching-posters.json are the half-watched titles in Jellyfin and their small pictures, for the Continue watching row on the Home tab.
 DASH_PLACEHOLDERS = {"install-status.json": "{}\n", "job-status.json": '{"version": 1, "updated": 0, "jobs": []}\n',
                      "trends.json": '{"version": 1, "updated": 0, "step": 30, "cpu": [], "mem": [], "rx": [], "tx": [], "temp": []}\n',
-                     "history.json": '{"version": 1, "updated": 0, "step": 900, "t": [], "cpu": [], "drives": {}, "plays": []}\n'}
+                     "history.json": '{"version": 1, "updated": 0, "step": 900, "t": [], "cpu": [], "drives": {}, "plays": []}\n',
+                     "watching.json": '{"version": 1, "updated": 0, "items": []}\n', "watching-posters.json": "{}\n"}
 
 
 def dashboard_placeholders():

@@ -516,9 +516,70 @@
     });
   }
 
+  /* Continue watching: what is half-watched in Jellyfin, as a row of posters on the Home tab. homelab-stats writes watching.json every minute and watching-posters.json (small pictures, fetched only when a new title appears). */
+  var WT = { data: null, posters: {}, at: 0, busy: false }, WT_STALE = 30 * 60 * 1000;
+  function wtLoad() {
+    WT.busy = true;
+    fetch("/images/watching.json?t=" + Date.now(), { cache: "no-store" }).then(function (r) { if (!r.ok) throw new Error("no file"); return r.json(); })
+      .then(function (d) {
+        if (!d || !Array.isArray(d.items)) return;
+        WT.data = d;
+        if (!d.items.some(function (i) { return i.poster && !WT.posters[i.poster]; })) return;
+        return fetch("/images/watching-posters.json?t=" + Date.now(), { cache: "no-store" }).then(function (r) { return r.ok ? r.json() : {}; }).then(function (p) {
+          if (p && typeof p === "object") Object.keys(p).forEach(function (k) { if (typeof p[k] === "string" && /^data:image\/jpeg;base64,[A-Za-z0-9+\/=]+$/.test(p[k])) WT.posters[k] = p[k]; });
+        });
+      })
+      .catch(function () { /* keep what is shown */ })
+      .then(function () { WT.busy = false; WT.at = Date.now(); soon(); });
+  }
+  function wtLeft(min) { return min >= 60 ? Math.floor(min / 60) + " h " + (min % 60 ? (min % 60) + " min " : "") + "left" : min + " min left"; }
+  function wtLink(d, id) {
+    var base = typeof d.link === "string" && /^https?:\/\/[^\s"'<>]+$/.test(d.link) ? d.link.replace(/\/+$/, "") : "";
+    if (!base || typeof id !== "string" || !/^[0-9a-fA-F-]{32,36}$/.test(id)) return "";
+    return base + "/web/#/details?id=" + id + (typeof d.server === "string" && /^[0-9a-fA-F-]{32,36}$/.test(d.server) ? "&serverId=" + d.server : "");
+  }
+  function wtDraw(box, d) {
+    box.textContent = "";
+    var head = el("div", "hl-wt-head");
+    head.appendChild(el("b", "", "Continue Watching"));
+    if (d.user) head.appendChild(el("span", "hl-wt-user", d.user));
+    box.appendChild(head);
+    var row = el("div", "hl-wt-row");
+    row.setAttribute("role", "list");
+    d.items.forEach(function (it) {
+      var href = wtLink(d, it.id), card = el(href ? "a" : "div", "hl-wt-card"), art = el("span", "hl-wt-art"), pic = WT.posters[it.poster];
+      card.setAttribute("role", "listitem");
+      if (href) { card.setAttribute("href", href); card.setAttribute("target", "_blank"); card.setAttribute("rel", "noopener noreferrer"); }
+      if (pic) { var img = document.createElement("img"); img.alt = ""; img.src = pic; img.setAttribute("decoding", "async"); art.appendChild(img); }
+      else art.appendChild(el("span", "hl-wt-ph", String(it.title || "?").charAt(0).toUpperCase()));
+      var pct = Math.max(0, Math.min(100, Number(it.pct) || 0));
+      if (pct > 0) { var bar = el("span", "hl-wt-bar"), fill = document.createElement("i"); fill.style.width = pct + "%"; bar.appendChild(fill); art.appendChild(bar); }
+      card.appendChild(art);
+      card.appendChild(el("b", "hl-wt-title", String(it.title || "")));
+      if (it.sub) card.appendChild(el("small", "hl-wt-sub", String(it.sub)));
+      if (typeof it.left === "number" && it.left > 0) card.appendChild(el("small", "hl-wt-left", wtLeft(it.left)));
+      card.title = String(it.title || "") + (it.sub ? " - " + it.sub : "") + (pct ? " (" + Math.round(pct) + "% watched)" : "");
+      row.appendChild(card);
+    });
+    box.appendChild(row);
+  }
+  function watching() {
+    var lg = document.getElementById("layout-groups"), box = document.getElementById("hl-watching");
+    var on = lg && lg.parentNode && lg.querySelector("#jellyfin-card");
+    if (!on) { if (box && !box.hidden) box.hidden = true; return; }
+    if (!WT.busy && Date.now() - WT.at > 60000) wtLoad();
+    var d = WT.data, fresh = d && d.items.length && typeof d.updated === "number" && Date.now() - d.updated * 1000 < WT_STALE;
+    if (!fresh) { if (box && !box.hidden) box.hidden = true; return; }
+    if (!box) { box = el("section"); box.id = "hl-watching"; box.setAttribute("aria-label", "Continue watching"); }
+    if (box.parentNode !== lg.parentNode || box.nextSibling !== lg) lg.parentNode.insertBefore(box, lg);
+    if (box.hidden) box.hidden = false;
+    var key = JSON.stringify([d.user, d.link, d.server, d.items]) + "|" + d.items.filter(function (i) { return WT.posters[i.poster]; }).length;
+    if (box.getAttribute("data-key") !== key) { box.setAttribute("data-key", key); wtDraw(box, d); }
+  }
+
   function run() {
     queued = false;
-    dots(); waiting(); status(); hello(); dock(); find(); jellyfin(); stats(); dockerCharts(); historyCharts(); fillRows(); counting();
+    dots(); waiting(); status(); hello(); dock(); find(); jellyfin(); stats(); dockerCharts(); historyCharts(); fillRows(); counting(); watching();
     if (!TR.busy && Date.now() - TR.at > 30000) trendsLoad();
   }
   function soon() { if (!queued) { queued = true; window.requestAnimationFrame(run); } }

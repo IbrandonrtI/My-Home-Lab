@@ -15,16 +15,22 @@ What it collects:
                                 takes minutes, so it is done at the lowest priority and only when the pool's used space
                                 changed since the last count (and at most once an hour; every 7 days anyway).
 
+Continue watching: every minute watching.json (the details) and watching-posters.json (small pictures) are written next to stats.json, for the row of posters on the Home tab.
+It shows the first Jellyfin administrator's half-watched movies and episodes. To show another person's, save their Jellyfin user name in /var/lib/homelab/watching-user
+(for example:  echo Anna | sudo tee /var/lib/homelab/watching-user).
+
 It also keeps history.json next to stats.json: about a week of CPU and drive temperatures (one reading per run), and how many times a movie or a show was played in
 Jellyfin each day (from Jellyfin's activity log). The graphs on the Stats tab are drawn from it.
 
 Usage:
   sudo homelab-stats           collect everything now and print a short summary
   sudo homelab-stats quick     the same without counting folder sizes (the installer uses this)
+  sudo homelab-stats watching  only update "Continue watching" (what is half-watched in Jellyfin); root's crontab runs this every minute
   homelab-stats show           print the saved file
   homelab-stats version
 """
 
+import base64
 import calendar
 import datetime
 import glob
@@ -37,6 +43,7 @@ import subprocess
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 
 VERSION = "1.0"
@@ -50,6 +57,10 @@ HISTORY_POINTS = 672  # a week of readings, one every 15 minutes
 HISTORY_MIN_GAP = 600  # a run closer than this to the last reading only refreshes the day totals
 PLAY_DAYS = 14
 RECENT_ITEMS = 6
+WATCH_ITEMS = 10  # posters in the Continue watching row
+POSTER_HEIGHT = 270
+POSTER_MAX_BYTES = 150000
+WATCH_LOCK = os.environ.get("HOMELAB_WATCHING_LOCK", "/run/homelab-watching.lock")
 PROBLEMS = []  # what could not be read in this run, shown when it is run by hand
 SYS = os.environ.get("HOMELAB_SYS", "/sys")
 RECOUNT_MIN_SECONDS = 3600
@@ -301,7 +312,7 @@ def widgets_from_services(hp):
                     for card in (item.values() if isinstance(item, dict) else []):
                         w = card.get("widget") if isinstance(card, dict) else None
                         if isinstance(w, dict) and w.get("type") in ("immich", "nextcloud", "jellyfin") and w.get("url") and w.get("key"):
-                            found.setdefault(w["type"], {"url": str(w["url"]).rstrip("/"), "key": str(w["key"])})
+                            found.setdefault(w["type"], {"url": str(w["url"]).rstrip("/"), "key": str(w["key"]), "href": str(card.get("href") or "").rstrip("/")})
         return found
     except Exception:
         pass
@@ -391,6 +402,109 @@ def jellyfin_plays(w, now):
         kind = "shows" if kinds.get(str(r.get("ItemId")).replace("-", "").lower()) in ("Episode", "Season", "Series") else "movies"
         days[day][kind] += 1
     return [dict(v, day=d) for d, v in days.items()]
+
+
+def jellyfin_user(w):
+    """The Jellyfin user whose half-watched titles are shown: the one named in HOMELAB_JELLYFIN_USER or in the file watching-user, else the first administrator, else the first user. None when there is none."""
+    users = http_json(w["url"] + "/Users", jellyfin_head(w["key"]))
+    users = [u for u in users if isinstance(u, dict) and u.get("Id") and not (u.get("Policy") or {}).get("IsDisabled")] if isinstance(users, list) else []
+    want = (os.environ.get("HOMELAB_JELLYFIN_USER") or read(os.path.join(STATE_DIR, "watching-user"))).strip().lower()
+    if want:
+        return next((u for u in users if str(u.get("Name") or "").lower() == want), None)
+    return next((u for u in users if (u.get("Policy") or {}).get("IsAdministrator")), users[0] if users else None)
+
+
+def watch_item(it):
+    """One half-watched movie or episode as the row shows it: {id, title, sub, pct, left, art: (picture id, picture tag)}, or None."""
+    if not isinstance(it, dict) or not it.get("Id"):
+        return None
+    episode = it.get("Type") == "Episode"
+    title = str((it.get("SeriesName") if episode else None) or it.get("Name") or "").strip()
+    if not title:
+        return None
+    if episode:
+        season, number, name = it.get("ParentIndexNumber"), it.get("IndexNumber"), str(it.get("Name") or "").strip()
+        sub = ("S%d E%d" % (season, number) if isinstance(season, int) and isinstance(number, int) else "") + (" - " + name if name else "")
+        sub = sub.strip(" -")
+    else:
+        sub = str(it["ProductionYear"]) if isinstance(it.get("ProductionYear"), int) else ""
+    data = it.get("UserData") or {}
+    total, pos, pct = it.get("RunTimeTicks"), data.get("PlaybackPositionTicks"), data.get("PlayedPercentage")
+    if not isinstance(pct, (int, float)) and isinstance(total, (int, float)) and total > 0 and isinstance(pos, (int, float)):
+        pct = pos * 100.0 / total
+    left = max(1, int(round((total - pos) / 600000000.0))) if isinstance(total, (int, float)) and isinstance(pos, (int, float)) and total > pos else None
+    art = (str(it.get("SeriesId")), str(it.get("SeriesPrimaryImageTag"))) if episode and it.get("SeriesId") and it.get("SeriesPrimaryImageTag") else (str(it["Id"]), str((it.get("ImageTags") or {}).get("Primary") or ""))
+    return {"id": str(it["Id"]), "title": title, "sub": sub, "pct": int(max(0, min(100, round(pct)))) if isinstance(pct, (int, float)) else 0, "left": left, "art": art}
+
+
+def jellyfin_poster(w, item_id, tag):
+    """A small poster as a data address (data:image/jpeg;base64,...), or "" when Jellyfin has none or it is too big. Jellyfin makes the small copy itself."""
+    if not tag:
+        return ""
+    url = "%s/Items/%s/Images/Primary?maxHeight=%d&quality=70&format=Jpg&tag=%s" % (w["url"], urllib.parse.quote(item_id, safe=""), POSTER_HEIGHT, urllib.parse.quote(tag, safe=""))
+    try:
+        req = urllib.request.Request(url, headers=jellyfin_head(w["key"]))
+        with urllib.request.urlopen(req, timeout=HTTP_TIMEOUT) as r:
+            body = r.read(POSTER_MAX_BYTES + 1)
+    except (OSError, ValueError, urllib.error.URLError):
+        return ""
+    return "data:image/jpeg;base64," + base64.b64encode(body).decode("ascii") if body and len(body) <= POSTER_MAX_BYTES else ""
+
+
+def collect_watching(w, now, old_posters):
+    """What the Continue watching row shows: (the details, the posters by key). A poster already saved is kept, so only new titles are asked for."""
+    user = jellyfin_user(w)
+    if not user:
+        raise ValueError("no Jellyfin user to show")
+    query = "/Users/%s/Items/Resume?Limit=%d&MediaTypes=Video&Fields=ProductionYear&EnableUserData=true&EnableImageTypes=Primary" % (urllib.parse.quote(str(user["Id"]), safe=""), WATCH_ITEMS)
+    rows = http_json(w["url"] + query, jellyfin_head(w["key"])).get("Items") or []
+    items, posters = [], {}
+    for it in rows:
+        item = watch_item(it)
+        if not item:
+            continue
+        pic, tag = item.pop("art")
+        key = "%s-%s" % (pic, tag) if tag else ""
+        if key:
+            got = old_posters.get(key) or jellyfin_poster(w, pic, tag)
+            if got:
+                posters[key] = got
+            else:
+                key = ""
+        item["poster"] = key
+        items.append(item)
+    link = w.get("href") or w["url"]
+    server = next((str(i.get("ServerId")) for i in rows if isinstance(i, dict) and i.get("ServerId")), "")
+    return {"version": 1, "updated": int(now), "user": str(user.get("Name") or ""), "link": link, "server": server, "items": items}, posters
+
+
+def watching_paths(out_path):
+    """Where the two Continue watching files go: next to stats.json, or where HOMELAB_WATCHING_OUT says (the posters go beside it)."""
+    forced = os.environ.get("HOMELAB_WATCHING_OUT")
+    if forced:
+        return forced, os.path.join(os.path.dirname(forced), "watching-posters.json")
+    if not out_path:
+        return "", ""
+    folder = os.path.dirname(out_path)
+    return os.path.join(folder, "watching.json"), os.path.join(folder, "watching-posters.json")
+
+
+def write_watching(widgets, out_path, now):
+    """Refresh the Continue watching files. Jellyfin not set up, or not answering, leaves the files as they were. Returns the details that were saved, or None."""
+    w = widgets.get("jellyfin")
+    path, posters_path = watching_paths(out_path)
+    if not w or not path:
+        return None
+    old = load_json(posters_path)
+    try:
+        data, posters = collect_watching(w, now, old if isinstance(old, dict) else {})
+    except (OSError, ValueError, TypeError, urllib.error.URLError) as err:
+        PROBLEMS.append("Continue watching: could not be read (%s)" % err)
+        return None
+    if posters != old:
+        write_file_safely(posters_path, json.dumps(posters, separators=(",", ":")))
+    write_file_safely(path, json.dumps(data, separators=(",", ":")))
+    return data
 
 
 def get_jellyfin(w, now):
@@ -929,6 +1043,25 @@ def save(res, out_path):
     return True
 
 
+def watching_command():
+    """Update only the Continue watching files. It has its own lock, so the long run that counts folders never holds it back."""
+    try:
+        import fcntl
+        lock = open(WATCH_LOCK, "w")
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except (OSError, ImportError):
+        return 0
+    data = write_watching(widgets_from_services(homepage_dir()), output_path(), time.time())
+    if sys.stdout.isatty():
+        for line in PROBLEMS:
+            print("Not read: " + line)
+        if data is not None:
+            print("Continue watching: %d title(s) for %s" % (len(data["items"]), data["user"] or "?"))
+        elif not PROBLEMS:
+            print("Continue watching needs the Jellyfin card with its key in services.yaml.")
+    return 0
+
+
 def main(argv):
     """Read the command line and run the requested command."""
     arg = argv[1] if len(argv) > 1 else ""
@@ -942,8 +1075,8 @@ def main(argv):
         p = output_path()
         print(read(p) or "No stats file yet. Run: sudo homelab-stats")
         return 0
-    if arg not in ("", "quick"):
-        print("Usage: sudo homelab-stats [quick]    (or: homelab-stats show | version)", file=sys.stderr)
+    if arg not in ("", "quick", "watching"):
+        print("Usage: sudo homelab-stats [quick | watching]    (or: homelab-stats show | version)", file=sys.stderr)
         return 1
     if os.geteuid() != 0 and not os.environ.get("HOMELAB_STATS_OUT"):
         print("Run it with sudo.", file=sys.stderr)
@@ -952,6 +1085,8 @@ def main(argv):
         os.nice(19)
     except OSError:
         pass
+    if arg == "watching":
+        return watching_command()
     try:
         import fcntl
         lock = open(LOCKFILE, "w")
@@ -972,6 +1107,10 @@ def main(argv):
         write_history(res, out_path)
     except (OSError, ValueError, TypeError) as err:
         print("homelab-stats: the history was not saved (%s)." % err, file=sys.stderr)
+    try:
+        write_watching(widgets_from_services(homepage_dir()), out_path, time.time())
+    except (OSError, ValueError, TypeError) as err:
+        print("homelab-stats: Continue watching was not saved (%s)." % err, file=sys.stderr)
     if arg != "quick":
         texts, _ = folder_sizes(time.time(), spaces, False)
         if texts != res["folders"]:

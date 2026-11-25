@@ -137,6 +137,7 @@ class BackupConf(Step):
 CRON_LINES = [
     ("homelab-sample", "*/15 * * * * /usr/local/sbin/homelab-sample >/dev/null 2>&1"),
     ("homelab-stats", "5,20,35,50 * * * * /usr/local/sbin/homelab-stats >/dev/null 2>&1"),
+    ("homelab-stats watching", "* * * * * /usr/local/sbin/homelab-stats watching >/dev/null 2>&1"),
     ("homelab-alerts", "*/5 * * * * /usr/local/sbin/homelab-alerts >/dev/null 2>&1"),
     ("homelab-calendar build", "30 3 * * 1 /usr/local/bin/homelab-calendar build >/dev/null 2>&1"),
     ("homelab-calendar sync", "40 4 * * * /usr/local/bin/homelab-calendar sync >/dev/null 2>&1"),
