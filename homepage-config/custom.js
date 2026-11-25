@@ -134,7 +134,8 @@
   }
 
   function shrinkButton() {
-    root.classList.toggle("hl-player-min", store("hl-player-shrunk") === "1");
+    /* The player starts as a slim bar. It is opened with the arrow or by pressing the bar, and the choice is remembered in this browser. The music keeps playing while it is closed. */
+    root.classList.toggle("hl-player-min", store("hl-player-shrunk") !== "0");
     var title = document.querySelector("#navidrome-card .service-title");
     if (!title || title.querySelector(".hl-shrink")) return;
     var b = document.createElement("button");
@@ -151,6 +152,7 @@
     });
     label(b);
     title.appendChild(b);
+    title.addEventListener("click", function (ev) { if (root.classList.contains("hl-player-min") && !ev.target.closest("a, button")) b.click(); });
   }
   function label(b) {
     var min = root.classList.contains("hl-player-min");
@@ -829,6 +831,49 @@
       var s = d.querySelector("summary"), err = !!s && /api error/i.test(s.textContent);
       if (d.classList.contains("hl-wait") !== (on && err)) d.classList.toggle("hl-wait", on && err);
     });
+  }
+
+  /* A strip above the cards that says whether every service answers. It counts the status dots of the cards on the page, so it follows the tab: a tab with
+     no dots (Stats, Links) shows no strip. Just after the page opens, a red dot is shown as "checking", because services that are still starting look the same. */
+  function status() {
+    var lg = document.getElementById("layout-groups"), box = document.getElementById("hl-status"), up = 0, down = [];
+    all(".service").forEach(function (li) {
+      var seen = "";
+      all('[class*="-status"] > div', li).forEach(function (d) {
+        if (d.offsetWidth > 20) return;
+        var c = typeof d.className === "string" ? d.className : "";
+        if (/rose|red/.test(c)) seen = "down"; else if (seen !== "down" && /emerald|green|lime/.test(c)) seen = "up";
+      });
+      if (seen === "up") up++;
+      else if (seen === "down") { var a = li.querySelector(".service-title-text, .service-title a, .service-name"); down.push({ li: li, name: ((a && a.textContent) || li.id.replace(/-card$/, "")).trim() }); }
+    });
+    var total = up + down.length;
+    if (!lg || !lg.parentNode || total === 0) { if (box && !box.hidden) box.hidden = true; return; }
+    var state = !down.length ? "ok" : (Date.now() - T0 < GRACE ? "wait" : "bad");
+    var key = state + "|" + up + "|" + down.map(function (x) { return x.name; }).join(",");
+    if (!box) { box = el("div"); box.id = "hl-status"; box.setAttribute("role", "status"); }
+    if (box.getAttribute("data-key") !== key) {
+      box.setAttribute("data-key", key);
+      box.className = "hl-st-" + state;
+      var sub = state === "ok" ? up + " of " + total + " answering" : state === "wait" ? "Some services are still starting." : "";
+      var head = state === "ok" ? "All services are healthy" : state === "wait" ? "Checking the services…" : down.length + (down.length === 1 ? " service is" : " services are") + " not answering";
+      box.textContent = "";
+      box.appendChild(el("span", "hl-st-dot"));
+      box.appendChild(el("b", "", head));
+      if (sub) box.appendChild(el("span", "hl-st-sub", sub));
+      if (state === "bad") down.forEach(function (x) {
+        var b = el("button", "hl-st-chip", x.name);
+        b.type = "button";
+        b.addEventListener("click", function () {
+          x.li.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "center" });
+          x.li.classList.add("hl-flash");
+          window.setTimeout(function () { x.li.classList.remove("hl-flash"); }, 1800);
+        });
+        box.appendChild(b);
+      });
+    }
+    if (box.parentNode !== lg.parentNode || box.nextSibling !== lg) lg.parentNode.insertBefore(box, lg);
+    if (box.hidden) box.hidden = false;
   }
 
   /* Greeting above the tabs. */
@@ -1671,7 +1716,7 @@
 
   function run() {
     queued = false;
-    dots(); waiting(); hello(); dock(); find(); jellyfin(); stats(); dockerCharts(); counting();
+    dots(); waiting(); status(); hello(); dock(); find(); jellyfin(); stats(); dockerCharts(); counting();
     if (!TR.busy && Date.now() - TR.at > 30000) trendsLoad();
   }
   function soon() { if (!queued) { queued = true; window.requestAnimationFrame(run); } }

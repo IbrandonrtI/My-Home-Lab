@@ -44,7 +44,9 @@ This is where the services live, in groups:
 
 Each card has a dot that shows whether the service is up, and most show live numbers. The AdGuard card shows how many queries it has blocked, the Immich card counts photos and videos, and so on. Click a card to open the service.
 
-The Navidrome card is a bit different. It sits at the top over the full width and has the music player inside it, so songs play without leaving the dashboard. One small button shrinks the player and another changes its height.
+A strip above the cards sums up those dots. It says *All services are healthy*, or how many are not answering with a button for each one that scrolls to its card. For the first seconds after the page opens (or after the dashboard restarts) a red dot is shown as *Checking the services*, because a service that is still starting looks the same. The strip shows only on a tab that has status dots, so Stats and Links have none.
+
+The Navidrome card is a bit different. It has the music player inside it, so songs play without leaving the dashboard. The player starts as a slim bar. Press the arrow or the bar (*Open the player*) to open it, and the same arrow closes it again. Closing it doesn't stop the music, and the choice is remembered in that browser. Another small button changes the player's height.
 
 ![The Navidrome card with the player open](images/navidrome-card.png)
 

@@ -23,7 +23,8 @@
   }
 
   function shrinkButton() {
-    root.classList.toggle("hl-player-min", store("hl-player-shrunk") === "1");
+    /* The player starts as a slim bar. It is opened with the arrow or by pressing the bar, and the choice is remembered in this browser. The music keeps playing while it is closed. */
+    root.classList.toggle("hl-player-min", store("hl-player-shrunk") !== "0");
     var title = document.querySelector("#navidrome-card .service-title");
     if (!title || title.querySelector(".hl-shrink")) return;
     var b = document.createElement("button");
@@ -40,6 +41,7 @@
     });
     label(b);
     title.appendChild(b);
+    title.addEventListener("click", function (ev) { if (root.classList.contains("hl-player-min") && !ev.target.closest("a, button")) b.click(); });
   }
   function label(b) {
     var min = root.classList.contains("hl-player-min");

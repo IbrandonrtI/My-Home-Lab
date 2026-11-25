@@ -373,7 +373,7 @@
 
   function run() {
     queued = false;
-    dots(); waiting(); hello(); dock(); find(); jellyfin(); stats(); dockerCharts(); counting();
+    dots(); waiting(); status(); hello(); dock(); find(); jellyfin(); stats(); dockerCharts(); counting();
     if (!TR.busy && Date.now() - TR.at > 30000) trendsLoad();
   }
   function soon() { if (!queued) { queued = true; window.requestAnimationFrame(run); } }

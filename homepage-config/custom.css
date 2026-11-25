@@ -1465,4 +1465,31 @@ html.hl-jf-side #hl-jf-slot { display: block; flex: 1 1 auto; min-height: 340px;
 @media (max-width: 1000px) { #hl-docker { grid-template-columns: minmax(0, 1fr); } }
 @media (max-width: 700px) { #hl-docker .hl-dk-plot { height: 170px; } }
 
+/* The status strip above the cards, and the slim player bar. */
+#hl-status {
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px 12px;
+  margin: 12px var(--lk-side) 0; padding: 8px 16px;
+  border-radius: 14px;
+  background: rgba(var(--lk-glass), var(--lk-glass-a));
+  border: 1px solid var(--lk-line);
+  box-shadow: var(--lk-rim, 0 0 0 0 transparent);
+  -webkit-backdrop-filter: blur(var(--lk-blur, 14px)) saturate(var(--lk-sat, 125%));
+  backdrop-filter: blur(var(--lk-blur, 14px)) saturate(var(--lk-sat, 125%));
+  color: var(--lk-text); font-size: 0.92rem;
+}
+#hl-status[hidden] { display: none; }
+#hl-status b { font-weight: 650; }
+#hl-status .hl-st-sub { color: var(--lk-muted); }
+#hl-status .hl-st-dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: #34d399; box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.22); }
+#hl-status.hl-st-wait .hl-st-dot { background: #fbbf24; box-shadow: 0 0 0 3px rgba(251, 191, 36, 0.22); animation: hl-st-pulse 1.6s ease-in-out infinite; }
+#hl-status.hl-st-bad { border-color: rgba(248, 113, 113, 0.55); }
+#hl-status.hl-st-bad .hl-st-dot { background: #f87171; box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.25); }
+#hl-status .hl-st-chip { padding: 2px 10px; border-radius: 999px; border: 1px solid rgba(248, 113, 113, 0.5); background: rgba(248, 113, 113, 0.14); color: inherit; font: inherit; font-size: 0.85rem; cursor: pointer; }
+#hl-status .hl-st-chip:hover, #hl-status .hl-st-chip:focus-visible { background: rgba(248, 113, 113, 0.28); outline: none; }
+.service.hl-flash { animation: hl-st-flash 0.6s ease-in-out 3; }
+@keyframes hl-st-pulse { 50% { opacity: 0.35; } }
+@keyframes hl-st-flash { 50% { outline: 2px solid rgba(248, 113, 113, 0.9); outline-offset: 2px; } }
+@media (prefers-reduced-motion: reduce) { #hl-status.hl-st-wait .hl-st-dot, .service.hl-flash { animation: none; } }
+html.hl-player-min #inner_wrapper #navidrome-card .service-title { cursor: pointer; }
+html.hl-player-min #inner_wrapper #navidrome-card .service-title::after { content: "Open the player"; margin-left: 12px; font-size: 0.8rem; font-weight: 500; color: var(--lk-muted); }
 /* <<< homelab tabs <<< */
