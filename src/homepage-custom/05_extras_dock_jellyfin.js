@@ -320,7 +320,9 @@
     b.addEventListener("click", function (ev) {
       ev.preventDefault();
       ev.stopPropagation();
-      lsSet("hl-jf-open", jfOpen() ? 0 : 1);
+      var closing = jfOpen();
+      lsSet("hl-jf-open", closing ? 0 : 1);
+      if (closing) { var old = document.getElementById("hl-jf-frame"); if (old) old.remove(); }
       jellyfin();
       jfLabel(b);
       window.dispatchEvent(new Event("resize"));
@@ -338,21 +340,57 @@
     });
     jfButton(card);
     var sc = card.querySelector(".service-card"), fr = document.getElementById("hl-jf-frame");
-    if (!side || !sc) return;
+    if (!side || !sc) { jfPlace(); return; }
     var a = card.querySelector("a[href]"), base = "";
     try { base = a ? new URL(a.href).origin : ""; } catch (e) { base = ""; }
     if (!base) return;
+    /* The card is rebuilt each time the dashboard switches tabs, and a frame inside it would load Jellyfin again. So the card only holds an empty slot, and the
+       frame itself lives outside the card and is laid over the slot (and moved out of sight while the slot is not there), the way the Navidrome player is kept. */
+    var slot = document.getElementById("hl-jf-slot");
+    if (!slot || slot.parentNode !== sc) { slot = slot || el("div"); slot.id = "hl-jf-slot"; sc.appendChild(slot); }
     if (!fr) {
-      fr = el("div"); fr.id = "hl-jf-frame";
+      fr = el("div", "hl-away"); fr.id = "hl-jf-frame";
       var view = el("div", "hl-jf-view");
-      var f = el("iframe"); f.title = "Jellyfin library"; f.setAttribute("loading", "lazy"); f.setAttribute("allow", "fullscreen; autoplay"); f.src = base + "/web/index.html";
+      var f = el("iframe"); f.title = "Jellyfin library"; f.setAttribute("allow", "fullscreen; autoplay"); f.src = base + "/web/index.html";
       var o = el("a", "hl-jf-open", "Open Jellyfin"); o.href = base + "/"; o.target = "_blank"; o.rel = "noopener";
       view.appendChild(f); fr.appendChild(view); fr.appendChild(o);
+      document.body.appendChild(fr);
       if (window.ResizeObserver) new ResizeObserver(jfFit).observe(view);
     }
-    if (fr.parentNode !== sc) sc.appendChild(fr);
+    jfPlace();
     jfFit();
   }
+  function jfScroller(node) {
+    for (var e = node; e && e !== document.body && e !== document.documentElement; e = e.parentElement) {
+      var o = window.getComputedStyle(e).overflowY;
+      if (o === "auto" || o === "scroll" || e.hasAttribute("data-hl-locked")) return e;
+    }
+    return null;
+  }
+  /* Lay the frame over the slot, or move it out of sight when there is no slot on the page. Moving an iframe in the page loads it again, so it only changes
+     parent when the scrolling box around the card changes. */
+  function jfPlace() {
+    var fr = document.getElementById("hl-jf-frame"), slot = document.getElementById("hl-jf-slot"), root = document.documentElement;
+    if (!fr) return;
+    var host = null, sc = null;
+    if (slot && jfOpen() && !slot.closest(".hl-folded") && !root.classList.contains("hl-sliding")) {
+      var r = slot.getBoundingClientRect();
+      if (r.width > 0 && r.height > 0) { host = r; sc = jfScroller(slot.parentElement); }
+    }
+    if (!host) { if (fr.className !== "hl-away") fr.className = "hl-away"; return; }
+    var home = sc || document.body;
+    if (fr.parentNode !== home) {
+      if (sc && window.getComputedStyle(sc).position === "static") sc.style.position = "relative";
+      home.appendChild(fr);
+    }
+    fr.className = "";
+    fr.style.left = "0px";
+    fr.style.top = "0px";
+    var o = fr.getBoundingClientRect(), z = parseFloat(window.getComputedStyle(root).zoom) || 1;
+    fr.style.cssText = "left:" + ((host.left - o.left) / z) + "px;top:" + ((host.top - o.top) / z) + "px;width:" + (host.width / z) + "px;height:" + (host.height / z) + "px;";
+  }
+  window.addEventListener("resize", jfPlace);
+  window.setInterval(jfPlace, 500);
   /* The card is narrower than a desktop window, which makes Jellyfin switch to its small-screen layout. So Jellyfin is drawn at exactly JF_WIDE pixels and scaled to fit the card. The Jellyfin look step uses that width to hide the home slideshow in this box only (see JELLYFIN_BOX_CSS in the installer). */
   var JF_WIDE = 1137;
   function jfFit() {
