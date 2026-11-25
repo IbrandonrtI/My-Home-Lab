@@ -77,8 +77,6 @@ STATS_GROUPS = {"Preview": ("mdi-view-dashboard", 4), "Music Library": ("mdi-mus
 STATS_AFTER = {"Music Library": "Preview"}
 MUSIC_WIDE = "~music-2-columns"
 STORAGE_WIDE = "~storage-3-columns"
-OLD_NAMES = {"At a glance": "Preview", "At a Glance": "Preview", "Library totals": "Library Totals", "Backup & updates": "Backup & Updates", "Folder sizes": "Folder Sizes"}
-OLD_TABS = {"HOME": "Home", "LINKS": "Links", "STATS": "Stats"}
 
 
 CAL_BEGIN, CAL_END = "# >>> homelab calendar >>>", "# <<< homelab calendar <<<"
@@ -171,24 +169,6 @@ def yaml_key(name):
     if re.search(r"[:#\[\]{},*!|>'\"%@`]|^[&?-]|^\s|\s$", name):
         return "'%s'" % name.replace("'", "''")
     return name
-
-
-def layout_renamed(settings):
-    m = re.search(r"(?m)^layout:[ \t]*(?:#.*)?$", settings)
-    if not m:
-        return settings
-    head, tail = settings[:m.end()], settings[m.end():]
-    lines = tail.split("\n")
-    for i, l in enumerate(lines):
-        k = re.match(r"^  ([^\s#][^:]*?):\s*$", l)
-        if k and k.group(1) in OLD_NAMES:
-            lines[i] = "  %s:" % OLD_NAMES[k.group(1)]
-        t = re.match(r"^    tab:\s*(\S+)\s*$", l)
-        if t and t.group(1) in OLD_TABS:
-            lines[i] = "    tab: %s" % OLD_TABS[t.group(1)]
-        if l and l[0] not in " \t#":
-            break
-    return head + "\n".join(lines)
 
 
 def linkedit_at(lines, start, end, g, default):

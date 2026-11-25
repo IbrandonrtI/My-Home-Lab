@@ -335,7 +335,7 @@ def cards_snapshot():
     return {"groups": groups}
 
 
-def mytheme_background(raw, tid, old_image=None):
+def mytheme_background(raw, tid):
     """Check the picture settings of a theme. A picture on this machine is copied to a file of the theme's own, so replacing the background later does not change it."""
     if not isinstance(raw, dict):
         raise Fail("The picture settings are missing.")

@@ -122,21 +122,6 @@ def detect_tz():
     return read_file(P("/etc/timezone")).strip() or "UTC"
 
 
-def geocode_city(query):
-    base = os.environ.get("HLS_GEOCODE_API", "https://geocoding-api.open-meteo.com")
-    st, js, _ = http("GET", base + "/v1/search?count=5&language=en&format=json&name=" + urllib.parse.quote(query), timeout=15)
-    if st != 200 or not isinstance(js, dict):
-        return None
-    found = []
-    for r in js.get("results") or []:
-        try:
-            found.append({"name": str(r["name"]), "region": str(r.get("admin1") or ""), "country": str(r.get("country") or ""),
-                          "lat": float(r["latitude"]), "lon": float(r["longitude"])})
-        except (KeyError, TypeError, ValueError):
-            continue
-    return found
-
-
 def ip_location():
     """Find the time zone and city from the public IP address using a free lookup service; None when no service answers."""
     override = os.environ.get("HLS_IP_API")

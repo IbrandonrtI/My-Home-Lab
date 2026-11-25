@@ -52,11 +52,6 @@ def trusted_real_path(path, user):
         return None
 
 
-def installer_path_trusted(path, user):
-    """True when only root or the sudo user can change the file and every folder and link on the way to it."""
-    return trusted_real_path(path, user) is not None
-
-
 def reexec_newer_installer(cmd, args):
     """After `git pull` the repository holds a newer installer than the one installed in /usr/local/sbin. When a person types `sudo homelab-setup refresh` (or install) at a terminal, run the newer one, so a single refresh uses the fixes that were just downloaded. Background jobs, the control panel and the drives tool never hand over: the repository belongs to the user, so its code must not run as root without a person asking for it."""
     if FAKE or cmd not in ("refresh", "install") or os.environ.get("HLS_REEXEC"):

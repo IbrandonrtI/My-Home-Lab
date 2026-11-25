@@ -420,8 +420,6 @@ FONTS = {"default": "inherit",
          "windows": '"Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif',
          "mono": 'ui-monospace, "JetBrains Mono", "Fira Code", "Cascadia Code", Menlo, Consolas, monospace',
          "rounded": 'ui-rounded, "SF Pro Rounded", Nunito, system-ui, sans-serif'}
-# Theme names from older versions stay valid, so a look saved with one of them still loads.
-LEGACY_THEME_IDS = ("calm", "frost", "ocean", "sunset", "rose", "graphite", "neon")
 PAINT_STYLES = ("gradient", "solid")
 NO_PAINT = ("customize-card", "linkedit-card", "terminal-card")
 # Bump the number when the pictures change, so a picture stored by an older version is fetched again.
@@ -689,7 +687,7 @@ def look_clean(raw):
     if "dock" in raw:
         out["dock"] = dock_ids(raw["dock"])
     if "theme" in raw:
-        if raw["theme"] not in THEME_IDS and raw["theme"] not in LEGACY_THEME_IDS and not MYTHEME_ID.match(str(raw["theme"])):
+        if raw["theme"] not in THEME_IDS and not MYTHEME_ID.match(str(raw["theme"])):
             raise Fail("The theme is not understood.")
         out["theme"] = raw["theme"]
     if "playerHeight" in raw:
@@ -1247,17 +1245,6 @@ def api_bg_save(body):
     elif u:
         text = bg_set(text, "image", clean_url(u, "The picture address", False))
     text = bg_numbers(body, text)
-    tx.put(SETTINGS, text)
-    tx.commit()
-    return {}
-
-
-def api_bg_reset(body):
-    tx = Tx("Background sliders reset")
-    text = tx.get(SETTINGS)
-    text = bg_set(text, "blur", BG_DEFAULT["blur"])
-    for k in ("saturate", "brightness", "opacity"):
-        text = bg_set(text, k, BG_DEFAULT[k])
     tx.put(SETTINGS, text)
     tx.commit()
     return {}
@@ -2128,7 +2115,7 @@ def cards_snapshot():
     return {"groups": groups}
 
 
-def mytheme_background(raw, tid, old_image=None):
+def mytheme_background(raw, tid):
     """Check the picture settings of a theme. A picture on this machine is copied to a file of the theme's own, so replacing the background later does not change it."""
     if not isinstance(raw, dict):
         raise Fail("The picture settings are missing.")
@@ -4453,7 +4440,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send(200, dict(api_drives_do(path.rsplit("/", 1)[1], body), ok=True))
             if path == "/api/location/search":
                 return self.send(200, dict(api_location_search(body), ok=True))
-            routes = {"/api/location": api_location_save, "/api/look": api_look_save, "/api/look/css": api_look_css, "/api/look/reset": api_look_reset, "/api/background": api_bg_save, "/api/background/reset": api_bg_reset,
+            routes = {"/api/location": api_location_save, "/api/look": api_look_save, "/api/look/css": api_look_css, "/api/look/reset": api_look_reset, "/api/background": api_bg_save,
                       "/api/layout": api_layout_save, "/api/card": api_card, "/api/hlcards/restore": api_hl_restore, "/api/mytheme": api_mytheme, "/api/schedule": api_schedule, "/api/link": api_link, "/api/group": api_group,
                       "/api/undo": lambda b: {"undone": undo()}}
             fn = routes.get(path)

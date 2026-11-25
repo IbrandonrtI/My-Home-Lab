@@ -866,45 +866,6 @@ def marks_id(cid):
     print("Brandfetch client ID saved in %s. New bookmarks now get their logo from Brandfetch." % IDFILE)
 
 
-KNOWN_ICONS = {"youtube.com": "si-youtube-#ff0000", "twitch.tv": "si-twitch-#9146ff", "spotify.com": "si-spotify-#1ed760", "amazon.com": "mdi-cart-#ff9900",
-               "newegg.com": "si-newegg-#e05e00", "ebay.com": "si-ebay-#e53238", "github.com": "si-github-#ffffff", "mail.google.com": "si-gmail-#ea4335",
-               "gmail.com": "si-gmail-#ea4335", "outlook.office.com": "mdi-email-outline-#0078d4", "netflix.com": "si-netflix-#e50914", "reddit.com": "si-reddit-#ff4500"}
-
-
-def marks_icons(apply):
-    """Bookmarks added by an older version point at a Brandfetch logo through a client ID that is not yours, and those links break. List them, and with --apply switch them to a built-in icon."""
-    need_dir()
-    text = read(MARKS)
-    groups, lines = marks_groups(text)
-    mine = get_id()
-    todo = []
-    for g in groups:
-        for n, s, e in g[1]:
-            for i in range(s, e):
-                m = re.match(r"^(\s+icon\s*:\s*)(https?://cdn\.brandfetch\.io/\S+?)\s*$", lines[i])
-                if not m:
-                    continue
-                cm = re.search(r"[?&]c=([\w-]+)", m.group(2))
-                if mine and cm and cm.group(1) == mine:
-                    continue
-                href = entry_field(lines, s, e, "href")
-                host = re.sub(r"^www\.", "", urlparse(href).netloc.lower().split(":")[0])
-                todo.append((g[0], n, i, m.group(1), KNOWN_ICONS.get(host, GENERIC_ICON)))
-    if not todo:
-        print("No bookmark uses a shared Brandfetch link. Nothing to change.")
-        return
-    print("%d bookmark(s) use a Brandfetch link that is not yours:" % len(todo))
-    for g, n, _i, _p, new in todo:
-        print("  %-14s %-22s -> %s" % (g, n, new))
-    if not apply:
-        print("Nothing was changed. To switch them to these icons run:  homelab bookmark icons --apply")
-        return
-    for _g, _n, i, pre, new in todo:
-        lines[i] = pre + new
-    write(MARKS, "\n".join(lines))
-    print("Done. Refresh the Homepage page in the browser to see them.")
-
-
 USAGE_M = """Bookmarks on the Homepage dashboard (a NAME with spaces goes in quotes; a CATEGORY does not need them):
   homelab bookmark list                           every category, with the number of each bookmark
   homelab bookmark add NAME URL [CATEGORY] [ICON LINK] [NUMBER]
@@ -916,7 +877,6 @@ USAGE_M = """Bookmarks on the Homepage dashboard (a NAME with spaces goes in quo
   homelab bookmark move NAME CATEGORY [NUMBER]    put it in another category (the same one, plus a NUMBER: change its place)
                                                   a category with spaces needs no quotes: Online Shopping
   homelab bookmark brandfetch CLIENT-ID           save your Brandfetch client ID once, so logos can be found
-  homelab bookmark icons [--apply]                list bookmarks whose logo link is a shared Brandfetch one that breaks; --apply switches them to built-in icons
 For example:  homelab bookmark add YouTube youtube.com Entertainment
               homelab bookmark add Netflix netflix.com Entertainment si-netflix 2"""
 
@@ -1001,8 +961,6 @@ def main(a):
                     marks_move(a[1], " ".join(to_words), [])
             elif c == "brandfetch" and len(a) == 2:
                 marks_id(a[1])
-            elif c == "icons" and (len(a) == 1 or (len(a) == 2 and a[1] == "--apply")):
-                marks_icons(len(a) == 2)
             else:
                 print(USAGE_M)
                 return 2 if c else 0

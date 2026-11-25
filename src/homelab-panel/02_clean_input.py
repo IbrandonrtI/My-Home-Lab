@@ -74,8 +74,6 @@ FONTS = {"default": "inherit",
          "windows": '"Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif',
          "mono": 'ui-monospace, "JetBrains Mono", "Fira Code", "Cascadia Code", Menlo, Consolas, monospace',
          "rounded": 'ui-rounded, "SF Pro Rounded", Nunito, system-ui, sans-serif'}
-# Theme names from older versions stay valid, so a look saved with one of them still loads.
-LEGACY_THEME_IDS = ("calm", "frost", "ocean", "sunset", "rose", "graphite", "neon")
 PAINT_STYLES = ("gradient", "solid")
 NO_PAINT = ("customize-card", "linkedit-card", "terminal-card")
 # Bump the number when the pictures change, so a picture stored by an older version is fetched again.
@@ -343,7 +341,7 @@ def look_clean(raw):
     if "dock" in raw:
         out["dock"] = dock_ids(raw["dock"])
     if "theme" in raw:
-        if raw["theme"] not in THEME_IDS and raw["theme"] not in LEGACY_THEME_IDS and not MYTHEME_ID.match(str(raw["theme"])):
+        if raw["theme"] not in THEME_IDS and not MYTHEME_ID.match(str(raw["theme"])):
             raise Fail("The theme is not understood.")
         out["theme"] = raw["theme"]
     if "playerHeight" in raw:

@@ -159,17 +159,6 @@ def api_bg_save(body):
     return {}
 
 
-def api_bg_reset(body):
-    tx = Tx("Background sliders reset")
-    text = tx.get(SETTINGS)
-    text = bg_set(text, "blur", BG_DEFAULT["blur"])
-    for k in ("saturate", "brightness", "opacity"):
-        text = bg_set(text, k, BG_DEFAULT[k])
-    tx.put(SETTINGS, text)
-    tx.commit()
-    return {}
-
-
 def sniff_image(data):
     for magic, ext in IMG_TYPES.items():
         if data.startswith(magic):

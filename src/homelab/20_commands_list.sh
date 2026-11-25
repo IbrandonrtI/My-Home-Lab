@@ -62,7 +62,6 @@ commands() {
   cmd "tailscale status"               "who is on your private network"
   section "Homepage dashboard"
   cmd "homelab bookmark add NAME URL [CATEGORY]" "add one (optional too: ICON LINK, NUMBER)"
-  cmd "homelab bookmark icons [--apply]" "switch dead logo links to built-in icons"
   cmd "homelab bookmark list"          "the bookmarks, by category, with their numbers"
   cmd "homelab bookmark move NAME CATEGORY" "another category (add a NUMBER for its place)"
   cmd "homelab bookmark remove NAME [CATEGORY]" "take one away (CATEGORY if the name is in two)"

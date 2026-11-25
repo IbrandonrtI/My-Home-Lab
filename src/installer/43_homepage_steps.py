@@ -234,7 +234,6 @@ class HomepageTabs(Step):
             if not State.ran("homepage-customize") or CUSTOM_BEGIN in svc:
                 svc = services_customize_block(svc, shipped_svc)
         svc = cards_worded(svc)
-        sett = layout_renamed(sett)
         sett, seen = layout_complete(sett, group_names(svc), group_names(read_file(hp_path("bookmarks.yaml"))), State.data.get("layout_seen", []))
         if re.search(r"(?m)^layout:", sett):
             sett, seen = layout_storage_wide(sett, seen)

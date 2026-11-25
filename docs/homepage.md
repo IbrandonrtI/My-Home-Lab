@@ -73,8 +73,6 @@ Above these groups, two charts show **Docker CPU** and **Docker memory** for the
 
 Bookmarks, in groups, each with its logo. The Edit Links box adds, changes or removes bookmarks without editing a file. Drag a link by its handle to change the order, or drop it on another group to move it. With the keyboard, select the handle and press the up or down arrow key. Nothing changes on the dashboard until you press **Save** in the bar at the top of the box, which stays in view while the list scrolls. One save is one reload of the dashboard, and **Discard Changes** goes back to the saved list. A new link gets the color of the other links in its group, so it matches your theme. From the terminal, use `homelab bookmark add NAME URL`. If an older version gave a bookmark a shared logo link that no longer works, `homelab bookmark icons` lists it and `homelab bookmark icons --apply` switches it to a built-in icon.
 
-> **Photo to add:** A screenshot of the Links tab with its groups and the link editor. Save it in `docs/images/` as `homepage-links.png`.
-
 ### Customize
 
 The control panel and a web terminal. Both are covered below.
@@ -158,8 +156,6 @@ Nothing is saved until you press Save, so you can try things freely.
 
 Each box is a tab of the dashboard. Drag groups to change their order or move them to another tab, and set each group to show its cards in a row.
 
-> **Photo to add:** A screenshot of the Layout screen with its tabs and groups. Save it in `docs/images/` as `panel-layout.png`.
-
 ### Cards
 
 The cards of the dashboard. Add a card for any web page, change names, descriptions and icons, move cards between groups, reorder them or remove them.
@@ -173,8 +169,6 @@ Some cards read live numbers from their service with a key or a password: an API
 - The Upload card keeps its own copy of the Immich key (see [Drives](#drives)), so changing it there is a separate step.
 
 Cards you add yourself and the number cards that HomeLab fills in have no key box.
-
-> **Photo to add:** Two screenshots: the Cards screen, and the *Change* window of a card with a key box. Leave the key box empty, or take the picture before you paste a key. Save them in `docs/images/` as `panel-cards.png` and `panel-card-change.png`.
 
 The number cards and the calendar that HomeLab fills in (Preview, Music Library, Library Totals, Storage, Backup & Updates, Folder Sizes and Calendar) are listed too, marked *Filled in by HomeLab*. You can rename, restyle, move and hide them. *Add From HomeLab's List* brings back a hidden card and offers extra single-number cards (Photos, Videos, Songs, Updates Waiting, Pool Health and more). *Put HomeLab's Cards Back* resets every default card and keeps your own. The first change marks the block in `services.yaml` as `customized`, so `sudo homelab-setup upgrade` stops rewriting it, and cards added in later versions appear in *Add From HomeLab's List*.
 

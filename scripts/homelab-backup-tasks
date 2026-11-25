@@ -755,7 +755,7 @@ def version_names(place, root):
     return [n for n in place.names(root) if parse_stamp(n)]
 
 
-def prune(task, place, keep_log=None):
+def prune(task, place):
     names = version_names(place, task_root(task))
     keepers = keep_set(names, task["keep"])
     gone = [n for n in names if n not in keepers]

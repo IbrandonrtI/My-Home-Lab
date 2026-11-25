@@ -123,8 +123,6 @@ docker logs --tail 50 NAME                            # what a container last sa
 
 **Fix:** list every address you use in `HOMEPAGE_ALLOWED_HOSTS` in the Homepage stack, for example `192.168.X.X:3001,pc.your-tailnet.ts.net:1000`, and redeploy.
 
-> **Photo to add:** A screenshot of the `Host validation failed` message. Save it in `docs/images/` as `host-validation-error.png`.
-
 ### The bell is empty, or its list is old
 
 **Symptom:** the bell shows no badge even though something is down, or it says it was updated a long time ago.
@@ -162,8 +160,6 @@ docker logs --tail 50 NAME                            # what a container last sa
 ### Nextcloud says "Access through untrusted domain"
 
 **Symptom:** Nextcloud refuses an address.
-
-> **Photo to add:** A screenshot of the "Access through untrusted domain" page. Save it in `docs/images/` as `nextcloud-untrusted-domain.png`.
 
 **Cause:** the address isn't in its list of trusted domains. That setting is only read on the first install.
 

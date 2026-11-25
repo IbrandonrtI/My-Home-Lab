@@ -128,8 +128,6 @@ The music server. It plays everything in the music folder on a phone or in a bro
 
 The dashboard has a Navidrome card with the whole player inside it.
 
-> **Photo to add:** A screenshot of Navidrome's own page with the music library. Save it in `docs/images/` as `navidrome.png`.
-
 ### NaviList
 
 Makes playlists in Navidrome from listening history on ListenBrainz and Last.fm, such as Weekly Jams, Weekly Exploration, Daily Jams and the Last.fm charts. It only adds songs that are already in the library and never downloads anything. It checks for new data on its own.
