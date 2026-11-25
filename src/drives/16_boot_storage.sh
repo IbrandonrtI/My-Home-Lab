@@ -86,6 +86,33 @@ guard_flow() {
   return 0
 }
 
+# boot_conflicts: the files that are on the boot drive and also in the pool with different content, one path per line.
+# A file that only differs in its time stamp is not one: rsync lists it, and a byte comparison clears it.
+boot_conflicts() {
+  local f
+  LC_ALL=C rsync -aHn --numeric-ids --itemize-changes --exclude=.immich --exclude=/lost+found "$BOOT_UNDER/" "$MAIN_POOL/" 2>/dev/null \
+    | grep -E '^[<>c][fL]' | sed -E 's/^[^ ]+ //' | while IFS= read -r f; do
+      if [ -L "$BOOT_UNDER/$f" ]; then [ "$(readlink "$BOOT_UNDER/$f")" = "$(readlink "$MAIN_POOL/$f" 2>/dev/null)" ] || printf '%s\n' "$f"
+      else cmp -s "$BOOT_UNDER/$f" "$MAIN_POOL/$f" 2>/dev/null || printf '%s\n' "$f"
+      fi
+    done
+}
+
+# boot_conflicts_keep LIST: copy the boot drive's version of each listed file into a dated folder in the pool, and check the copies.
+# The pool's own version stays where it is, so both versions exist afterwards. Prints the folder.
+boot_conflicts_keep() {
+  local keep f
+  keep="$MAIN_POOL/boot-drive-leftovers/$(date +%F-%H%M%S)"
+  mkdir -p "$keep" || return 1
+  printf '%s\n' "$1" | rsync -aH --numeric-ids --files-from=- "$BOOT_UNDER/" "$keep/" >/dev/null 2>&1 || return 1
+  while IFS= read -r f; do
+    if [ -L "$BOOT_UNDER/$f" ]; then [ -L "$keep/$f" ] || return 1
+    else cmp -s "$BOOT_UNDER/$f" "$keep/$f" || return 1
+    fi
+  done <<<"$1"
+  printf '%s\n' "$keep"
+}
+
 # Containers are stopped. Copy what is under the pool path on the boot drive into the pool, verify it, and ask before removing the originals. Returns 0 when nothing is left behind.
 moveboot_core() {
   local src=$BOOT_UNDER bytes free diff
@@ -100,11 +127,29 @@ moveboot_core() {
     warn "Copying failed. Nothing was removed from the boot drive."
     return 1
   fi
-  diff=$(rsync -aHn --numeric-ids --itemize-changes --exclude=.immich --exclude=/lost+found "$src/" "$MAIN_POOL/" 2>/dev/null | grep -c '^[<>c][fL]')
-  if [ "${diff:-0}" != 0 ]; then
-    warn "$diff file(s) exist both on the boot drive and in the pool with different content. The pool's version was kept, and nothing was removed from the boot drive."
-    date '+%F %T' >"$(boot_kept_flag)" 2>/dev/null
-    return 1
+  diff=$(boot_conflicts)
+  if [ -n "$diff" ]; then
+    local n keep
+    n=$(wc -l <<<"$diff" | tr -d ' ')
+    warn "$n file(s) exist both on the boot drive and in the pool with different content. The pool's version was kept."
+    local f
+    while IFS= read -r f; do
+      say "  $f   (boot drive: $(stat -c '%s bytes, %y' "$src/$f" 2>/dev/null | cut -c1-40); pool: $(stat -c '%s bytes, %y' "$MAIN_POOL/$f" 2>/dev/null | cut -c1-40))"
+    done < <(head -10 <<<"$diff")
+    [ "$n" -gt 10 ] && say "  ... and $((n - 10)) more."
+    if [ "${PANEL_MOVEBOOT:-0}" = 1 ] || { [ "$PANEL_MODE" != 1 ] && yn "Save the boot drive's version of $( [ "$n" = 1 ] && echo "this file" || echo "these files" ) in a folder in the pool, and finish?"; }; then
+      if ! keep=$(boot_conflicts_keep "$diff"); then
+        warn "The boot drive's versions could not be saved, so nothing was removed from the boot drive."
+        date '+%F %T' >"$(boot_kept_flag)" 2>/dev/null
+        return 1
+      fi
+      say "The boot drive's version of $n file(s) is saved in $keep (checked). The pool's version is the one in use."
+      log "saved the boot drive's version of $n conflicting file(s) in $keep"
+    else
+      say "Nothing was removed from the boot drive. Run  sudo drives moveboot  again to save both versions, or decide for each file yourself."
+      date '+%F %T' >"$(boot_kept_flag)" 2>/dev/null
+      return 1
+    fi
   fi
   say "Every file is on the pool now."
   if [ "${PANEL_MOVEBOOT:-0}" = 1 ] || { [ "$PANEL_MODE" != 1 ] && yn_yes "Remove the old copies from the boot drive now (they only use up space there)?"; }; then

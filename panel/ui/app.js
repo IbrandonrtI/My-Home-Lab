@@ -424,7 +424,7 @@ async function appsFresh() {
 }
 async function moveBootFiles() {
   const ok = await confirmBox("Move the Files to the Drive?",
-    "Files on the boot drive are copied to the Main pool and checked. The old copies are removed only after every file is verified. A file that exists in both places with different content is never replaced. Services stop briefly.",
+    "Files on the boot drive are copied to the Main pool and checked. The old copies are removed only after every file is verified. A file that exists in both places with different content is never replaced: the boot drive's version is saved in a folder called boot-drive-leftovers on the pool. Services stop briefly.",
     "Move the Files");
   if (ok) startJob("moveboot", {}, "The files are on the Main pool now.");
 }
