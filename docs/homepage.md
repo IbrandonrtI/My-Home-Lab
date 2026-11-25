@@ -137,7 +137,7 @@ The Customize tab is a small control panel. It uses the admin password you chose
 
 ### Look
 
-Everything about how the dashboard looks.
+Everything about how the dashboard looks. A row of buttons at the top picks one section at a time: Themes (with Day and Night), Colors, Shape, Background, Motion and Icons, Names and Place, and Card Colors. The row and a small live preview stay in view while the page scrolls. On a phone the row scrolls with the page.
 
 - Themes: there are ten ready-made looks: Pastel Night, Violet Glow, Arctic Slate, City Lights, Retro Amber, Deep Teal, Frosted Wave, Mica Blue, Crystal Glass (light, clear glass with raised edges and dark text) and Crystal Night (the same glass in a dark version). Several are based on well-known color schemes (Catppuccin Mocha, Dracula, Nord, Tokyo Night, Gruvbox and Solarized Dark). A theme sets the colors, the glass, the shapes, the text style, the background picture and the panel itself. A look saved with an older theme keeps working until another theme is chosen.
 - Day and Night: the dashboard switches to one theme by day and another at night, for everyone who has it open. It uses sunrise and sunset at the weather city (or two fixed times). The switch is made by the control panel, so it works while no browser is open. Names, the logo, motion and quick launch are never changed by it, and a theme you choose yourself stays until the next switch. Its settings are in `homepage-config/.panel-schedule.json`.
@@ -148,7 +148,7 @@ Everything about how the dashboard looks.
 - Time Zone and City: the install finds both from your internet connection. This card changes the clock's time zone and the weather city.
 - Background Picture: pick a picture and set how blurry, bright and colorful it's. The installer stores all ten theme pictures (kept in the `theme-pictures` folder of the repository) before Homepage starts, so picking a theme doesn't restart the dashboard. If one is missing, the dashboard loads it from its web address until `sudo homelab-setup refresh` stores them all (that restarts Homepage once). Choosing a theme never restarts the dashboard.
 
-Nothing is saved until you press Save, so you can try things freely.
+Each card carries a small label. *Needs Save* means the change is shown as a preview and is kept only when you press Save, so you can try things freely. *Saves Now* means the card has its own button and the change is kept as soon as it's pressed (Day and Night, Time Zone and City). *Runs Now* is used on the Drives, Upload and Updates screens, where buttons act at once.
 
 ![The Look screen of the Customize panel](images/panel-look.png)
 
@@ -166,7 +166,7 @@ Some cards read live numbers from their service with a key or a password: an API
 - Type or paste a new key and press *Save* to replace the old one. Leave the box empty to keep the saved one. *Show what I type* lets you check what you pasted before you save.
 - The card uses the new key the next time it refreshes. The panel doesn't test the key. If the card shows an error afterwards, check the key in the service, or run `sudo homelab-setup fill`, which tests a key before it saves it.
 - *Undo* puts the old key back.
-- The Upload card keeps its own copy of the Immich key (see [Drives](#drives)), so changing it there is a separate step.
+- The Upload screen keeps its own copy of the Immich key (see [Upload](#upload)), so changing it there is a separate step.
 
 Cards you add yourself and the number cards that HomeLab fills in have no key box.
 
@@ -185,13 +185,15 @@ A picture of the storage, in the style of TrueNAS.
 
 ![The Drives screen of the Customize panel](images/panel-drives.png)
 
-Two more cards sit under the drives.
+### Upload
 
-The Upload card sends photos and videos straight to Immich, and songs straight to the music folder, from any device. Photos go through an Immich key that you paste once, and the panel keeps it in a private file on the server. Songs are saved as they are, and a song with the same name is never replaced. Navidrome picks up new songs at its next scan, within the hour.
+The Upload screen sends photos and videos straight to Immich, and songs straight to the music folder, from any device. Photos go through an Immich key that you paste once, and the panel keeps it in a private file on the server. Songs are saved as they are, and a song with the same name is never replaced. Navidrome picks up new songs at its next scan, within the hour.
 
 ![The Upload card](images/panel-upload.png)
 
-The Backups card is a task list like the one in TrueNAS. A task copies a folder somewhere on a schedule, and every run keeps a version that can be restored. The destination can be a drive, another computer over SSH, or the cloud (Backblaze B2, S3, Google Drive and others). You can run a task right away, and browse and restore its versions.
+### Backups
+
+The Backups screen is a task list like the one in TrueNAS. A task copies a folder somewhere on a schedule, and every run keeps a version that can be restored. The destination can be a drive, another computer over SSH, or the cloud (Backblaze B2, S3, Google Drive and others). You can run a task right away, and browse and restore its versions.
 
 For a backup kept on a drive of this computer there is also a **Download** button. It opens a small browser of the backup where you can save a single file, or a whole folder as a `.zip`, to the device you are using. That's the way out when nothing else works. The schedule can be every hour, every day, every few days (2 to 30), every week or every month. The nightly backup of the files is the first task in the list. Its **Edit** window has the same schedule choices, a setting for how many days deleted or replaced files are kept (30 by default) and a **What to back up** list with a tick box for each folder of the Main pool. An unticked folder is not copied, and the window says what that means for restoring.
 

@@ -549,7 +549,7 @@ function drivesParts() {
   const inPool = t => t.kind === "pool" || t.kind === "boot" || t.kind === "array" || (t.kind === "other" && (t.d.role === "main" || t.d.role === "backup"));
   const top = tiles.filter(t => !inPool(t) && !isMember(t));
   out.push(zone("drives", ["main", "backup"], [
-    h("div", { class: "ph" }, h("div", { class: "pt" }, h("h2", {}, "Drives"), h("span", { class: "sub" }, "Connected but not in a pool. Drag a drive into Main or Backup, or select it for its details and buttons (a phone uses the buttons). Hold Ctrl or Shift while selecting, or use Select, to choose several.")),
+    h("div", { class: "ph" }, h("div", { class: "pt" }, cardHead("Drives", "run"), h("span", { class: "sub" }, "Connected but not in a pool. Drag a drive into Main or Backup, or select it for its details and buttons (a phone uses the buttons). Hold Ctrl or Shift while selecting, or use Select, to choose several.")),
       h("span", { class: "pill dim" }, nDrives(top.filter(t => t.kind !== "bootfree").length)),
       h("button", { class: "small" + (DRcfg ? " on" : ""), "aria-expanded": DRcfg ? "true" : "false", disabled: off, onclick: openConfig, title: "Scans the spare drives and suggests a setup for them (ZFS, RAID, SnapRAID, a pool)" }, "Configure Drives")),
     cfgBox(),
@@ -559,13 +559,10 @@ function drivesParts() {
   if ((DR.actions || {}).can_sleep === false) out.push(h("p", { class: "muted small" }, "Sleep and wake need the hdparm tool, which is not installed on this machine."));
   return out;
 }
-function drivesBody() { return [drivesParts(), upBox, bkBox]; }
+function drivesBody() { return [drivesParts()]; }
 function viewDrives() {
   drivesBox = h("div", {});
   put(drivesBox, drivesBody());
-  loadUploads();
-  loadBackups();
-  api("GET", "/api/backup/job").then(j => { if (j.running) { BKjob = j; BKwas = j.action; drawBackups(); followBackup(); } }).catch(() => {  });
   api("GET", "/api/drives/job").then(j => {
     if (j.running) {
       DRbusy = j.action; DRjob = j; followJob(); drawDrives();

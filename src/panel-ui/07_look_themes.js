@@ -127,7 +127,7 @@ function themeTile(t, now, onpick) {
   return h("button", { class: "theme", "aria-pressed": String(now === t.id), onclick: onpick || (() => chooseTheme(t)) }, shot, h("b", {}, t.name), h("span", { class: "small muted" }, t.blurb));
 }
 function themesCard() {
-  return h("div", { class: "card" }, h("h2", {}, "Themes"),
+  return h("div", { class: "card" }, cardHead("Themes", "save"),
     h("p", { class: "muted" }, "A theme changes the colors, glass and shapes of the dashboard and of this panel together, and gives every card, tile and bookmark a matching color. Choose one to preview it. Nothing is saved until “Save” is pressed."),
     h("div", { class: "themes" }, S.look.themes.map(t => themeTile(t, lookW.theme))),
     (S.mythemes || []).length ? [h("h3", {}, "Your Themes"), h("div", { class: "themes" }, S.mythemes.map(myThemeTile))] : null,
@@ -177,7 +177,7 @@ function polishCard() {
       })) : null);
   }
   draw();
-  return h("div", { class: "card" }, h("h2", {}, "Motion, Icons and Greeting"), box);
+  return h("div", { class: "card" }, cardHead("Motion, Icons and Greeting", "save"), box);
 }
 
 // Day and night: the server changes the theme at sunrise and sunset.
@@ -230,12 +230,14 @@ function scheduleCard() {
     try { await api("POST", "/api/schedule", { op: "off" }); toast("Day and night switching is off. The current theme stays."); await afterChange(false); } catch (e) { fail(e); }
   }
   draw();
-  return h("div", { class: "card" }, h("h2", {}, "Day and Night"),
+  return h("div", { class: "card" }, cardHead("Day and Night", "now"),
     h("p", { class: "muted" }, "Switch the whole dashboard to one theme by day and another at night. It changes for everyone who has the dashboard open. Names, the logo, motion and quick launch stay as they are. It has its own button and does not wait for Save."),
     box);
 }
 
 // The Look screen: colors, background, logo and names.
+let lookSec = "themes";
+try { lookSec = sessionStorage.getItem("hlp-lsec") || "themes"; } catch (e) {  }
 function viewLook() {
   if (!lookW) lookW = startLook();
   const L = lookW;
@@ -278,18 +280,19 @@ function viewLook() {
     h("div", { class: "mini-tabs" }, h("span", { class: "on" }, "Home"), h("span", {}, "Stats"), h("span", {}, "Links")),
     h("div", { class: "mini-cards" }, ["Navidrome", "Immich", "Beszel"].map(n => h("div", { class: "mini-card" }, h("b", {}, n), h("span", { class: "small muted" }, "Sample Card"), h("i", {})))));
   setTimeout(() => { lookPreview(!lookDirty()); refreshLookBar(); }, 0);
-  const previewCard =
-h("div", { class: "card" }, h("h2", {}, "Preview and Shape"),
+  const shapeCard =
+h("div", { class: "card" }, cardHead("Shape", "save"),
+  h("p", { class: "muted" }, framed ? "The dashboard around this panel changes while the sliders are moved. The small preview at the top stays in view while this page scrolls." : "The small preview at the top shows the result while this page scrolls."),
   h("div", { class: "grid cols2" },
-        h("div", {}, h("p", { class: "muted" }, framed ? "The dashboard around this panel changes while the sliders are moved, so the actual result is visible." : "A small sample of how cards and tabs look."), mock),
-        h("div", {},
-          lookSlider("How Round the Corners Are", "radius", 0, 40, 1, " px"),
-          lookSlider("Brightness of the Card Edge", "edge", 0, 60, 0.5, "%"),
-          lookSlider("Space at the Left and Right", "side", 0, 120, 2, " px"),
-          lookSlider("Darkness Over the Picture", "veil", 0, 100, 1, "%", "A dark layer between the picture and the cards that keeps the text readable. 0% shows the picture as it is."),
-          h("p", { class: "muted small" }, "The height of the music player is changed on the dashboard itself, with the small arrows button next to the shrink button on the player."))));
+    h("div", {},
+      lookSlider("How Round the Corners Are", "radius", 0, 40, 1, " px"),
+      lookSlider("Brightness of the Card Edge", "edge", 0, 60, 0.5, "%")),
+    h("div", {},
+      lookSlider("Space at the Left and Right", "side", 0, 120, 2, " px"),
+      lookSlider("Darkness Over the Picture", "veil", 0, 100, 1, "%", "A dark layer between the picture and the cards that keeps the text readable. 0% shows the picture as it is."))),
+  h("p", { class: "muted small" }, "The height of the music player is changed on the dashboard itself, with the small arrows button next to the shrink button on the player."));
   const colorsCard =
-h("div", { class: "card" }, h("h2", {}, "Colors and Glass"),
+h("div", { class: "card" }, cardHead("Colors and Glass", "save"),
       h("div", { class: "grid cols2" },
         h("div", {},
           colorField("Main Color", "accent", "The color of the active tab, bars, icons and the edge of a card you point at.", ["#8ab4ff", "#5ec8ff", "#7ee0a0", "#ffa66b", "#ff8fb5", "#c9a0ff", "#ffd36b", "#c3cad6"]),
@@ -301,20 +304,32 @@ h("div", { class: "card" }, h("h2", {}, "Colors and Glass"),
         h("div", { class: "grid cols2 tabcolors" }, tabRows)),
       h("p", { class: "muted small" }, "Further down, single cards, tiles, bookmarks and labels can be given their own colors."));
   const strengthCard =
-h("div", { class: "card" }, h("h2", {}, "Color Strength"),
+h("div", { class: "card" }, cardHead("Color Strength", "save"),
   lookSlider("How Strong the Colors Are", "paintStrength", 0, 100, 1, "%", "How strong the colors of the cards, tiles and bookmarks are. A higher value makes the color, the edge and the glow stronger."),
   lookSlider("Card Depth", "cardDepth", 0, 100, 1, "%", "A darker shade of each card's own color under the bright color. A higher value makes the text stand out more and the colors look fuller. 0% turns it off."));
+  const SECTIONS = [
+    ["themes", "Themes", [themesCard(), scheduleCard()]],
+    ["colors", "Colors", [colorsCard, strengthCard]],
+    ["shape", "Shape", [shapeCard]],
+    ["background", "Background", [backgroundCards()]],
+    ["motion", "Motion and Icons", [polishCard()]],
+    ["names", "Names and Place", [namesCard(), locationCard()]],
+    ["cards", "Card Colors", [colorOptions()]]
+  ];
+  if (!SECTIONS.some(x => x[0] === lookSec)) lookSec = "themes";
+  const panes = SECTIONS.map(([id, , kids]) => h("section", { class: "lookpane", id: "look-" + id, hidden: id !== lookSec }, kids));
+  const menu = h("nav", { class: "lookmenu", "aria-label": "Look sections" });
+  const drawMenu = () => put(menu, SECTIONS.map(([id, label]) => h("button", { class: "chip", "aria-pressed": String(id === lookSec), onclick: () => {
+    lookSec = id;
+    try { sessionStorage.setItem("hlp-lsec", id); } catch (e) {  }
+    panes.forEach((p, i) => { p.hidden = SECTIONS[i][0] !== id; });
+    drawMenu();
+    window.scrollTo(0, 0);
+  } }, label)));
+  drawMenu();
+  put(stripEl, menu, mock);
   return h("div", {},
-    themesCard(),
-    scheduleCard(),
-    polishCard(),
-    previewCard,
-    colorsCard,
-    strengthCard,
-    backgroundCards(),
-    namesCard(),
-    locationCard(),
-    colorOptions(),
+    h("p", { class: "legend muted small" }, saveTag("save"), " is shown on the dashboard as a preview and kept when Save is pressed. ", saveTag("now"), " is kept as soon as the button on its card is pressed."),
+    panes,
     lookBarEl);
 }
-

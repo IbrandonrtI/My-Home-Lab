@@ -16,6 +16,7 @@ const framed = window.parent !== window;
 })();
 let S = null;
 let view = "look";
+let stripEl = null;
 let lookW = null, bgW = null, layW = null, linkW = null, linkBase = "", schedW = null;
 const root = document.getElementById("app");
 const LOOKVIEWS = ["look"];
@@ -23,7 +24,9 @@ const BLURS = ["none", "sm", "md", "lg", "xl", "2xl", "3xl"];
 const BLUR_NAMES = { none: "None", sm: "Small", md: "Medium", lg: "Large", xl: "Extra Large", "2xl": "Huge", "3xl": "Very Huge" };
 const ONLY = new URLSearchParams(location.search).get("only");
 const VIEWS = ONLY === "links" ? [["links", "Links"]]
-  : [["look", "Look"], ["layout", "Layout"], ["cards", "Cards"], ["drives", "Drives"], ["updates", "Updates"]];
+  : [["look", "Look"], ["layout", "Layout"], ["cards", "Cards"], ["drives", "Drives"], ["upload", "Upload"], ["backups", "Backups"], ["updates", "Updates"]];
+// Screens whose buttons act at once. They have no Save and no Undo in the header.
+const NOSAVE = ["drives", "upload", "backups"];
 if (ONLY === "links") view = "links";
 
 try { const v = sessionStorage.getItem("hlp-view"); if (v && VIEWS.some(x => x[0] === v)) view = v; } catch (e) {  }
@@ -81,6 +84,16 @@ function toast(msg, bad, action) {
   toastTimer = setTimeout(() => { t.className = ""; }, bad ? 7000 : 3800);
 }
 const fail = e => toast(e.message || String(e), true);
+
+// A small label on a card: does a change there wait for the Save button, or is it kept as soon as its own button is pressed?
+const SAVE_TAGS = {
+  save: ["Needs Save", "Shown on the dashboard as a preview. It is kept only after Save (top right) is pressed."],
+  now: ["Saves Now", "Kept as soon as the button on this card is pressed. Save (top right) is not needed."],
+  run: ["Runs Now", "The buttons on this card act as soon as they are pressed. Save (top right) is not needed."]
+};
+function saveTag(kind) { const t = SAVE_TAGS[kind]; return h("span", { class: "stag " + kind, title: t[1] }, t[0]); }
+// A card heading with its label.
+function cardHead(text, kind) { return h("h2", {}, text, saveTag(kind)); }
 
 function confirmBox(title, text, yes, danger) {
   return new Promise(resolve => {
@@ -252,18 +265,23 @@ function render() {
   if (!S) return;
   try { sessionStorage.setItem("hlp-view", view); } catch (e) {  }
   if (ONLY !== "links" && location.hash.slice(1) !== view) { try { history.replaceState(null, "", "#" + view); } catch (e) {  } }
-  const fns = { look: viewLook, layout: viewLayout, cards: viewCards, drives: viewDrives, updates: viewUpdates, links: viewLinks };
+  const fns = { look: viewLook, layout: viewLayout, cards: viewCards, drives: viewDrives, upload: viewUpload, backups: viewBackups, updates: viewUpdates, links: viewLinks };
   if (ONLY === "links") { put(root, viewLinks()); applyAccent(); return; }
   footEl = h("div", { class: "hactions" });
   drawFoot(false, null, null);
   const auto = h("input", { type: "checkbox", checked: autoReload(), id: "auto", onchange: ev => { try { localStorage.setItem("hlp-auto", ev.target.checked ? "1" : "0"); } catch (e) {  } } });
+  stripEl = h("div", { class: "substrip" });
+  // On a phone the header already takes much of the screen, so the section menu scrolls with the page there.
+  const narrow = window.matchMedia("(max-width: 760px)").matches;
   put(root,
     h("div", { class: "stickytop" },
       h("header", { class: "top" },
         h("h1", {}, "Customize Your Dashboard"),
         h("nav", { class: "tabs", role: "tablist" }, VIEWS.map(([id, label]) =>
           h("button", { role: "tab", "aria-selected": String(view === id), onclick: () => { if (view !== id) { if (!(LOOKVIEWS.includes(view) && LOOKVIEWS.includes(id))) discardPreview(); view = id; render(); window.scrollTo(0, 0); } } }, label))),
-        footEl)),
+        footEl),
+      narrow ? null : stripEl),
+    narrow ? stripEl : null,
     fns[view](),
     framed ? h("p", { class: "muted small" }, h("label", { for: "auto" }, auto, " Refresh the dashboard automatically after layout, cards or links change")) : null);
   applyAccent();

@@ -35,7 +35,7 @@ function colorOptions() {
     draw();
     const bulkInp = colorInput(bulk, "One color for all in " + title, v => { bulk = v; });
     followers.push(draw, () => { if (L.paintAll) { bulk = L.paintAll; bulkInp.value = bulk; } });
-    return h("details", { class: "card", open: open }, h("summary", {}, h("b", {}, title), h("span", { class: "badge" }, String(items.length))),
+    return h("details", { class: "card", open: open }, h("summary", {}, h("b", {}, title), h("span", { class: "badge" }, String(items.length)), saveTag("save")),
       h("p", { class: "muted small" }, hint),
       h("div", { class: "row bulk" }, h("span", { class: "lab" }, "One Color for All Below:"), bulkInp,
         h("button", { class: "small", onclick: () => { for (const it of items) map[keyOf(it)] = bulk; lookChanged(); draw(); } }, "Apply"),
@@ -91,7 +91,7 @@ function colorOptions() {
   drawPaintStyle();
 
   return h("div", {},
-    h("details", { class: "card" }, h("summary", {}, h("b", {}, "Colors of Cards, Tiles and Bookmarks"), h("span", { class: "muted small" }, "Advanced: a theme already sets these")),
+    h("details", { class: "card" }, h("summary", {}, h("b", {}, "Colors of Cards, Tiles and Bookmarks"), saveTag("save"), h("span", { class: "muted small" }, "Advanced: a theme already sets these")),
       h("p", { class: "muted" }, "Set a color for single service cards, the calendar, the tiles of the Stats tab and the bookmarks of the Links tab: a tint, a colored edge and a soft glow. It works best with Transparent glass (set under Colors and Glass)."),
       h("p", { class: "muted small" }, "To see a color on the dashboard, open the tab that has it (Home, Stats or Links). The preview stays there. Return here and press Save to keep it."),
       h("div", { class: "field" }, h("div", { class: "lab" }, "Color Style"), styleChips,
@@ -101,7 +101,7 @@ function colorOptions() {
     section("Stats Tiles", "The tiles of the Stats tab.", P.stats, L.cards, it => it.id, it => it.group, false),
     section("Calendar", "The calendar and the list of coming events.", P.calendar, L.cards, it => it.id, it => it.group, false),
     section("Bookmarks", "The bookmarks of the Links tab.", P.links, L.links, it => it.name, it => it.group, false),
-    h("details", { class: "card" }, h("summary", {}, h("b", {}, "Labels"), h("span", { class: "badge" }, String(P.labels.length))),
+    h("details", { class: "card" }, h("summary", {}, h("b", {}, "Labels"), h("span", { class: "badge" }, String(P.labels.length)), saveTag("save")),
       h("p", { class: "muted small" }, "The names above each row of cards, such as Media & Entertainment. Choose a color for the text and for the small icon next to it."),
       h("div", { class: "row bulk" }, h("span", { class: "lab" }, "One Color for All Labels:"),
         h("span", { class: "lpart" }, h("span", { class: "small muted" }, "Text"), colorInput(bulkText, "Text color for all labels", v => { bulkText = v; })),
@@ -151,13 +151,13 @@ function backgroundCards() {
     } catch (e) { fail(e); }
   }
   return h("div", { class: "grid cols2" },
-    h("div", { class: "card" }, h("h2", {}, "Background Picture"), pic,
+    h("div", { class: "card" }, cardHead("Background Picture", "save"), pic,
       h("div", { class: "row", style: { marginTop: "12px" } }, file, h("button", { class: "primary", onclick: () => file.click() }, "Upload a Picture…")),
       h("p", { class: "hint muted small" }, "JPG, PNG, WebP, GIF or AVIF, up to 14 MB. After a new picture the dashboard restarts for about 10 seconds."),
       b.mounted === false ? h("p", { class: "small", style: { color: "var(--bad)" } }, "The dashboard cannot see its pictures folder yet, so an uploaded picture will not show. Run: sudo homelab-setup upgrade") : null,
       h("div", { class: "field", style: { marginTop: "12px" } }, h("label", {}, "Or Use a Picture from the Web"), h("div", { class: "row" }, h("div", { class: "grow" }, url),
         h("button", { onclick: () => { const v = url.value.trim(); if (!/^https?:\/\/\S+$/.test(v)) return toast("Type a web address that starts with http:// or https:// first.", true); B.url = v; B.theme = ""; drawPic(); preview(); toast("Press Save to keep it."); } }, "Use This Address")))),
-    h("div", { class: "card" }, h("h2", {}, "How the Background Looks Behind the Cards"),
+    h("div", { class: "card" }, cardHead("How the Background Looks Behind the Cards", "save"),
       h("div", { class: "field" }, h("div", { class: "slider" }, h("span", { class: "lab" }, "Picture Blur"), blurVal,
         h("input", { type: "range", min: 0, max: 6, step: 1, value: BLURS.indexOf(B.blur) < 0 ? 2 : BLURS.indexOf(B.blur), "aria-label": "Picture Blur",
           oninput: ev => { B.blur = BLURS[Number(ev.target.value)]; blurVal.textContent = BLUR_NAMES[B.blur] || B.blur; preview(); } })), h("div", { class: "hint" }, "None keeps the picture sharp. Very Huge makes it very soft.")),
@@ -264,7 +264,7 @@ function viewLayout() {
   const board = h("div", { class: "grid" }, T.map(tabCol));
   setTimeout(refreshBar, 0);
   return h("div", {},
-    h("div", { class: "card" }, h("h2", {}, "Tabs and Groups"),
+    h("div", { class: "card" }, cardHead("Tabs and Groups", "save"),
       h("p", { class: "muted" }, "Each box is a tab of the dashboard. Drag a group by its handle to change the order, or drag a tab by the handle in its title. Choose another tab to move a group there, and choose how its cards are laid out. “Cards in a row” places the cards side by side."),
       h("div", { class: "row", style: { marginBottom: "12px" } }, h("button", { onclick: async () => {
         const n = (await askText("Add a tab", "Name of the new tab", "")) || "";
@@ -507,7 +507,7 @@ function viewItems(kind) {
 
   return h("div", {},
     barEl,
-    h("div", { class: "card" }, h("h2", {}, isCards ? "Cards on the Dashboard" : "Links (Bookmarks)"),
+    h("div", { class: "card" }, cardHead(isCards ? "Cards on the Dashboard" : "Links (Bookmarks)", isCards ? "now" : "save"),
       h("p", { class: "muted" }, isCards ? "The cards of the Home tab. Add cards for any web page, change a name or text, or remove cards. Drag a card by its handle to change the order, or drop it on another group to move it."
         : "The bookmarks of the Links tab, in groups. Add your own sites with icons. Drag a link by its handle to change the order, or drop it on another group to move it. Nothing changes on the dashboard until you press Save."),
       h("div", { class: "row" }, h("button", { class: "primary", onclick: () => editor(groups[0] || null, null) }, "+ Add a " + (word === "card" ? "Card" : "Link")),

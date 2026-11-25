@@ -61,7 +61,7 @@ function updBar(job) {
 function drawUpdates() {
   const busy = !!(UPDjob && UPDjob.running);
   const body = [h("div", { class: "ph" },
-    h("div", { class: "pt" }, h("h2", {}, "Updates"), h("span", { class: "sub" }, "What is waiting to be updated. The bell on the dashboard shows the same things.")),
+    h("div", { class: "pt" }, cardHead("Updates", "run"), h("span", { class: "sub" }, "What is waiting to be updated. The bell on the dashboard shows the same things.")),
     h("button", { class: "small", disabled: busy, onclick: () => loadUpdates(true) }, "Refresh"))];
   if (UPDerr) body.push(h("p", { class: "badtext", role: "alert" }, UPDerr), h("button", { class: "small", onclick: loadUpdates }, "Try Again"));
   else if (!UPD) body.push(h("p", { class: "muted" }, "Looking at the updates..."));
@@ -238,7 +238,7 @@ function upSongBox() {
 function upQuote(t) { return /^[A-Za-z0-9_\/.@%+=:,-]+$/.test(t) ? t : "'" + t.replace(/'/g, "'\\''") + "'"; }
 
 function drawUploads() {
-  const body = [h("div", { class: "ph" }, h("div", { class: "pt" }, h("h2", {}, "Upload"), h("span", { class: "sub" }, "Send photos and videos to Immich, and songs to the music folder, from this device. Keep this page open while files are being sent.")),
+  const body = [h("div", { class: "ph" }, h("div", { class: "pt" }, cardHead("Upload", "run"), h("span", { class: "sub" }, "Send photos and videos to Immich, and songs to the music folder, from this device. Keep this page open while files are being sent.")),
     h("button", { class: "small", disabled: upBusy(), onclick: loadUploads }, "Refresh"))];
   if (UPerr) body.push(h("p", { class: "badtext", role: "alert" }, UPerr), h("button", { class: "small", onclick: loadUploads }, "Try Again"));
   else if (!UP) body.push(h("p", { class: "muted" }, "Looking at Immich and the music folder..."));
@@ -299,3 +299,14 @@ async function bkStart(action, body) {
 }
 function bkBusy() { return !!(BKjob && BKjob.running) || !!(BK && BK.running) || !!DRbusy; }
 
+
+// Upload and Backups have a tab of their own.
+function viewUpload() {
+  loadUploads();
+  return h("div", {}, upBox);
+}
+function viewBackups() {
+  loadBackups();
+  api("GET", "/api/backup/job").then(j => { if (j.running) { BKjob = j; BKwas = j.action; drawBackups(); followBackup(); } }).catch(() => {  });
+  return h("div", {}, bkBox);
+}

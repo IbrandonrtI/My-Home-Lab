@@ -10,8 +10,8 @@ function drawFoot(dirty, onSave, onRevert, extra) {
     onSave ? h("div", { class: "state" + (dirty ? " dirty" : ""), title: dirty ? "There are unsaved changes." : "Everything shown is saved." }, dirty ? "Unsaved Changes" : "Saved") : null,
     onRevert ? h("button", { disabled: !dirty, onclick: onRevert }, "Discard Changes") : null,
     extra || null,
-    view === "drives" ? null : h("button", { disabled: !S.undo, onclick: doUndo, title: S.undo ? "Undo: " + S.undo : "Nothing to undo" }, "Undo"),
-    view === "drives" ? null : saveButton(!onSave || !dirty, onSave || (() => {})),
+    NOSAVE.includes(view) ? null : h("button", { disabled: !S.undo, onclick: doUndo, title: S.undo ? "Undo: " + S.undo : "Nothing to undo" }, "Undo"),
+    NOSAVE.includes(view) ? null : saveButton(!onSave || !dirty, onSave || (() => {})),
     framed ? h("a", { class: "btn", href: location.href, target: "_blank", rel: "noopener" }, "Open in New Tab") : null,
     h("button", { class: "ghost", onclick: async () => { try { await api("POST", "/api/logout", {}); } catch (e) {  } S = null; showLogin(); } }, "Log Out"));
 }
@@ -131,7 +131,6 @@ function drawDrives() {
   if (!(drivesBox && drivesBox.isConnected)) return;
   if (DRdrag) { DRdrawLater = true; return; }
   put(drivesBox, drivesBody());
-  drawBackups();
   refreshCard();
 }
 

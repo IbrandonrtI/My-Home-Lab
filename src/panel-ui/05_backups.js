@@ -41,7 +41,7 @@ function bkTask(t) {
 function drawBackups() {
   const off = bkBusy();
   const body = [h("div", { class: "ph" },
-    h("div", { class: "pt" }, h("h2", {}, "Backups"), h("span", { class: "sub" }, "Copy a folder to a drive, another computer or the cloud on a schedule. Every run keeps a version that can be restored.")),
+    h("div", { class: "pt" }, cardHead("Backups", "now"), h("span", { class: "sub" }, "Copy a folder to a drive, another computer or the cloud on a schedule. Every run keeps a version that can be restored.")),
     h("button", { class: "small", onclick: loadBackups }, "Refresh"),
     h("button", { class: "small primary", disabled: !BK || off, onclick: () => bkEdit(null) }, "New Backup Task"))];
   if (BKerr) body.push(h("p", { class: "badtext", role: "alert" }, BKerr), h("button", { class: "small", onclick: loadBackups }, "Try Again"));

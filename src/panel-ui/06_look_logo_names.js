@@ -236,7 +236,7 @@ function namesCard() {
       ] : h("p", { class: "muted small" }, "There is no logo yet. Open “Choose a Logo” below to pick one."));
   }
   refresh();
-  return h("details", { class: "card" }, h("summary", {}, h("b", {}, "Names and Logo"), h("span", { class: "muted small" }, "Name the server and drives, add a logo")),
+  return h("details", { class: "card" }, h("summary", {}, h("b", {}, "Names and Logo"), saveTag("save"), h("span", { class: "muted small" }, "Name the server and drives, add a logo")),
     h("p", { class: "muted" }, "Set custom names for the server and the two drives, and show a logo at the top left of the dashboard. Nothing is saved until “Save” is pressed."),
     h("div", { class: "grid cols2" },
       h("div", {}, inputs.map(x => x[2]),
@@ -280,7 +280,7 @@ function locationCard() {
     } catch (e) { fail(e); }
   }
   refreshBtn();
-  return h("details", { class: "card" }, h("summary", {}, h("b", {}, "Time Zone and City"), h("span", { class: "muted small" }, "The dashboard clock and the weather card")),
+  return h("details", { class: "card" }, h("summary", {}, h("b", {}, "Time Zone and City"), saveTag("now"), h("span", { class: "muted small" }, "The dashboard clock and the weather card")),
     h("p", { class: "muted" }, "The installer detected these from the internet connection. Change them here if they are wrong. This changes only the dashboard's clock and its weather card."),
     h("div", { class: "grid cols2" },
       h("div", { class: "field" }, h("div", { class: "lab" }, "Time Zone"), zone, zoneList, h("div", { class: "hint" }, "Start typing a region or city, for example America/Chicago or Europe/London, and choose one from the list.")),

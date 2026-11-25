@@ -449,3 +449,31 @@ dialog.fmove .fm-table .num { text-align: right; white-space: nowrap; }
 dialog.fmove .fm-table tr:last-child td { border-bottom: 0; }
 dialog.fmove .fm-table tr.here td { opacity: 0.6; }
 dialog.fmove .fm-table input[type="checkbox"] { width: 18px; height: 18px; }
+
+/* The Look screen: a section menu and a small preview that stay in view while the page scrolls. */
+[hidden] { display: none !important; }
+.substrip { display: flex; align-items: center; gap: 10px 16px; padding-bottom: 8px; border-bottom: 1px solid var(--line); margin-bottom: 12px; }
+.substrip:empty { display: none; }
+.lookmenu { flex: 1 1 auto; min-width: 0; display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
+.lookmenu .chip { min-height: 36px; padding: 4px 12px; white-space: nowrap; font-size: 14px; }
+.substrip #mock { min-height: 0; }
+.substrip .preview { flex: none; display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-radius: 12px; }
+.substrip .preview .mini-tabs { margin: 0; flex-wrap: nowrap; }
+.substrip .preview .mini-tabs span { padding: 2px 9px; font-size: 12px; }
+.substrip .preview .mini-cards { display: flex; gap: 6px; }
+.substrip .preview .mini-card { padding: 5px 9px; min-width: 64px; }
+.substrip .preview .mini-card b { font-size: 12px; }
+.substrip .preview .mini-card span { display: none; }
+.substrip .preview .mini-card i { margin-top: 4px; height: 3px; }
+.legend { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 6px; margin: 0 0 12px; }
+.stag { display: inline-block; margin-left: 10px; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; vertical-align: middle; border: 1px solid var(--line); white-space: nowrap; }
+.legend .stag { margin-left: 0; }
+.stag { color: inherit; }
+.stag.save { border-color: rgba(var(--accent), 0.85); background: rgba(var(--accent), 0.18); }
+.stag.now { border-color: rgba(70, 190, 120, 0.9); background: rgba(70, 190, 120, 0.2); }
+.stag.run { opacity: 0.8; }
+details.card > summary .stag { margin-left: 0; }
+@media (max-width: 760px) {
+  .substrip { flex-wrap: wrap; }
+  .substrip .preview { display: none; }
+}

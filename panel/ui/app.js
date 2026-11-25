@@ -16,6 +16,7 @@ const framed = window.parent !== window;
 })();
 let S = null;
 let view = "look";
+let stripEl = null;
 let lookW = null, bgW = null, layW = null, linkW = null, linkBase = "", schedW = null;
 const root = document.getElementById("app");
 const LOOKVIEWS = ["look"];
@@ -23,7 +24,9 @@ const BLURS = ["none", "sm", "md", "lg", "xl", "2xl", "3xl"];
 const BLUR_NAMES = { none: "None", sm: "Small", md: "Medium", lg: "Large", xl: "Extra Large", "2xl": "Huge", "3xl": "Very Huge" };
 const ONLY = new URLSearchParams(location.search).get("only");
 const VIEWS = ONLY === "links" ? [["links", "Links"]]
-  : [["look", "Look"], ["layout", "Layout"], ["cards", "Cards"], ["drives", "Drives"], ["updates", "Updates"]];
+  : [["look", "Look"], ["layout", "Layout"], ["cards", "Cards"], ["drives", "Drives"], ["upload", "Upload"], ["backups", "Backups"], ["updates", "Updates"]];
+// Screens whose buttons act at once. They have no Save and no Undo in the header.
+const NOSAVE = ["drives", "upload", "backups"];
 if (ONLY === "links") view = "links";
 
 try { const v = sessionStorage.getItem("hlp-view"); if (v && VIEWS.some(x => x[0] === v)) view = v; } catch (e) {  }
@@ -81,6 +84,16 @@ function toast(msg, bad, action) {
   toastTimer = setTimeout(() => { t.className = ""; }, bad ? 7000 : 3800);
 }
 const fail = e => toast(e.message || String(e), true);
+
+// A small label on a card: does a change there wait for the Save button, or is it kept as soon as its own button is pressed?
+const SAVE_TAGS = {
+  save: ["Needs Save", "Shown on the dashboard as a preview. It is kept only after Save (top right) is pressed."],
+  now: ["Saves Now", "Kept as soon as the button on this card is pressed. Save (top right) is not needed."],
+  run: ["Runs Now", "The buttons on this card act as soon as they are pressed. Save (top right) is not needed."]
+};
+function saveTag(kind) { const t = SAVE_TAGS[kind]; return h("span", { class: "stag " + kind, title: t[1] }, t[0]); }
+// A card heading with its label.
+function cardHead(text, kind) { return h("h2", {}, text, saveTag(kind)); }
 
 function confirmBox(title, text, yes, danger) {
   return new Promise(resolve => {
@@ -252,18 +265,23 @@ function render() {
   if (!S) return;
   try { sessionStorage.setItem("hlp-view", view); } catch (e) {  }
   if (ONLY !== "links" && location.hash.slice(1) !== view) { try { history.replaceState(null, "", "#" + view); } catch (e) {  } }
-  const fns = { look: viewLook, layout: viewLayout, cards: viewCards, drives: viewDrives, updates: viewUpdates, links: viewLinks };
+  const fns = { look: viewLook, layout: viewLayout, cards: viewCards, drives: viewDrives, upload: viewUpload, backups: viewBackups, updates: viewUpdates, links: viewLinks };
   if (ONLY === "links") { put(root, viewLinks()); applyAccent(); return; }
   footEl = h("div", { class: "hactions" });
   drawFoot(false, null, null);
   const auto = h("input", { type: "checkbox", checked: autoReload(), id: "auto", onchange: ev => { try { localStorage.setItem("hlp-auto", ev.target.checked ? "1" : "0"); } catch (e) {  } } });
+  stripEl = h("div", { class: "substrip" });
+  // On a phone the header already takes much of the screen, so the section menu scrolls with the page there.
+  const narrow = window.matchMedia("(max-width: 760px)").matches;
   put(root,
     h("div", { class: "stickytop" },
       h("header", { class: "top" },
         h("h1", {}, "Customize Your Dashboard"),
         h("nav", { class: "tabs", role: "tablist" }, VIEWS.map(([id, label]) =>
           h("button", { role: "tab", "aria-selected": String(view === id), onclick: () => { if (view !== id) { if (!(LOOKVIEWS.includes(view) && LOOKVIEWS.includes(id))) discardPreview(); view = id; render(); window.scrollTo(0, 0); } } }, label))),
-        footEl)),
+        footEl),
+      narrow ? null : stripEl),
+    narrow ? stripEl : null,
     fns[view](),
     framed ? h("p", { class: "muted small" }, h("label", { for: "auto" }, auto, " Refresh the dashboard automatically after layout, cards or links change")) : null);
   applyAccent();
@@ -323,8 +341,8 @@ function drawFoot(dirty, onSave, onRevert, extra) {
     onSave ? h("div", { class: "state" + (dirty ? " dirty" : ""), title: dirty ? "There are unsaved changes." : "Everything shown is saved." }, dirty ? "Unsaved Changes" : "Saved") : null,
     onRevert ? h("button", { disabled: !dirty, onclick: onRevert }, "Discard Changes") : null,
     extra || null,
-    view === "drives" ? null : h("button", { disabled: !S.undo, onclick: doUndo, title: S.undo ? "Undo: " + S.undo : "Nothing to undo" }, "Undo"),
-    view === "drives" ? null : saveButton(!onSave || !dirty, onSave || (() => {})),
+    NOSAVE.includes(view) ? null : h("button", { disabled: !S.undo, onclick: doUndo, title: S.undo ? "Undo: " + S.undo : "Nothing to undo" }, "Undo"),
+    NOSAVE.includes(view) ? null : saveButton(!onSave || !dirty, onSave || (() => {})),
     framed ? h("a", { class: "btn", href: location.href, target: "_blank", rel: "noopener" }, "Open in New Tab") : null,
     h("button", { class: "ghost", onclick: async () => { try { await api("POST", "/api/logout", {}); } catch (e) {  } S = null; showLogin(); } }, "Log Out"));
 }
@@ -444,7 +462,6 @@ function drawDrives() {
   if (!(drivesBox && drivesBox.isConnected)) return;
   if (DRdrag) { DRdrawLater = true; return; }
   put(drivesBox, drivesBody());
-  drawBackups();
   refreshCard();
 }
 
@@ -1296,7 +1313,7 @@ function drivesParts() {
   const inPool = t => t.kind === "pool" || t.kind === "boot" || t.kind === "array" || (t.kind === "other" && (t.d.role === "main" || t.d.role === "backup"));
   const top = tiles.filter(t => !inPool(t) && !isMember(t));
   out.push(zone("drives", ["main", "backup"], [
-    h("div", { class: "ph" }, h("div", { class: "pt" }, h("h2", {}, "Drives"), h("span", { class: "sub" }, "Connected but not in a pool. Drag a drive into Main or Backup, or select it for its details and buttons (a phone uses the buttons). Hold Ctrl or Shift while selecting, or use Select, to choose several.")),
+    h("div", { class: "ph" }, h("div", { class: "pt" }, cardHead("Drives", "run"), h("span", { class: "sub" }, "Connected but not in a pool. Drag a drive into Main or Backup, or select it for its details and buttons (a phone uses the buttons). Hold Ctrl or Shift while selecting, or use Select, to choose several.")),
       h("span", { class: "pill dim" }, nDrives(top.filter(t => t.kind !== "bootfree").length)),
       h("button", { class: "small" + (DRcfg ? " on" : ""), "aria-expanded": DRcfg ? "true" : "false", disabled: off, onclick: openConfig, title: "Scans the spare drives and suggests a setup for them (ZFS, RAID, SnapRAID, a pool)" }, "Configure Drives")),
     cfgBox(),
@@ -1306,13 +1323,10 @@ function drivesParts() {
   if ((DR.actions || {}).can_sleep === false) out.push(h("p", { class: "muted small" }, "Sleep and wake need the hdparm tool, which is not installed on this machine."));
   return out;
 }
-function drivesBody() { return [drivesParts(), upBox, bkBox]; }
+function drivesBody() { return [drivesParts()]; }
 function viewDrives() {
   drivesBox = h("div", {});
   put(drivesBox, drivesBody());
-  loadUploads();
-  loadBackups();
-  api("GET", "/api/backup/job").then(j => { if (j.running) { BKjob = j; BKwas = j.action; drawBackups(); followBackup(); } }).catch(() => {  });
   api("GET", "/api/drives/job").then(j => {
     if (j.running) {
       DRbusy = j.action; DRjob = j; followJob(); drawDrives();
@@ -1385,7 +1399,7 @@ function updBar(job) {
 function drawUpdates() {
   const busy = !!(UPDjob && UPDjob.running);
   const body = [h("div", { class: "ph" },
-    h("div", { class: "pt" }, h("h2", {}, "Updates"), h("span", { class: "sub" }, "What is waiting to be updated. The bell on the dashboard shows the same things.")),
+    h("div", { class: "pt" }, cardHead("Updates", "run"), h("span", { class: "sub" }, "What is waiting to be updated. The bell on the dashboard shows the same things.")),
     h("button", { class: "small", disabled: busy, onclick: () => loadUpdates(true) }, "Refresh"))];
   if (UPDerr) body.push(h("p", { class: "badtext", role: "alert" }, UPDerr), h("button", { class: "small", onclick: loadUpdates }, "Try Again"));
   else if (!UPD) body.push(h("p", { class: "muted" }, "Looking at the updates..."));
@@ -1562,7 +1576,7 @@ function upSongBox() {
 function upQuote(t) { return /^[A-Za-z0-9_\/.@%+=:,-]+$/.test(t) ? t : "'" + t.replace(/'/g, "'\\''") + "'"; }
 
 function drawUploads() {
-  const body = [h("div", { class: "ph" }, h("div", { class: "pt" }, h("h2", {}, "Upload"), h("span", { class: "sub" }, "Send photos and videos to Immich, and songs to the music folder, from this device. Keep this page open while files are being sent.")),
+  const body = [h("div", { class: "ph" }, h("div", { class: "pt" }, cardHead("Upload", "run"), h("span", { class: "sub" }, "Send photos and videos to Immich, and songs to the music folder, from this device. Keep this page open while files are being sent.")),
     h("button", { class: "small", disabled: upBusy(), onclick: loadUploads }, "Refresh"))];
   if (UPerr) body.push(h("p", { class: "badtext", role: "alert" }, UPerr), h("button", { class: "small", onclick: loadUploads }, "Try Again"));
   else if (!UP) body.push(h("p", { class: "muted" }, "Looking at Immich and the music folder..."));
@@ -1623,6 +1637,17 @@ async function bkStart(action, body) {
 }
 function bkBusy() { return !!(BKjob && BKjob.running) || !!(BK && BK.running) || !!DRbusy; }
 
+
+// Upload and Backups have a tab of their own.
+function viewUpload() {
+  loadUploads();
+  return h("div", {}, upBox);
+}
+function viewBackups() {
+  loadBackups();
+  api("GET", "/api/backup/job").then(j => { if (j.running) { BKjob = j; BKwas = j.action; drawBackups(); followBackup(); } }).catch(() => {  });
+  return h("div", {}, bkBox);
+}
 function bkStatus(t) {
   const mine = BKjob && BKjob.running && BKjob.task === t.id;
   if (mine) return h("span", { class: "pill warn" }, BK_WORKING[BKjob.action] || "Working...");
@@ -1666,7 +1691,7 @@ function bkTask(t) {
 function drawBackups() {
   const off = bkBusy();
   const body = [h("div", { class: "ph" },
-    h("div", { class: "pt" }, h("h2", {}, "Backups"), h("span", { class: "sub" }, "Copy a folder to a drive, another computer or the cloud on a schedule. Every run keeps a version that can be restored.")),
+    h("div", { class: "pt" }, cardHead("Backups", "now"), h("span", { class: "sub" }, "Copy a folder to a drive, another computer or the cloud on a schedule. Every run keeps a version that can be restored.")),
     h("button", { class: "small", onclick: loadBackups }, "Refresh"),
     h("button", { class: "small primary", disabled: !BK || off, onclick: () => bkEdit(null) }, "New Backup Task"))];
   if (BKerr) body.push(h("p", { class: "badtext", role: "alert" }, BKerr), h("button", { class: "small", onclick: loadBackups }, "Try Again"));
@@ -2174,7 +2199,7 @@ function namesCard() {
       ] : h("p", { class: "muted small" }, "There is no logo yet. Open “Choose a Logo” below to pick one."));
   }
   refresh();
-  return h("details", { class: "card" }, h("summary", {}, h("b", {}, "Names and Logo"), h("span", { class: "muted small" }, "Name the server and drives, add a logo")),
+  return h("details", { class: "card" }, h("summary", {}, h("b", {}, "Names and Logo"), saveTag("save"), h("span", { class: "muted small" }, "Name the server and drives, add a logo")),
     h("p", { class: "muted" }, "Set custom names for the server and the two drives, and show a logo at the top left of the dashboard. Nothing is saved until “Save” is pressed."),
     h("div", { class: "grid cols2" },
       h("div", {}, inputs.map(x => x[2]),
@@ -2218,7 +2243,7 @@ function locationCard() {
     } catch (e) { fail(e); }
   }
   refreshBtn();
-  return h("details", { class: "card" }, h("summary", {}, h("b", {}, "Time Zone and City"), h("span", { class: "muted small" }, "The dashboard clock and the weather card")),
+  return h("details", { class: "card" }, h("summary", {}, h("b", {}, "Time Zone and City"), saveTag("now"), h("span", { class: "muted small" }, "The dashboard clock and the weather card")),
     h("p", { class: "muted" }, "The installer detected these from the internet connection. Change them here if they are wrong. This changes only the dashboard's clock and its weather card."),
     h("div", { class: "grid cols2" },
       h("div", { class: "field" }, h("div", { class: "lab" }, "Time Zone"), zone, zoneList, h("div", { class: "hint" }, "Start typing a region or city, for example America/Chicago or Europe/London, and choose one from the list.")),
@@ -2356,7 +2381,7 @@ function themeTile(t, now, onpick) {
   return h("button", { class: "theme", "aria-pressed": String(now === t.id), onclick: onpick || (() => chooseTheme(t)) }, shot, h("b", {}, t.name), h("span", { class: "small muted" }, t.blurb));
 }
 function themesCard() {
-  return h("div", { class: "card" }, h("h2", {}, "Themes"),
+  return h("div", { class: "card" }, cardHead("Themes", "save"),
     h("p", { class: "muted" }, "A theme changes the colors, glass and shapes of the dashboard and of this panel together, and gives every card, tile and bookmark a matching color. Choose one to preview it. Nothing is saved until “Save” is pressed."),
     h("div", { class: "themes" }, S.look.themes.map(t => themeTile(t, lookW.theme))),
     (S.mythemes || []).length ? [h("h3", {}, "Your Themes"), h("div", { class: "themes" }, S.mythemes.map(myThemeTile))] : null,
@@ -2406,7 +2431,7 @@ function polishCard() {
       })) : null);
   }
   draw();
-  return h("div", { class: "card" }, h("h2", {}, "Motion, Icons and Greeting"), box);
+  return h("div", { class: "card" }, cardHead("Motion, Icons and Greeting", "save"), box);
 }
 
 // Day and night: the server changes the theme at sunrise and sunset.
@@ -2459,12 +2484,14 @@ function scheduleCard() {
     try { await api("POST", "/api/schedule", { op: "off" }); toast("Day and night switching is off. The current theme stays."); await afterChange(false); } catch (e) { fail(e); }
   }
   draw();
-  return h("div", { class: "card" }, h("h2", {}, "Day and Night"),
+  return h("div", { class: "card" }, cardHead("Day and Night", "now"),
     h("p", { class: "muted" }, "Switch the whole dashboard to one theme by day and another at night. It changes for everyone who has the dashboard open. Names, the logo, motion and quick launch stay as they are. It has its own button and does not wait for Save."),
     box);
 }
 
 // The Look screen: colors, background, logo and names.
+let lookSec = "themes";
+try { lookSec = sessionStorage.getItem("hlp-lsec") || "themes"; } catch (e) {  }
 function viewLook() {
   if (!lookW) lookW = startLook();
   const L = lookW;
@@ -2507,18 +2534,19 @@ function viewLook() {
     h("div", { class: "mini-tabs" }, h("span", { class: "on" }, "Home"), h("span", {}, "Stats"), h("span", {}, "Links")),
     h("div", { class: "mini-cards" }, ["Navidrome", "Immich", "Beszel"].map(n => h("div", { class: "mini-card" }, h("b", {}, n), h("span", { class: "small muted" }, "Sample Card"), h("i", {})))));
   setTimeout(() => { lookPreview(!lookDirty()); refreshLookBar(); }, 0);
-  const previewCard =
-h("div", { class: "card" }, h("h2", {}, "Preview and Shape"),
+  const shapeCard =
+h("div", { class: "card" }, cardHead("Shape", "save"),
+  h("p", { class: "muted" }, framed ? "The dashboard around this panel changes while the sliders are moved. The small preview at the top stays in view while this page scrolls." : "The small preview at the top shows the result while this page scrolls."),
   h("div", { class: "grid cols2" },
-        h("div", {}, h("p", { class: "muted" }, framed ? "The dashboard around this panel changes while the sliders are moved, so the actual result is visible." : "A small sample of how cards and tabs look."), mock),
-        h("div", {},
-          lookSlider("How Round the Corners Are", "radius", 0, 40, 1, " px"),
-          lookSlider("Brightness of the Card Edge", "edge", 0, 60, 0.5, "%"),
-          lookSlider("Space at the Left and Right", "side", 0, 120, 2, " px"),
-          lookSlider("Darkness Over the Picture", "veil", 0, 100, 1, "%", "A dark layer between the picture and the cards that keeps the text readable. 0% shows the picture as it is."),
-          h("p", { class: "muted small" }, "The height of the music player is changed on the dashboard itself, with the small arrows button next to the shrink button on the player."))));
+    h("div", {},
+      lookSlider("How Round the Corners Are", "radius", 0, 40, 1, " px"),
+      lookSlider("Brightness of the Card Edge", "edge", 0, 60, 0.5, "%")),
+    h("div", {},
+      lookSlider("Space at the Left and Right", "side", 0, 120, 2, " px"),
+      lookSlider("Darkness Over the Picture", "veil", 0, 100, 1, "%", "A dark layer between the picture and the cards that keeps the text readable. 0% shows the picture as it is."))),
+  h("p", { class: "muted small" }, "The height of the music player is changed on the dashboard itself, with the small arrows button next to the shrink button on the player."));
   const colorsCard =
-h("div", { class: "card" }, h("h2", {}, "Colors and Glass"),
+h("div", { class: "card" }, cardHead("Colors and Glass", "save"),
       h("div", { class: "grid cols2" },
         h("div", {},
           colorField("Main Color", "accent", "The color of the active tab, bars, icons and the edge of a card you point at.", ["#8ab4ff", "#5ec8ff", "#7ee0a0", "#ffa66b", "#ff8fb5", "#c9a0ff", "#ffd36b", "#c3cad6"]),
@@ -2530,23 +2558,35 @@ h("div", { class: "card" }, h("h2", {}, "Colors and Glass"),
         h("div", { class: "grid cols2 tabcolors" }, tabRows)),
       h("p", { class: "muted small" }, "Further down, single cards, tiles, bookmarks and labels can be given their own colors."));
   const strengthCard =
-h("div", { class: "card" }, h("h2", {}, "Color Strength"),
+h("div", { class: "card" }, cardHead("Color Strength", "save"),
   lookSlider("How Strong the Colors Are", "paintStrength", 0, 100, 1, "%", "How strong the colors of the cards, tiles and bookmarks are. A higher value makes the color, the edge and the glow stronger."),
   lookSlider("Card Depth", "cardDepth", 0, 100, 1, "%", "A darker shade of each card's own color under the bright color. A higher value makes the text stand out more and the colors look fuller. 0% turns it off."));
+  const SECTIONS = [
+    ["themes", "Themes", [themesCard(), scheduleCard()]],
+    ["colors", "Colors", [colorsCard, strengthCard]],
+    ["shape", "Shape", [shapeCard]],
+    ["background", "Background", [backgroundCards()]],
+    ["motion", "Motion and Icons", [polishCard()]],
+    ["names", "Names and Place", [namesCard(), locationCard()]],
+    ["cards", "Card Colors", [colorOptions()]]
+  ];
+  if (!SECTIONS.some(x => x[0] === lookSec)) lookSec = "themes";
+  const panes = SECTIONS.map(([id, , kids]) => h("section", { class: "lookpane", id: "look-" + id, hidden: id !== lookSec }, kids));
+  const menu = h("nav", { class: "lookmenu", "aria-label": "Look sections" });
+  const drawMenu = () => put(menu, SECTIONS.map(([id, label]) => h("button", { class: "chip", "aria-pressed": String(id === lookSec), onclick: () => {
+    lookSec = id;
+    try { sessionStorage.setItem("hlp-lsec", id); } catch (e) {  }
+    panes.forEach((p, i) => { p.hidden = SECTIONS[i][0] !== id; });
+    drawMenu();
+    window.scrollTo(0, 0);
+  } }, label)));
+  drawMenu();
+  put(stripEl, menu, mock);
   return h("div", {},
-    themesCard(),
-    scheduleCard(),
-    polishCard(),
-    previewCard,
-    colorsCard,
-    strengthCard,
-    backgroundCards(),
-    namesCard(),
-    locationCard(),
-    colorOptions(),
+    h("p", { class: "legend muted small" }, saveTag("save"), " is shown on the dashboard as a preview and kept when Save is pressed. ", saveTag("now"), " is kept as soon as the button on its card is pressed."),
+    panes,
     lookBarEl);
 }
-
 function labelIconSample(style) {
   return h("span", { class: "lis lis-" + style }, h("img", { src: iconInfo("mdi-movie-open").url, class: "mdi", alt: "" }));
 }
@@ -2584,7 +2624,7 @@ function colorOptions() {
     draw();
     const bulkInp = colorInput(bulk, "One color for all in " + title, v => { bulk = v; });
     followers.push(draw, () => { if (L.paintAll) { bulk = L.paintAll; bulkInp.value = bulk; } });
-    return h("details", { class: "card", open: open }, h("summary", {}, h("b", {}, title), h("span", { class: "badge" }, String(items.length))),
+    return h("details", { class: "card", open: open }, h("summary", {}, h("b", {}, title), h("span", { class: "badge" }, String(items.length)), saveTag("save")),
       h("p", { class: "muted small" }, hint),
       h("div", { class: "row bulk" }, h("span", { class: "lab" }, "One Color for All Below:"), bulkInp,
         h("button", { class: "small", onclick: () => { for (const it of items) map[keyOf(it)] = bulk; lookChanged(); draw(); } }, "Apply"),
@@ -2640,7 +2680,7 @@ function colorOptions() {
   drawPaintStyle();
 
   return h("div", {},
-    h("details", { class: "card" }, h("summary", {}, h("b", {}, "Colors of Cards, Tiles and Bookmarks"), h("span", { class: "muted small" }, "Advanced: a theme already sets these")),
+    h("details", { class: "card" }, h("summary", {}, h("b", {}, "Colors of Cards, Tiles and Bookmarks"), saveTag("save"), h("span", { class: "muted small" }, "Advanced: a theme already sets these")),
       h("p", { class: "muted" }, "Set a color for single service cards, the calendar, the tiles of the Stats tab and the bookmarks of the Links tab: a tint, a colored edge and a soft glow. It works best with Transparent glass (set under Colors and Glass)."),
       h("p", { class: "muted small" }, "To see a color on the dashboard, open the tab that has it (Home, Stats or Links). The preview stays there. Return here and press Save to keep it."),
       h("div", { class: "field" }, h("div", { class: "lab" }, "Color Style"), styleChips,
@@ -2650,7 +2690,7 @@ function colorOptions() {
     section("Stats Tiles", "The tiles of the Stats tab.", P.stats, L.cards, it => it.id, it => it.group, false),
     section("Calendar", "The calendar and the list of coming events.", P.calendar, L.cards, it => it.id, it => it.group, false),
     section("Bookmarks", "The bookmarks of the Links tab.", P.links, L.links, it => it.name, it => it.group, false),
-    h("details", { class: "card" }, h("summary", {}, h("b", {}, "Labels"), h("span", { class: "badge" }, String(P.labels.length))),
+    h("details", { class: "card" }, h("summary", {}, h("b", {}, "Labels"), h("span", { class: "badge" }, String(P.labels.length)), saveTag("save")),
       h("p", { class: "muted small" }, "The names above each row of cards, such as Media & Entertainment. Choose a color for the text and for the small icon next to it."),
       h("div", { class: "row bulk" }, h("span", { class: "lab" }, "One Color for All Labels:"),
         h("span", { class: "lpart" }, h("span", { class: "small muted" }, "Text"), colorInput(bulkText, "Text color for all labels", v => { bulkText = v; })),
@@ -2700,13 +2740,13 @@ function backgroundCards() {
     } catch (e) { fail(e); }
   }
   return h("div", { class: "grid cols2" },
-    h("div", { class: "card" }, h("h2", {}, "Background Picture"), pic,
+    h("div", { class: "card" }, cardHead("Background Picture", "save"), pic,
       h("div", { class: "row", style: { marginTop: "12px" } }, file, h("button", { class: "primary", onclick: () => file.click() }, "Upload a Picture…")),
       h("p", { class: "hint muted small" }, "JPG, PNG, WebP, GIF or AVIF, up to 14 MB. After a new picture the dashboard restarts for about 10 seconds."),
       b.mounted === false ? h("p", { class: "small", style: { color: "var(--bad)" } }, "The dashboard cannot see its pictures folder yet, so an uploaded picture will not show. Run: sudo homelab-setup upgrade") : null,
       h("div", { class: "field", style: { marginTop: "12px" } }, h("label", {}, "Or Use a Picture from the Web"), h("div", { class: "row" }, h("div", { class: "grow" }, url),
         h("button", { onclick: () => { const v = url.value.trim(); if (!/^https?:\/\/\S+$/.test(v)) return toast("Type a web address that starts with http:// or https:// first.", true); B.url = v; B.theme = ""; drawPic(); preview(); toast("Press Save to keep it."); } }, "Use This Address")))),
-    h("div", { class: "card" }, h("h2", {}, "How the Background Looks Behind the Cards"),
+    h("div", { class: "card" }, cardHead("How the Background Looks Behind the Cards", "save"),
       h("div", { class: "field" }, h("div", { class: "slider" }, h("span", { class: "lab" }, "Picture Blur"), blurVal,
         h("input", { type: "range", min: 0, max: 6, step: 1, value: BLURS.indexOf(B.blur) < 0 ? 2 : BLURS.indexOf(B.blur), "aria-label": "Picture Blur",
           oninput: ev => { B.blur = BLURS[Number(ev.target.value)]; blurVal.textContent = BLUR_NAMES[B.blur] || B.blur; preview(); } })), h("div", { class: "hint" }, "None keeps the picture sharp. Very Huge makes it very soft.")),
@@ -2813,7 +2853,7 @@ function viewLayout() {
   const board = h("div", { class: "grid" }, T.map(tabCol));
   setTimeout(refreshBar, 0);
   return h("div", {},
-    h("div", { class: "card" }, h("h2", {}, "Tabs and Groups"),
+    h("div", { class: "card" }, cardHead("Tabs and Groups", "save"),
       h("p", { class: "muted" }, "Each box is a tab of the dashboard. Drag a group by its handle to change the order, or drag a tab by the handle in its title. Choose another tab to move a group there, and choose how its cards are laid out. “Cards in a row” places the cards side by side."),
       h("div", { class: "row", style: { marginBottom: "12px" } }, h("button", { onclick: async () => {
         const n = (await askText("Add a tab", "Name of the new tab", "")) || "";
@@ -3056,7 +3096,7 @@ function viewItems(kind) {
 
   return h("div", {},
     barEl,
-    h("div", { class: "card" }, h("h2", {}, isCards ? "Cards on the Dashboard" : "Links (Bookmarks)"),
+    h("div", { class: "card" }, cardHead(isCards ? "Cards on the Dashboard" : "Links (Bookmarks)", isCards ? "now" : "save"),
       h("p", { class: "muted" }, isCards ? "The cards of the Home tab. Add cards for any web page, change a name or text, or remove cards. Drag a card by its handle to change the order, or drop it on another group to move it."
         : "The bookmarks of the Links tab, in groups. Add your own sites with icons. Drag a link by its handle to change the order, or drop it on another group to move it. Nothing changes on the dashboard until you press Save."),
       h("div", { class: "row" }, h("button", { class: "primary", onclick: () => editor(groups[0] || null, null) }, "+ Add a " + (word === "card" ? "Card" : "Link")),
