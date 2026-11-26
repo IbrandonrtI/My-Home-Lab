@@ -11,7 +11,7 @@ from unittest import mock
 
 import helpers
 
-KEYS = {"radarr": "r" * 32, "sonarr": "s" * 32}
+KEYS = {"radarr": "r" * 32, "sonarr": "s" * 32, "prowlarr": "p" * 32}
 
 
 class Fake(http.server.BaseHTTPRequestHandler):
@@ -73,6 +73,17 @@ class Fake(http.server.BaseHTTPRequestHandler):
             return self.reply(200, {"status": "OK"})
         if self.headers.get("X-Api-Key") != KEYS[s["app"]]:
             return self.reply(401, {})
+        if s["app"] == "prowlarr":
+            if not path.startswith("/api/v1/"):
+                return self.reply(404, {})
+            path = path.replace("/api/v1/", "/api/v3/", 1)
+            if path == "/api/v3/applications/schema":
+                return self.reply(200, [{"implementation": n, "fields": [{"name": f, "value": None} for f in ("prowlarrUrl", "baseUrl", "apiKey", "syncCategories")]} for n in ("Lidarr", "Radarr", "Sonarr")])
+            if path == "/api/v3/applications":
+                if method == "POST":
+                    s["clients"].append(json.loads(raw))
+                    return self.reply(201, {})
+                return self.reply(200, s["clients"])
         if path.startswith("/api/v3/config/host"):
             if method == "PUT":
                 if path != "/api/v3/config/host/1":
@@ -133,7 +144,7 @@ class RequestsSetup(unittest.TestCase):
     def setUp(self):
         self.m = helpers.installer()
         m = self.m
-        self.apps = {"qbittorrent": serve("qbittorrent", logins=[("admin", "temp-pass")]), "radarr": serve("radarr"), "sonarr": serve("sonarr"), "seerr": serve("seerr")}
+        self.apps = {"qbittorrent": serve("qbittorrent", logins=[("admin", "temp-pass")]), "radarr": serve("radarr"), "sonarr": serve("sonarr"), "prowlarr": serve("prowlarr"), "seerr": serve("seerr")}
         for srv in self.apps.values():
             self.addCleanup(srv.shutdown)
             self.addCleanup(srv.server_close)
@@ -144,7 +155,7 @@ class RequestsSetup(unittest.TestCase):
                         mock.patch.object(m.Ctx, "home", "/home/brandon"), mock.patch.object(m, "docker", lambda *a, **k: (0, "A temporary password is provided for this session: temp-pass"))):
             patcher.start()
             self.addCleanup(patcher.stop)
-        for app in ("radarr", "sonarr"):
+        for app in ("radarr", "sonarr", "prowlarr"):
             folder = m.P("/home/brandon/requests/" + app)
             os.makedirs(folder, exist_ok=True)
             with open(folder + "/config.xml", "w") as f:
@@ -168,6 +179,12 @@ class RequestsSetup(unittest.TestCase):
             fields = {f["name"]: f["value"] for f in self.apps[app].state["clients"][0]["fields"]}
             self.assertEqual((fields["host"], fields["port"], fields["username"], fields["password"]), ("qbittorrent", self.m.PORTS["qbittorrent"], "brandon", "Secret-pass-1"))
             self.assertEqual(self.apps[app].state["clients"][0]["implementation"], "QBittorrent")
+        prowlarr = self.apps["prowlarr"].state
+        self.assertEqual((prowlarr["host"]["authenticationMethod"], prowlarr["host"]["username"], prowlarr["host"]["password"]), ("forms", "brandon", "Secret-pass-1"))
+        self.assertEqual([c["implementation"] for c in prowlarr["clients"]], ["Radarr", "Sonarr"])
+        radarr_app = {f["name"]: f["value"] for f in prowlarr["clients"][0]["fields"]}
+        self.assertEqual((radarr_app["prowlarrUrl"], radarr_app["baseUrl"], radarr_app["apiKey"]), ("http://prowlarr:%d" % self.m.PORTS["prowlarr"], "http://radarr:%d" % self.m.PORTS["radarr"], KEYS["radarr"]))
+        self.assertEqual(prowlarr["clients"][0]["syncLevel"], "fullSync")
         seerr = self.apps["seerr"].state
         self.assertEqual((seerr["login"]["username"], seerr["login"]["password"], seerr["login"]["hostname"], seerr["login"]["port"]), ("brandon", "Secret-pass-1", "127.0.0.1", 8096))
         self.assertIn("enable=lib1,lib2", [r[1] for r in seerr["log"] if "enable=" in r[1]][0])
@@ -188,7 +205,7 @@ class RequestsSetup(unittest.TestCase):
             self.step.run()
         self.assertIn("qBittorrent", str(cm.exception))
         self.assertEqual(self.step.probe(), "todo")
-        self.assertEqual(self.m.State.data["requests_linked"], {"radarr": True, "sonarr": True, "seerr": True})
+        self.assertEqual(self.m.State.data["requests_linked"], {"radarr": True, "sonarr": True, "prowlarr": True, "seerr": True})
         self.apps["qbittorrent"].state["logins"] = [("admin", "temp-pass")]
         before = len(self.apps["radarr"].state["log"])
         self.step.run()
@@ -217,6 +234,14 @@ class RequestsSetup(unittest.TestCase):
         self.step.run()
         self.assertEqual(self.apps["seerr"].state["login"]["email"], "brandon@localhost")
 
+    def test_an_older_install_without_prowlarr_only_links_prowlarr(self):
+        self.m.State.data["requests_linked"] = {"qbittorrent": True, "radarr": True, "sonarr": True, "seerr": True}
+        self.assertEqual(self.step.probe(), "todo")
+        self.step.run()
+        self.assertEqual(self.step.probe(), "done")
+        for app in ("radarr", "sonarr", "seerr", "qbittorrent"):
+            self.assertEqual([r for r in self.apps[app].state["log"] if r[0] != "GET"], [], app)
+
     def test_a_dry_run_changes_nothing(self):
         with mock.patch.object(self.m.Opt, "dry", True):
             self.step.run()
@@ -236,14 +261,14 @@ class RequestsFilesAndCommand(unittest.TestCase):
         text = self.m.stack_text("requests")
         self.assertNotIn("your-username", text)
         self.assertIn("/home/test/requests/radarr:/config", text)
-        self.assertEqual(re.findall(r'PUID: "(\d+)"', text), ["1000"] * 3)
+        self.assertEqual(re.findall(r'PUID: "(\d+)"', text), ["1000"] * 4)
 
     def test_ports_in_the_stack_file_match_the_installer(self):
         with open(os.path.join(helpers.ROOT, "stacks", "requests.yaml")) as f:
             text = f.read()
-        for app in ("seerr", "radarr", "sonarr", "qbittorrent"):
+        for app in ("seerr", "radarr", "sonarr", "prowlarr", "qbittorrent"):
             self.assertIn('"%d:%d"' % (self.m.PORTS[app], self.m.PORTS[app]), text)
-        self.assertEqual(self.m.STACKS["requests"][1], ["seerr", "radarr", "sonarr", "qbittorrent"])
+        self.assertEqual(self.m.STACKS["requests"][1], ["seerr", "radarr", "sonarr", "prowlarr", "qbittorrent"])
 
     def test_the_folders_are_made_once(self):
         step = self.m.BY_ID["requests-folders"]

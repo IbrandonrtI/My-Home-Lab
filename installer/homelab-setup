@@ -65,14 +65,14 @@ STACKS = {
     "jellyfin": ("jellyfin.yaml", ["jellyfin"]),
     "audiomuse": ("audiomuse.yaml", ["audiomuse-postgres", "audiomuse-flask", "audiomuse-worker"]),
     "navilist": ("navilist.yaml", ["navilist"]),
-    "requests": ("requests.yaml", ["seerr", "radarr", "sonarr", "qbittorrent"]),
+    "requests": ("requests.yaml", ["seerr", "radarr", "sonarr", "prowlarr", "qbittorrent"]),
 }
 STACK_ORDER = ["homepage", "adguard", "beszel", "netdata", "speedtest-tracker", "filebrowser",
                "immich", "nextcloud", "beszel-agent", "music-downloader"]
 
 PORTS = {"homepage": 3001, "portainer": 9000, "immich": 2283, "beszel": 8090, "adguard": 3000,
          "nextcloud": 8082, "filebrowser": 8081, "speedtest": 8088, "netdata": 19999, "navidrome": 4533, "jellyfin": 8096, "audiomuse": 8100, "navilist": 8200, "downtify": 8000,
-         "seerr": 5055, "radarr": 7878, "sonarr": 8989, "qbittorrent": 8085}
+         "seerr": 5055, "radarr": 7878, "sonarr": 8989, "prowlarr": 9696, "qbittorrent": 8085}
 SERVE = [(1000, "homepage"), (1001, "portainer"), (1002, "immich"), (1003, "beszel"), (1004, "adguard"),
          (1005, "nextcloud"), (1006, "filebrowser"), (1007, "speedtest"), (1008, "netdata")]
 
@@ -5778,14 +5778,16 @@ class DowntifyLogin(Step):
                 warn("Downtify already has an account called %s, so the first account keeps the name admin and now has the admin password." % user)
         if st != 200:
             raise Abort("Downtify refused the new sign-in (HTTP %s): %s" % (st, str(js)[:200]))
-# Requests: Seerr (where people ask for a movie or show), Radarr and Sonarr (which keep the lists), and qBittorrent (the download client).
+# Requests: Seerr (where people ask for a movie or show), Radarr and Sonarr (which keep the lists), Prowlarr (which keeps the indexers for both) and qBittorrent (the download client).
 # Installed only by `homelab-setup requests`. No indexers and no download sources are added.
 
-REQUESTS_FOLDERS = ("requests", "requests/seerr", "requests/radarr", "requests/sonarr", "requests/qbittorrent")
+REQUESTS_FOLDERS = ("requests", "requests/seerr", "requests/radarr", "requests/sonarr", "requests/prowlarr", "requests/qbittorrent")
 DOWNLOADS_FOLDER = "/mnt/storage/downloads"
 SEERR_UID = 1000
 REQUESTS_ROOTS = {"radarr": "/data/movies", "sonarr": "/data/shows"}
-REQUESTS_PARTS = ("qbittorrent", "radarr", "sonarr", "seerr")
+REQUESTS_LABELS = {"seerr": "Seerr", "radarr": "Radarr", "sonarr": "Sonarr", "prowlarr": "Prowlarr", "qbittorrent": "qBittorrent"}
+REQUESTS_PARTS = ("qbittorrent", "radarr", "sonarr", "prowlarr", "seerr")
+SERVARR_API = {"prowlarr": "v1"}
 
 
 def requests_applies():
@@ -5793,7 +5795,7 @@ def requests_applies():
 
 
 def requests_page_answers(app):
-    path = {"seerr": "/api/v1/status", "radarr": "/ping", "sonarr": "/ping", "qbittorrent": "/"}[app]
+    path = {"seerr": "/api/v1/status", "radarr": "/ping", "sonarr": "/ping", "prowlarr": "/ping", "qbittorrent": "/"}[app]
     return http("GET", url(app, path), timeout=10)[0] == 200
 
 
@@ -5804,7 +5806,7 @@ def requests_all_answer():
 @step
 class RequestsFolders(Step):
     id, group = "requests-folders", "Services"
-    title = "Folders for Seerr, Radarr, Sonarr and qBittorrent, and the downloads folder on the Main pool"
+    title = "Folders for the request apps, and the downloads folder on the Main pool"
     needs = ("folders",)
 
     def applies(self):
@@ -5827,13 +5829,13 @@ class RequestsFolders(Step):
 
 
 class RequestsStack(StackStep):
-    """The four request containers in one stack."""
+    """The five request containers in one stack."""
 
     def applies(self):
         return requests_applies()
 
     def detail(self):
-        return "Seerr %d, Radarr %d, Sonarr %d, qBittorrent %d" % tuple(PORTS[a] for a in ("seerr", "radarr", "sonarr", "qbittorrent"))
+        return "Seerr %d, Radarr %d, Sonarr %d, Prowlarr %d, qBittorrent %d" % tuple(PORTS[a] for a in ("seerr", "radarr", "sonarr", "prowlarr", "qbittorrent"))
 
     def stamp(self):
         return hashlib.md5((stack_text("requests") + "|".join("%s=%s" % kv for kv in stack_env("requests"))).encode()).hexdigest()
@@ -5845,7 +5847,7 @@ class RequestsStack(StackStep):
         StackStep.run(self, start_first=State.data.get("requests_stack") == self.stamp())
         if Opt.dry:
             return
-        if not wait_for(requests_all_answer, "Seerr, Radarr, Sonarr and qBittorrent to answer", 300, every=5):
+        if not wait_for(requests_all_answer, "the request apps to answer", 300, every=5):
             raise Abort("The request apps do not all answer yet. Look at the logs, for example:  docker logs radarr")
         State.data["requests_stack"] = self.stamp()
         State.save()
@@ -5854,7 +5856,7 @@ class RequestsStack(StackStep):
 
 
 register(RequestsStack("requests", ("portainer-env", "folders", "requests-folders", "stack-jellyfin"),
-                       "Requests stack (Seerr, Radarr, Sonarr and qBittorrent)", 600))
+                       "Requests stack (Seerr, Radarr, Sonarr, Prowlarr and qBittorrent)", 600))
 
 
 def servarr_key(app):
@@ -5864,7 +5866,7 @@ def servarr_key(app):
 
 
 def servarr_call(app, method, path, body=None):
-    return http(method, url(app, "/api/v3" + path), body=body, headers={"X-Api-Key": servarr_key(app)}, timeout=60)
+    return http(method, url(app, "/api/%s%s" % (SERVARR_API.get(app, "v3"), path)), body=body, headers={"X-Api-Key": servarr_key(app)}, timeout=60)
 
 
 def qbit_login(user, password):
@@ -5894,16 +5896,22 @@ def setup_qbittorrent(pw):
     return None if st == 200 else "it refused the settings (HTTP %s)" % st
 
 
-def setup_servarr(app, pw):
-    """Radarr or Sonarr: a login with the shared admin password, a root folder, and qBittorrent as the download client."""
+def servarr_login(app, pw):
+    """Give Radarr, Sonarr or Prowlarr a login with the shared admin password. Returns None when it worked, else a short reason."""
     host = servarr_call(app, "GET", "/config/host")
     if host[0] != 200 or not isinstance(host[1], dict):
         return "it did not answer with its API key (HTTP %s)" % host[0]
     cur = host[1]
     cur.update({"authenticationMethod": "forms", "authenticationRequired": "enabled", "username": Ctx.admin, "password": pw, "passwordConfirmation": pw})
     st = servarr_call(app, "PUT", "/config/host/%s" % cur.get("id", 1), cur)[0]
-    if st not in (200, 202):
-        return "it refused the login settings (HTTP %s)" % st
+    return None if st in (200, 202) else "it refused the login settings (HTTP %s)" % st
+
+
+def setup_servarr(app, pw):
+    """Radarr or Sonarr: a login with the shared admin password, a root folder, and qBittorrent as the download client."""
+    why = servarr_login(app, pw)
+    if why:
+        return why
     roots = servarr_call(app, "GET", "/rootfolder")[1]
     if not any(isinstance(r, dict) and r.get("path", "").rstrip("/") == REQUESTS_ROOTS[app] for r in roots or []):
         st = servarr_call(app, "POST", "/rootfolder", {"path": REQUESTS_ROOTS[app]})[0]
@@ -5926,6 +5934,32 @@ def setup_servarr(app, pw):
     if st not in (200, 201):
         st = http("POST", url(app, "/api/v3/downloadclient?forceSave=true"), body=client, headers={"X-Api-Key": servarr_key(app)}, timeout=60)[0]
         return None if st in (200, 201) else "it did not accept qBittorrent as its download client (HTTP %s)" % st
+    return None
+
+
+def setup_prowlarr(pw):
+    """Prowlarr: a login with the shared admin password, and Radarr and Sonarr as the apps it sends its indexers to. It adds no indexers."""
+    why = servarr_login("prowlarr", pw)
+    if why:
+        return why
+    have = {a.get("implementation") for a in servarr_call("prowlarr", "GET", "/applications")[1] or [] if isinstance(a, dict)}
+    schema = {s.get("implementation"): s for s in servarr_call("prowlarr", "GET", "/applications/schema")[1] or [] if isinstance(s, dict)}
+    for app in ("radarr", "sonarr"):
+        name = app.capitalize()
+        if name in have:
+            continue
+        entry = schema.get(name)
+        if not entry:
+            return "it has no %s application" % name
+        values = {"prowlarrUrl": "http://prowlarr:%d" % PORTS["prowlarr"], "baseUrl": "http://%s:%d" % (app, PORTS[app]), "apiKey": servarr_key(app)}
+        for f in entry.get("fields", []):
+            if f.get("name") in values:
+                f["value"] = values[f["name"]]
+        entry.update({"name": name, "syncLevel": "fullSync"})
+        if servarr_call("prowlarr", "POST", "/applications", entry)[0] not in (200, 201):
+            st = http("POST", url("prowlarr", "/api/v1/applications?forceSave=true"), body=entry, headers={"X-Api-Key": servarr_key("prowlarr")}, timeout=60)[0]
+            if st not in (200, 201):
+                return "it did not accept %s (HTTP %s)" % (name, st)
     return None
 
 
@@ -5975,7 +6009,7 @@ def setup_seerr(pw):
 @step
 class RequestsLinks(Step):
     id, group = "requests-links", "Services"
-    title = "Link Seerr, Radarr, Sonarr, qBittorrent and Jellyfin (the admin login, folders and download client)"
+    title = "Link the request apps to each other and to Jellyfin (the admin login, folders, download client and Prowlarr)"
     needs = ("stack-requests", "w-jellyfin")
 
     def applies(self):
@@ -5987,12 +6021,12 @@ class RequestsLinks(Step):
 
     def run(self):
         if Opt.dry:
-            out("      would set the admin login in each app, add the folders and qBittorrent to Radarr and Sonarr, and link Seerr to Jellyfin, Radarr and Sonarr")
+            out("      would set the admin login in each app, add the folders and qBittorrent to Radarr and Sonarr, link Prowlarr to both, and link Seerr to Jellyfin, Radarr and Sonarr")
             return
         pw = need_password("to set the login of the request apps")
         done = State.data.setdefault("requests_linked", {})
         todo = {"qbittorrent": lambda: setup_qbittorrent(pw), "radarr": lambda: setup_servarr("radarr", pw), "sonarr": lambda: setup_servarr("sonarr", pw),
-                "seerr": lambda: setup_seerr(pw)}
+                "prowlarr": lambda: setup_prowlarr(pw), "seerr": lambda: setup_seerr(pw)}
         problems = []
         for app in REQUESTS_PARTS:
             if done.get(app):
@@ -6009,7 +6043,7 @@ class RequestsLinks(Step):
                 done[app] = True
                 State.save()
         if problems:
-            names = {"seerr": "Seerr", "radarr": "Radarr", "sonarr": "Sonarr", "qbittorrent": "qBittorrent"}
+            names = REQUESTS_LABELS
             raise Abort("Not everything was linked: %s. Run `sudo homelab-setup refresh` to try again; the parts that worked are kept." %
                         "; ".join("%s: %s" % (names[a], w) for a, w in problems))
 JELLYFIN_THEME_URL = "https://cdn.jsdelivr.net/gh/n00bcodr/Jellyfish/"
@@ -9692,7 +9726,7 @@ Commands:
   lastfm                   save your free Last.fm key so Navidrome can suggest similar songs; also: lastfm remove
   audiomuse                set up AudioMuse-AI (Navidrome suggests songs that sound alike); also: audiomuse memory | pause | resume | status | remove
   navilist                 set up naviList (Navidrome playlists from your ListenBrainz and Last.fm listening); also: navilist subscribe | status | remove
-  requests                 set up Seerr, Radarr, Sonarr and qBittorrent so people can ask for movies and shows; also: requests status | remove
+  requests                 set up Seerr, Radarr, Sonarr, Prowlarr and qBittorrent so people can ask for movies and shows; also: requests status | remove
   uninstall                take HomeLab off this machine; asks whether to keep or wipe the apps' data and the drives (Tailscale, Docker and the drive programs stay); wiping also deletes the downloaded repository folder; add --dry-run to look first
   done STEP | skip STEP    mark a manual step as done, or as not wanted
   unskip STEP              take a skipped step back (only steps that wait for a person can be marked)
@@ -9710,11 +9744,10 @@ COMMANDS = {"checklist": cmd_checklist, "check": cmd_checklist, "install": cmd_i
             "secrets": cmd_secrets, "progress": cmd_progress, "verify": cmd_verify, "filebrowser": cmd_filebrowser,
             "homepage": cmd_homepage, "adguard": cmd_adguard, "upgrade": cmd_upgrade, "growdisk": cmd_growdisk,
             "finish": cmd_finish, "status": cmd_status}
-REQUESTS_LABELS = {"seerr": "Seerr", "radarr": "Radarr", "sonarr": "Sonarr", "qbittorrent": "qBittorrent"}
 
 
 def cmd_requests(rest):
-    """`requests`: set up Seerr, Radarr, Sonarr and qBittorrent so people can ask for a movie or show. Also handles status and remove."""
+    """`requests`: set up Seerr, Radarr, Sonarr, Prowlarr and qBittorrent so people can ask for a movie or show. Also handles status and remove."""
     load_all()
     if Mode.existing:
         say("This machine was built by hand, so the installer only reads it. The request apps are not set up here.")
@@ -9735,9 +9768,10 @@ def cmd_requests(rest):
             other = port_taken_by(PORTS[app], mine=STACKS["requests"][1])
             if other:
                 raise Abort("Port %d is already used by the container %s, and %s needs it for its web page. Nothing was changed." % (PORTS[app], other, REQUESTS_LABELS[app]))
-    say("This adds the request apps, about 1 GB of memory in total:\n"
+    say("This adds the request apps, roughly 1 to 1.5 GB of memory in total:\n"
         "  - Seerr: where you search for a movie or show and ask for it. Everyone signs in with their Jellyfin login.\n"
         "  - Radarr and Sonarr: keep the list of movies and shows that were asked for, and put finished files in the Jellyfin folders.\n"
+        "  - Prowlarr: keeps the indexers in one place and sends them to Radarr and Sonarr.\n"
         "  - qBittorrent: the download client. Radarr and Sonarr are linked to it, and its downloads go to %s.\n"
         "The installer links the apps to each other and gives each one the admin login. It adds no download sources and no indexers; "
         "that part is up to you." % DOWNLOADS_FOLDER)
@@ -9754,9 +9788,9 @@ def cmd_requests(rest):
         warn("The setup did not finish. Read the message above, then run `sudo homelab-setup refresh` to continue.")
         return
     good("The request apps are set up.")
-    say("Open Seerr at %s and sign in with your Jellyfin login. Radarr is at %s, Sonarr at %s and qBittorrent at %s; each uses the admin login.\n"
-        "Nothing will download until you add a source of your own to Radarr and Sonarr (Settings, Indexers)."
-        % (url("seerr"), url("radarr"), url("sonarr"), url("qbittorrent")))
+    say("Open Seerr at %s and sign in with your Jellyfin login. Radarr is at %s, Sonarr at %s, Prowlarr at %s and qBittorrent at %s; each uses the admin login.\n"
+        "Nothing will download until you add a source of your own in Prowlarr (Indexers); Prowlarr passes it on to Radarr and Sonarr."
+        % (url("seerr"), url("radarr"), url("sonarr"), url("prowlarr"), url("qbittorrent")))
 
 
 def requests_status():
@@ -9770,14 +9804,14 @@ def requests_status():
 
 
 def requests_remove():
-    """`requests remove`: remove the four containers. Their settings and the downloads folder are kept."""
+    """`requests remove`: remove the five containers. Their settings and the downloads folder are kept."""
     if not requests_wanted():
         say("The request apps are not set up. Nothing to remove.")
         return
     if Opt.dry:
-        say("This is a dry run: it would remove the four request containers. Nothing was changed.")
+        say("This is a dry run: it would remove the five request containers. Nothing was changed.")
         return
-    if not yesno("Remove Seerr, Radarr, Sonarr and qBittorrent (their settings and the downloads folder stay on the drive)?", False):
+    if not yesno("Remove Seerr, Radarr, Sonarr, Prowlarr and qBittorrent (their settings and the downloads folder stay on the drive)?", False):
         say("Nothing was changed.")
         return
     if not Portainer.delete("requests"):

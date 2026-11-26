@@ -35,6 +35,7 @@ This is a walk through everything the lab runs, one service at a time: what it's
 | Seerr | 5055 | the local network, and Tailscale on its own port |
 | Radarr | 7878 | the local network, and Tailscale on its own port |
 | Sonarr | 8989 | the local network, and Tailscale on its own port |
+| Prowlarr | 9696 | the local network, and Tailscale on its own port |
 | qBittorrent | 8085 (web) and 6881 (torrent traffic) | the local network, and Tailscale on its own port |
 | Downtify | 8000 | the local network, and Tailscale on its own port |
 | MeTube | 8185 | the local network, and Tailscale on its own port |
@@ -199,7 +200,7 @@ If you already run a Jellyfin of your own, the installer leaves it as it is and 
 
 ### Requests
 
-An optional set of four apps that lets people ask for a movie or show. They are not part of the normal install, because together they use about 1 GB of memory. Set them up with:
+An optional set of five apps that lets people ask for a movie or show. They are not part of the normal install, because together they use roughly 1 to 1.5 GB of memory. Set them up with:
 
 ```bash
 sudo homelab-setup requests
@@ -209,19 +210,20 @@ It asks first, then installs one stack called `requests` ([`stacks/requests.yaml
 
 - **Seerr** is the page people use. Everyone signs in with their Jellyfin login, searches for a title and presses Request.
 - **Radarr** (movies) and **Sonarr** (shows) keep the list of what was asked for and file finished downloads into the `movies` and `shows` folders.
+- **Prowlarr** keeps the indexers in one place and sends them to Radarr and Sonarr, so you add each one only once.
 - **qBittorrent** is the download client. Its downloads go to the `downloads` folder on the Main pool.
 
-The installer gives Radarr, Sonarr and qBittorrent the admin login, adds the root folders and qBittorrent to Radarr and Sonarr, and signs Seerr in to Jellyfin and links it to Radarr and Sonarr. It adds no indexers and no download sources. Until you add your own in Radarr and Sonarr (Settings, Indexers), a request is only a note on a list. Each app gets its own dashboard card within a few minutes.
+The installer gives Radarr, Sonarr, Prowlarr and qBittorrent the admin login, adds the root folders and qBittorrent to Radarr and Sonarr, links Prowlarr to both, and signs Seerr in to Jellyfin and links it to Radarr and Sonarr. It adds no indexers and no download sources. Until you add your own in Prowlarr (Indexers), a request is only a note on a list. Each app gets its own dashboard card within a few minutes.
 
 Radarr, Sonarr and qBittorrent see the Main pool as `/data`, so the downloads folder and the library are in one place. Keep the `downloads` folder on the same drive as `movies` and `shows` (the Move Folders option on the Drives screen does that), so finished files are moved into the library instead of copied.
 
-The four images follow their newest version, so `sudo homelab-update` keeps them current. The settings are in the `requests` folder of the home folder.
+The five images follow their newest version, so `sudo homelab-update` keeps them current. The settings are in the `requests` folder of the home folder.
 
 | Command | What it does |
 | :--- | :--- |
 | `sudo homelab-setup requests` | Sets the apps up, or checks them and finishes anything that is missing |
 | `sudo homelab-setup requests status` | Shows whether each app runs and is linked |
-| `sudo homelab-setup requests remove` | Removes the four containers; their settings and the downloads folder stay |
+| `sudo homelab-setup requests remove` | Removes the five containers; their settings and the downloads folder stay |
 
 ## Where the data lives
 
