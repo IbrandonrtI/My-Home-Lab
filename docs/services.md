@@ -230,6 +230,29 @@ The six images follow their newest version, so `sudo homelab-update` keeps them 
 
 **JDownloader.** Earlier versions also installed JDownloader. The next `sudo homelab-setup refresh` removes its container, its settings folder in the `requests` folder and its dashboard card. It never touches files in `movies`, `shows` or `downloads`; an empty `downloads/direct` folder is removed, and one that holds files is left alone.
 
+### Windows network folders
+
+An optional share that lets File Explorer on a Windows PC open the `movies`, `shows` and `downloads` folders of the Main pool like normal folders. It uses Samba, which is a normal program on the server and not a container. Set it up with:
+
+```bash
+sudo homelab-setup share
+```
+
+It asks first and then asks for the admin password once. It installs Samba, shares the three folders and gives your user name a Samba login with the admin password. Samba keeps its own scrambled copy of that password, so after you change the admin password run `sudo homelab-setup share password` to update it.
+
+To open the folders, type `\\192.168.X.X\movies` in the File Explorer address bar, using the address of the server (the command prints it). Or right-click This PC, choose Map network drive, and use the same address to get a drive letter. When Windows asks for a login, use your user name on the server and the admin password, and tick the box to remember it. Away from home, use the Tailscale name of the server, for example `\\pc.your-tailnet.ts.net\movies`; the PC must be connected to Tailscale.
+
+You can copy, rename and delete files from Windows. Whatever Windows adds belongs to the lab user, so Jellyfin, Radarr, Sonarr and qBittorrent can use it. Only devices on the home network and on Tailscale can connect; every other address is refused. The shares are not open to guests.
+
+| Command | What it does |
+| :--- | :--- |
+| `sudo homelab-setup share` | Sets the shares up, or checks them and finishes anything that is missing |
+| `sudo homelab-setup share status` | Shows whether Samba runs and what is shared |
+| `sudo homelab-setup share password` | Sets the Windows login to the current admin password again |
+| `sudo homelab-setup share remove` | Stops sharing; the files, the folders and the Samba package stay |
+
+The uninstaller does not remove the shares. Run `sudo homelab-setup share remove` before uninstalling if you want them gone.
+
 ## Where the data lives
 
 | What | Where |

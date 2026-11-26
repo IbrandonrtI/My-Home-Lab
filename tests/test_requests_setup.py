@@ -643,7 +643,7 @@ class RequestsFilesAndCommand(unittest.TestCase):
         with open(os.path.join(helpers.ROOT, "installer", "homelab-setup")) as f:
             text = f.read()
         self.assertIn('elif cmd == "requests"', text)
-        self.assertIn('"navilist", "requests", "lastfm"', text)
+        self.assertIn('"navilist", "requests", "share", "lastfm"', text)
         self.assertIn("  requests                 set up Seerr", text)
 
 

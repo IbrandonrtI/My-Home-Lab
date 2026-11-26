@@ -6315,6 +6315,150 @@ class RequestsRetire(Step):
             os.rmdir(P(DOWNLOADS_FOLDER + "/direct"))
         except OSError:
             pass
+# Folder sharing: the movies, shows and downloads folders as Windows network folders (Samba), so File Explorer can open them.
+# Installed only by `homelab-setup share`. Only the home network and Tailscale may connect, and the login is the lab user's name with the admin password.
+
+SHARES = (("movies", "/mnt/storage/movies"), ("shows", "/mnt/storage/shows"), ("downloads", DOWNLOADS_FOLDER))
+SHARE_CONF = "/etc/samba/homelab.conf"
+SHARE_MAIN_CONF = "/etc/samba/smb.conf"
+SHARE_INCLUDE = "include = " + SHARE_CONF
+SHARE_ALLOWED = "127.0.0.1 ::1 192.168.0.0/16 10.0.0.0/8 172.16.0.0/12 100.64.0.0/10 fd7a:115c:a1e0::/48"
+
+
+def share_wanted():
+    return bool(State.data.get("share")) and not Mode.existing
+
+
+def share_config_text():
+    """The Samba file for the three folders. Every file is created as the lab user, so Jellyfin, Radarr, Sonarr and qBittorrent can use what Windows adds."""
+    out_lines = ["# Written by homelab-setup (sudo homelab-setup share). Changes made here are overwritten; remove the shares with: sudo homelab-setup share remove", ""]
+    for name, path in SHARES:
+        out_lines += ["[%s]" % name, "   path = %s" % path, "   browseable = yes", "   read only = no", "   valid users = %s" % Ctx.user,
+                      "   force user = %s" % Ctx.user, "   force group = %s" % (grp_name(Ctx.gid) or Ctx.user), "   create mask = 0664", "   directory mask = 0775",
+                      "   hosts allow = %s" % SHARE_ALLOWED, "   hosts deny = ALL", ""]
+    return "\n".join(out_lines)
+
+
+def grp_name(gid):
+    try:
+        return grp.getgrgid(gid).gr_name
+    except (KeyError, OSError):
+        return ""
+
+
+def share_include_present():
+    return any(l.strip() == SHARE_INCLUDE for l in read_file(P(SHARE_MAIN_CONF)).split("\n"))
+
+
+def share_running():
+    return run(["systemctl", "is-active", "smbd"])[1].strip() == "active"
+
+
+def share_folders_not_ready():
+    return [p for _, p in SHARES if not os.path.isdir(P(p)) or os.stat(P(p)).st_uid != Ctx.uid]
+
+
+@step
+class SharePackage(Step):
+    id, group = "share-package", "Services"
+    title = "Samba, the program that shares folders with Windows"
+    needs = ("packages",)
+
+    def applies(self):
+        return share_wanted()
+
+    def probe(self):
+        return "done" if pkg_installed("samba") else "todo"
+
+    def run(self):
+        apt_install(["samba"])
+
+
+@step
+class ShareFolders(Step):
+    id, group = "share-folders", "Services"
+    title = "The movies, shows and downloads folders exist and belong to the lab user"
+    needs = ("folders",)
+
+    def applies(self):
+        return share_wanted()
+
+    def probe(self):
+        return "done" if not share_folders_not_ready() else "todo"
+
+    def run(self):
+        if Opt.dry:
+            out("      would create the missing folders and make them belong to %s" % Ctx.user)
+            return
+        for _, path in SHARES:
+            make_folder(P(path))
+        for path in share_folders_not_ready():
+            chown(P(path), Ctx.uid, Ctx.gid)
+
+
+@step
+class ShareConfig(Step):
+    id, group = "share-config", "Services"
+    title = "Share the movies, shows and downloads folders (home network and Tailscale only)"
+    needs = ("share-package", "share-folders")
+
+    def applies(self):
+        return share_wanted()
+
+    def probe(self):
+        same = read_file(P(SHARE_CONF)) == share_config_text()
+        return "done" if same and share_include_present() and share_running() else "todo"
+
+    def run(self):
+        if Opt.dry:
+            out("      would write %s, add it to %s and start Samba" % (SHARE_CONF, SHARE_MAIN_CONF))
+            return
+        previous = read_file(P(SHARE_CONF))
+        write_file(P(SHARE_CONF), share_config_text(), 0o644)
+        rc, txt = run(["testparm", "-s", P(SHARE_CONF)])
+        if rc != 0:
+            if previous:
+                write_file(P(SHARE_CONF), previous, 0o644)
+            else:
+                os.remove(P(SHARE_CONF))
+            raise Abort("Samba does not accept the share settings (%s). Nothing was changed." % txt.strip()[-200:])
+        if not share_include_present():
+            main = read_file(P(SHARE_MAIN_CONF))
+            write_file(P(SHARE_MAIN_CONF), main + ("" if main.endswith("\n") or not main else "\n") + "\n" + SHARE_INCLUDE + "\n", 0o644)
+        act(["systemctl", "enable", "--now", "smbd", "nmbd"])
+        if previous != share_config_text():
+            act(["systemctl", "restart", "smbd"])
+        if not share_running():
+            raise Abort("Samba does not run. Look at it with:  sudo systemctl status smbd")
+
+
+def share_set_login(pw):
+    """Give the lab user a Samba login with the admin password. Samba keeps its own scrambled copy. Returns None when it worked, else a short reason."""
+    rc, txt = run(["smbpasswd", "-a", "-s", Ctx.user], input_text="%s\n%s\n" % (pw, pw), timeout=60)
+    return None if rc == 0 else "Samba did not accept the login (%s)" % txt.strip()[-150:]
+
+
+@step
+class ShareLogin(Step):
+    id, group = "share-login", "Services"
+    title = "The Windows login for the shared folders (the lab user's name and the admin password)"
+    needs = ("share-package",)
+
+    def applies(self):
+        return share_wanted()
+
+    def probe(self):
+        return "done" if State.data.get("share_login") == Ctx.user else "todo"
+
+    def run(self):
+        if Opt.dry:
+            out("      would set the Samba login of %s to the admin password" % Ctx.user)
+            return
+        why = share_set_login(need_password("to set the login for the shared folders"))
+        if why:
+            raise Abort(why)
+        State.data["share_login"] = Ctx.user
+        State.save()
 JELLYFIN_THEME_URL = "https://cdn.jsdelivr.net/gh/n00bcodr/Jellyfish/"
 JELLYFIN_CSS_FILES = ("theme.css", "colors/jellyflix.css", "slideshow.css", "progress_bar.css", "indicators.css", "card_buttons.css",
                       "icontext.css", "scrollbar.css", "streamberry_logo.css")
@@ -9879,7 +10023,7 @@ AUTO_EVERY = 20 * 60
 AUTO_RETRY = 3 * 3600
 
 
-LOCKED_COMMANDS = ("install", "refresh", "fill", "uninstall", "growdisk", "adguard", "filebrowser", "homepage", "audiomuse", "navilist", "requests", "lastfm", "cards", "done", "skip", "unskip")
+LOCKED_COMMANDS = ("install", "refresh", "fill", "uninstall", "growdisk", "adguard", "filebrowser", "homepage", "audiomuse", "navilist", "requests", "share", "lastfm", "cards", "done", "skip", "unskip")
 COMMAND_LOCK = P("/run/homelab-setup-command.lock")
 command_lock_fd = None
 
@@ -9996,6 +10140,7 @@ Commands:
   audiomuse                set up AudioMuse-AI (Navidrome suggests songs that sound alike); also: audiomuse memory | pause | resume | status | remove
   navilist                 set up naviList (Navidrome playlists from your ListenBrainz and Last.fm listening); also: navilist subscribe | status | remove
   requests                 set up Seerr, Radarr, Sonarr, Prowlarr and qBittorrent so people can ask for movies and shows; also: requests status | remove
+  share                    share the movies, shows and downloads folders with Windows, so File Explorer can open them; also: share status | password | remove
   uninstall                take HomeLab off this machine; asks whether to keep or wipe the apps' data and the drives (Tailscale, Docker and the drive programs stay); wiping also deletes the downloaded repository folder; add --dry-run to look first
   done STEP | skip STEP    mark a manual step as done, or as not wanted
   unskip STEP              take a skipped step back (only steps that wait for a person can be marked)
@@ -10095,6 +10240,109 @@ def requests_remove():
     good("The request apps are removed.")
     say("Their settings are still in %s/requests and the downloads in %s. To free the space: sudo rm -rf %s/requests" % (Ctx.home, DOWNLOADS_FOLDER, Ctx.home))
     cmd_refresh()
+def share_addresses():
+    """Where File Explorer finds the shares: the local address and, when Tailscale is connected, the Tailscale name."""
+    found = ["\\\\%s" % (Ctx.lan or Ctx.hostname)]
+    if Ctx.fqdn:
+        found.append("\\\\%s" % Ctx.fqdn)
+    return found
+
+
+def share_how_to_open():
+    first = share_addresses()[0]
+    say("In Windows open File Explorer and type %s\\movies in the address bar (or right-click This PC, Map network drive, and use that address). "
+        "When it asks for a login, use the user name %s and the admin password. Tick the box to remember it. "
+        "Away from home, use %s instead; the PC must be connected to Tailscale." % (first, Ctx.user, " or ".join(share_addresses()[1:]) or "the Tailscale name of this machine"))
+
+
+def cmd_share(rest):
+    """`share`: share the movies, shows and downloads folders with Windows. Also handles status, password and remove."""
+    load_all()
+    if Mode.existing:
+        say("This machine was built by hand, so the installer only reads it. The folders are not shared here.")
+        return
+    if not State.exists():
+        raise Abort("The installer has not run on this machine yet. Run `sudo homelab-setup install`.")
+    word = rest[0] if rest else ""
+    if word == "status":
+        return share_status()
+    if word == "remove":
+        return share_remove()
+    if word == "password":
+        return share_password()
+    if rest:
+        raise Abort("Unknown word '%s'. Use: homelab-setup share   or   share status | password | remove" % word)
+    say("This shares three folders with Windows, so they open in File Explorer like normal folders:\n"
+        "  - movies and shows: the Jellyfin library. Radarr and Sonarr put finished files there.\n"
+        "  - downloads: what qBittorrent has downloaded.\n"
+        "You can copy, rename and delete files in them from Windows. Files stay owned by %s, so the apps keep working. "
+        "Only devices on your home network and on Tailscale can connect. The login is the user name %s with the admin password; "
+        "Samba keeps its own scrambled copy of that password." % (Ctx.user, Ctx.user))
+    if State.data.get("share"):
+        say("The folders are already shared; this checks them again and finishes anything that is missing.")
+    elif not yesno("Share the folders now?", True):
+        say("Nothing was changed.")
+        return
+    State.data["share"] = True
+    State.save()
+    cmd_refresh()
+    if not all(BY_ID[s].probe() == "done" for s in ("share-package", "share-folders", "share-config", "share-login")):
+        warn("The setup did not finish. Read the message above, then run `sudo homelab-setup refresh` to continue.")
+        return
+    good("The folders are shared.")
+    share_how_to_open()
+
+
+def share_status():
+    if not share_wanted():
+        say("The folders are not shared. `sudo homelab-setup share` shares them.")
+        return
+    out("      %-14s %s" % ("Samba", "running" if share_running() else "not running"))
+    out("      %-14s %s" % ("Login", "set for %s" % Ctx.user if State.data.get("share_login") == Ctx.user else "not set"))
+    for name, path in SHARES:
+        out("      %-14s %s" % (name, path))
+    share_how_to_open()
+
+
+def share_password():
+    """`share password`: set the Windows login to the current admin password again, after the admin password was changed."""
+    if not share_wanted():
+        say("The folders are not shared, so there is no login to change. `sudo homelab-setup share` shares them.")
+        return
+    if Opt.dry:
+        say("This is a dry run: it would set the Samba login of %s to the admin password. Nothing was changed." % Ctx.user)
+        return
+    why = share_set_login(need_password("to set the login for the shared folders"))
+    if why:
+        raise Abort(why)
+    State.data["share_login"] = Ctx.user
+    State.save()
+    good("The login for the shared folders now uses the admin password.")
+
+
+def share_remove():
+    """`share remove`: stop sharing the folders. The files, the folders and the Samba package stay."""
+    if not share_wanted():
+        say("The folders are not shared. Nothing to remove.")
+        return
+    if Opt.dry:
+        say("This is a dry run: it would stop sharing the three folders and remove the login. Nothing was changed.")
+        return
+    if not yesno("Stop sharing the movies, shows and downloads folders with Windows (the files stay where they are)?", False):
+        say("Nothing was changed.")
+        return
+    main = read_file(P(SHARE_MAIN_CONF))
+    write_file(P(SHARE_MAIN_CONF), "\n".join(l for l in main.split("\n") if l.strip() != SHARE_INCLUDE), 0o644)
+    try:
+        os.remove(P(SHARE_CONF))
+    except OSError:
+        pass
+    run(["smbpasswd", "-x", Ctx.user])
+    act(["systemctl", "restart", "smbd"])
+    for k in ("share", "share_login"):
+        State.data.pop(k, None)
+    State.save()
+    good("The folders are no longer shared. Samba itself is still installed; to remove it too: sudo apt remove samba")
 
 UN_UNITS = [("homelab-terminal", TERMINAL_UNIT), ("homelab-panel", PANEL_UNIT), ("homelab-storage-guard", GUARD_UNIT)]
 
@@ -10847,10 +11095,10 @@ def main(argv):
             pos.append(a)
         i += 1
     cmd = pos[0] if pos else "checklist"
-    if cmd not in COMMANDS and cmd not in ("done", "skip", "unskip", "cards", "lastfm", "audiomuse", "navilist", "requests"):
+    if cmd not in COMMANDS and cmd not in ("done", "skip", "unskip", "cards", "lastfm", "audiomuse", "navilist", "requests", "share"):
         out("Unknown command '%s', so nothing was done. Try: homelab-setup help" % cmd)
         return 2
-    if len(pos) > 1 and cmd not in ("done", "skip", "unskip", "cards", "lastfm", "audiomuse", "navilist", "requests"):
+    if len(pos) > 1 and cmd not in ("done", "skip", "unskip", "cards", "lastfm", "audiomuse", "navilist", "requests", "share"):
         out("'%s' does not take the word '%s', so nothing was done. Try: homelab-setup help" % (cmd, pos[1][:40]))
         return 2
     if (Opt.wipe_data or Opt.wipe_drives) and cmd != "uninstall":
@@ -10878,6 +11126,8 @@ def main(argv):
             return cmd_navilist(pos[1:])
         elif cmd == "requests":
             return cmd_requests(pos[1:])
+        elif cmd == "share":
+            return cmd_share(pos[1:])
         else:
             if COMMANDS[cmd]() and cmd == "verify":
                 return 1
