@@ -5885,10 +5885,11 @@ def servarr_call(app, method, path, body=None):
 
 
 def qbit_login(user, password):
-    """Log in to qBittorrent's web page. Returns (the session header or None, the HTTP status). Newer versions name the cookie QBT_SID_ and the port."""
+    """Log in to qBittorrent's web page. Returns (the session header or None, the HTTP status). Newer versions answer 204 with no text and name the cookie QBT_SID_ and the port."""
     st, txt, hd = http("POST", url("qbittorrent", "/api/v2/auth/login"), urlform={"username": user, "password": password}, timeout=30, raw=True)
     m = re.search(r"\b((?:QBT_)?SID(?:_\d+)?)=([^;,\s]+)", hd.get("set-cookie", "") or "")
-    return ({"Cookie": "%s=%s" % (m.group(1), m.group(2))} if st == 200 and m and "Ok" in txt else None), st
+    accepted = st == 204 or (st == 200 and "Ok" in txt)
+    return ({"Cookie": "%s=%s" % (m.group(1), m.group(2))} if accepted and m else None), st
 
 
 def qbit_temp_password():
@@ -5922,7 +5923,7 @@ def setup_qbittorrent(pw):
     prefs = {"web_ui_username": Ctx.admin, "web_ui_password": pw, "save_path": "/data/downloads",
              "web_ui_host_header_validation_enabled": False}
     st, _, _ = http("POST", url("qbittorrent", "/api/v2/app/setPreferences"), urlform={"json": json.dumps(prefs)}, headers=session, timeout=30)
-    return None if st == 200 else "it refused the settings (HTTP %s)" % st
+    return None if st in (200, 204) else "it refused the settings (HTTP %s)" % st
 
 
 def servarr_message(reply):
@@ -5967,10 +5968,10 @@ def setup_servarr(app, pw):
         if f.get("name") in values:
             f["value"] = values[f["name"]]
     client.update({"name": "qBittorrent", "enable": True})
-    st = servarr_call(app, "POST", "/downloadclient", client)[0]
-    if st not in (200, 201):
-        st = http("POST", url(app, "/api/v3/downloadclient?forceSave=true"), body=client, headers={"X-Api-Key": servarr_key(app)}, timeout=60)[0]
-        return None if st in (200, 201) else "it did not accept qBittorrent as its download client (HTTP %s)" % st
+    if servarr_call(app, "POST", "/downloadclient", client)[0] not in (200, 201):
+        reply = http("POST", url(app, "/api/v3/downloadclient?forceSave=true"), body=client, headers={"X-Api-Key": servarr_key(app)}, timeout=60)
+        if reply[0] not in (200, 201):
+            return "it did not accept qBittorrent as its download client (HTTP %s%s)" % (reply[0], ": " + servarr_message(reply) if servarr_message(reply) else "")
     return None
 
 

@@ -62,7 +62,8 @@ class Fake(http.server.BaseHTTPRequestHandler):
             if s.get("blocked"):
                 return self.reply(403, "Your IP address has been banned after too many failed authentication attempts.")
             if (f["username"], f["password"]) in s["logins"]:
-                return self.reply(200, "Ok.", {"Set-Cookie": "%s; HttpOnly; path=/" % getattr(self.server, "cookie", "QBT_SID_8085=abc123")})
+                cookie = {"Set-Cookie": "%s; HttpOnly; SameSite=Lax; expires=Thu, 26-Nov-2026 03:57:57 GMT; path=/" % getattr(self.server, "cookie", "QBT_SID_8085=abc123")}
+                return self.reply(200, "Ok.", cookie) if getattr(self.server, "old_reply", False) else self.reply(204, "", cookie)
             return self.reply(200, "Fails.")
         if path == "/api/v2/app/setPreferences" and "=abc123" in self.headers.get("Cookie", ""):
             s["prefs"] = json.loads(dict(urllib.parse.parse_qsl(raw))["json"])
@@ -203,8 +204,9 @@ class RequestsSetup(unittest.TestCase):
         self.assertEqual(self.apps["seerr"].state["services"]["radarr"]["hostname"], "radarr")
         self.assertEqual(self.apps["radarr"].state["clients"][0]["fields"][0]["value"], "qbittorrent")
 
-    def test_an_older_qbittorrent_cookie_name_works_too(self):
+    def test_an_older_qbittorrent_answer_works_too(self):
         self.apps["qbittorrent"].cookie = "SID=abc123"
+        self.apps["qbittorrent"].old_reply = True
         self.step.run()
         self.assertEqual(self.step.probe(), "done")
 
