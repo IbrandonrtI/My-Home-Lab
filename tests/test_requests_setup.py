@@ -4,6 +4,7 @@ import http.server
 import json
 import os
 import re
+import shutil
 import threading
 import unittest
 import urllib.parse
@@ -311,9 +312,44 @@ class RequestsFilesAndCommand(unittest.TestCase):
     def test_ports_in_the_stack_file_match_the_installer(self):
         with open(os.path.join(helpers.ROOT, "stacks", "requests.yaml")) as f:
             text = f.read()
-        for app in ("seerr", "radarr", "sonarr", "prowlarr", "qbittorrent"):
+        for app in ("seerr", "radarr", "sonarr", "prowlarr", "qbittorrent", "jdownloader"):
             self.assertIn('"%d:%d"' % (self.m.PORTS[app], self.m.PORTS[app]), text)
-        self.assertEqual(self.m.STACKS["requests"][1], ["seerr", "radarr", "sonarr", "prowlarr", "qbittorrent"])
+        self.assertEqual(self.m.STACKS["requests"][1], ["seerr", "radarr", "sonarr", "prowlarr", "qbittorrent", "jdownloader"])
+
+    def test_jdownloader_saves_into_its_own_folder_on_the_main_pool(self):
+        text = self.m.stack_text("requests")
+        self.assertIn("jlesage/jdownloader-2", text)
+        self.assertIn("/mnt/storage/downloads/direct:/output", text)
+        self.assertIn("/home/test/requests/jdownloader:/config", text)
+        self.assertEqual(self.m.DIRECT_FOLDER, self.m.DOWNLOADS_FOLDER + "/direct")
+        self.assertIn("jdownloader", self.m.REQUESTS_APPS)
+        self.assertNotIn("jdownloader", self.m.REQUESTS_PARTS)
+
+    def test_the_direct_folder_is_made_and_an_older_install_gets_it_too(self):
+        for d in ("/mnt/storage/downloads", "/home/test/requests"):
+            self.addCleanup(shutil.rmtree, self.m.P(d), True)
+        step = self.m.BY_ID["requests-folders"]
+        step.run()
+        self.assertTrue(os.path.isdir(self.m.P("/mnt/storage/downloads/direct")))
+        self.assertTrue(os.path.isdir(self.m.P("/home/test/requests/jdownloader")))
+        os.rmdir(self.m.P("/mnt/storage/downloads/direct"))
+        self.assertEqual(step.probe(), "todo")
+        step.run()
+        self.assertEqual(step.probe(), "done")
+
+    def test_the_stack_waits_for_jdownloader_and_the_status_lists_it(self):
+        asked = []
+        with mock.patch.object(self.m, "requests_page_answers", lambda app: asked.append(app) or True):
+            self.assertTrue(self.m.requests_all_answer())
+        self.assertIn("jdownloader", asked)
+        shown = []
+        with mock.patch.object(self.m, "out", shown.append), mock.patch.object(self.m, "containers_running", lambda: {"jdownloader"}), \
+                mock.patch.object(self.m, "url", lambda app, path="": "http://x/" + app):
+            self.m.requests_status()
+        line = [s for s in shown if "JDownloader" in s]
+        self.assertEqual(len(line), 1)
+        self.assertIn("running", line[0])
+        self.assertNotIn("not linked", line[0])
 
     def test_the_folders_are_made_once(self):
         step = self.m.BY_ID["requests-folders"]
@@ -321,6 +357,13 @@ class RequestsFilesAndCommand(unittest.TestCase):
         step.run()
         self.assertEqual(step.probe(), "done")
         self.assertTrue(os.path.isdir(self.m.P("/mnt/storage/downloads")))
+
+    def test_jdownloader_gets_a_card_in_the_media_section(self):
+        cards = helpers.load_script("homelab_cards", "scripts/homelab-cards", {"HOMELAB_CARDS_OFFLINE": "1"})
+        c = {"image": "jlesage/jdownloader-2:latest", "name": "jdownloader", "project": "requests", "labels": {"org.opencontainers.image.title": "JDownloader"}}
+        self.assertEqual(cards.guess_section(c), ("Media & Entertainment", True))
+        self.assertEqual(cards.display_name(c), "JDownloader")
+        self.assertIn("jdownloader", cards.KNOWN_DESCRIPTIONS)
 
     def test_the_steps_only_apply_once_the_person_asks_for_them(self):
         self.m.State.data.pop("requests")

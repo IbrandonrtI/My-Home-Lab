@@ -106,3 +106,23 @@ services:
       resources:
         limits:
           memory: 1g
+
+  jdownloader:
+    image: jlesage/jdownloader-2:latest
+    container_name: jdownloader
+    restart: unless-stopped
+    labels:
+      org.opencontainers.image.title: "JDownloader"
+    ports:
+      - "5800:5800"
+    environment:
+      USER_ID: "1000"
+      GROUP_ID: "1000"
+      TZ: "${TZ:-UTC}"
+    volumes:
+      - /home/your-username/requests/jdownloader:/config
+      - /mnt/storage/downloads/direct:/output
+    deploy:
+      resources:
+        limits:
+          memory: 1536m

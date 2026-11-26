@@ -1,7 +1,7 @@
 
 
 def cmd_requests(rest):
-    """`requests`: set up Seerr, Radarr, Sonarr, Prowlarr and qBittorrent so people can ask for a movie or show. Also handles status and remove."""
+    """`requests`: set up Seerr, Radarr, Sonarr, Prowlarr and qBittorrent so people can ask for a movie or show, and JDownloader for direct download links. Also handles status and remove."""
     load_all()
     if Mode.existing:
         say("This machine was built by hand, so the installer only reads it. The request apps are not set up here.")
@@ -18,17 +18,18 @@ def cmd_requests(rest):
     if not jellyfin_wanted():
         raise Abort("The request apps work together with Jellyfin, and this machine has no Jellyfin of its own. Nothing was changed.")
     if not State.data.get("requests"):
-        for app in REQUESTS_PARTS:
+        for app in REQUESTS_APPS:
             other = port_taken_by(PORTS[app], mine=STACKS["requests"][1])
             if other:
                 raise Abort("Port %d is already used by the container %s, and %s needs it for its web page. Nothing was changed." % (PORTS[app], other, REQUESTS_LABELS[app]))
-    say("This adds the request apps, roughly 1 to 1.5 GB of memory in total:\n"
+    say("This adds the request apps, roughly 2 to 2.5 GB of memory in total:\n"
         "  - Seerr: where you search for a movie or show and ask for it. Everyone signs in with their Jellyfin login.\n"
         "  - Radarr and Sonarr: keep the list of movies and shows that were asked for, and put finished files in the Jellyfin folders.\n"
         "  - Prowlarr: keeps the indexers in one place and sends them to Radarr and Sonarr.\n"
         "  - qBittorrent: the download client. Radarr and Sonarr are linked to it, and its downloads go to %s.\n"
+        "  - JDownloader: for files you download from a web page. Paste the links into its page and the files go to %s.\n"
         "The installer links the apps to each other and gives each one the admin login. It adds no download sources and no indexers; "
-        "that part is up to you." % DOWNLOADS_FOLDER)
+        "that part is up to you." % (DOWNLOADS_FOLDER, DIRECT_FOLDER))
     if State.data.get("requests"):
         say("The request apps are already set up; this checks them again and finishes anything that is missing.")
     elif not yesno("Set up the request apps now?", True):
@@ -42,9 +43,9 @@ def cmd_requests(rest):
         warn("The setup did not finish. Read the message above, then run `sudo homelab-setup refresh` to continue.")
         return
     good("The request apps are set up.")
-    say("Open Seerr at %s and sign in with your Jellyfin login. Radarr is at %s, Sonarr at %s, Prowlarr at %s and qBittorrent at %s; each uses the admin login.\n"
+    say("Open Seerr at %s and sign in with your Jellyfin login. Radarr is at %s, Sonarr at %s, Prowlarr at %s and qBittorrent at %s; each uses the admin login. JDownloader is at %s and has no login of its own.\n"
         "Nothing will download until you add a source of your own in Prowlarr (Indexers); Prowlarr passes it on to Radarr and Sonarr."
-        % (url("seerr"), url("radarr"), url("sonarr"), url("prowlarr"), url("qbittorrent")))
+        % (url("seerr"), url("radarr"), url("sonarr"), url("prowlarr"), url("qbittorrent"), url("jdownloader")))
 
 
 def requests_status():
@@ -53,19 +54,20 @@ def requests_status():
         return
     up = containers_running()
     done = State.data.get("requests_linked") or {}
-    for app in REQUESTS_PARTS:
-        out("      %-14s %-12s %-10s %s" % (REQUESTS_LABELS[app], "running" if app in up else "not running", "linked" if done.get(app) else "not linked", url(app)))
+    for app in REQUESTS_APPS:
+        link = "linked" if done.get(app) else "not linked" if app in REQUESTS_PARTS else "-"
+        out("      %-14s %-12s %-10s %s" % (REQUESTS_LABELS[app], "running" if app in up else "not running", link, url(app)))
 
 
 def requests_remove():
-    """`requests remove`: remove the five containers. Their settings and the downloads folder are kept."""
+    """`requests remove`: remove the six containers. Their settings and the downloads folder are kept."""
     if not requests_wanted():
         say("The request apps are not set up. Nothing to remove.")
         return
     if Opt.dry:
-        say("This is a dry run: it would remove the five request containers. Nothing was changed.")
+        say("This is a dry run: it would remove the six request containers. Nothing was changed.")
         return
-    if not yesno("Remove Seerr, Radarr, Sonarr, Prowlarr and qBittorrent (their settings and the downloads folder stay on the drive)?", False):
+    if not yesno("Remove Seerr, Radarr, Sonarr, Prowlarr, qBittorrent and JDownloader (their settings and the downloads folder stay on the drive)?", False):
         say("Nothing was changed.")
         return
     if not Portainer.delete("requests"):
@@ -73,7 +75,7 @@ def requests_remove():
     for k in ("requests", "requests_stack", "requests_linked"):
         State.data.pop(k, None)
     State.save()
-    for app in REQUESTS_PARTS:
+    for app in REQUESTS_APPS:
         forget_card(app)
     good("The request apps are removed.")
     say("Their settings are still in %s/requests and the downloads in %s. To free the space: sudo rm -rf %s/requests" % (Ctx.home, DOWNLOADS_FOLDER, Ctx.home))

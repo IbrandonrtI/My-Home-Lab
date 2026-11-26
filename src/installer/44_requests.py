@@ -1,13 +1,15 @@
-# Requests: Seerr (where people ask for a movie or show), Radarr and Sonarr (which keep the lists), Prowlarr (which keeps the indexers for both) and qBittorrent (the download client).
+# Requests: Seerr (where people ask for a movie or show), Radarr and Sonarr (which keep the lists), Prowlarr (which keeps the indexers for both), qBittorrent (the download client) and JDownloader (for direct download links).
 # Installed only by `homelab-setup requests`. No indexers and no download sources are added.
 
-REQUESTS_FOLDERS = ("requests", "requests/seerr", "requests/radarr", "requests/sonarr", "requests/prowlarr", "requests/qbittorrent")
+REQUESTS_FOLDERS = ("requests", "requests/seerr", "requests/radarr", "requests/sonarr", "requests/prowlarr", "requests/qbittorrent", "requests/jdownloader")
 DOWNLOADS_FOLDER = "/mnt/storage/downloads"
+DIRECT_FOLDER = DOWNLOADS_FOLDER + "/direct"
 SEERR_UID = 1000
 REQUESTS_ROOTS = {"radarr": "/data/movies", "sonarr": "/data/shows"}
-LIBRARY_FOLDERS = ("/mnt/storage/movies", "/mnt/storage/shows", DOWNLOADS_FOLDER)
-REQUESTS_LABELS = {"seerr": "Seerr", "radarr": "Radarr", "sonarr": "Sonarr", "prowlarr": "Prowlarr", "qbittorrent": "qBittorrent"}
+LIBRARY_FOLDERS = ("/mnt/storage/movies", "/mnt/storage/shows", DOWNLOADS_FOLDER, DIRECT_FOLDER)
+REQUESTS_LABELS = {"seerr": "Seerr", "radarr": "Radarr", "sonarr": "Sonarr", "prowlarr": "Prowlarr", "qbittorrent": "qBittorrent", "jdownloader": "JDownloader"}
 REQUESTS_PARTS = ("qbittorrent", "radarr", "sonarr", "prowlarr", "seerr")
+REQUESTS_APPS = REQUESTS_PARTS + ("jdownloader",)
 SERVARR_API = {"prowlarr": "v1"}
 
 
@@ -16,12 +18,12 @@ def requests_applies():
 
 
 def requests_page_answers(app):
-    path = {"seerr": "/api/v1/status", "radarr": "/ping", "sonarr": "/ping", "prowlarr": "/ping", "qbittorrent": "/"}[app]
+    path = {"seerr": "/api/v1/status", "radarr": "/ping", "sonarr": "/ping", "prowlarr": "/ping", "qbittorrent": "/", "jdownloader": "/"}[app]
     return http("GET", url(app, path), timeout=10)[0] == 200
 
 
 def requests_all_answer():
-    return all(requests_page_answers(a) for a in REQUESTS_PARTS)
+    return all(requests_page_answers(a) for a in REQUESTS_APPS)
 
 
 def library_folders_not_mine():
@@ -39,19 +41,19 @@ def library_folders_not_mine():
 @step
 class RequestsFolders(Step):
     id, group = "requests-folders", "Services"
-    title = "Folders for the request apps, and the downloads folder on the Main pool"
+    title = "Folders for the request apps, and the downloads folders on the Main pool"
     needs = ("folders",)
 
     def applies(self):
         return requests_applies()
 
     def probe(self):
-        want = [Ctx.home + "/" + f for f in REQUESTS_FOLDERS] + [DOWNLOADS_FOLDER]
+        want = [Ctx.home + "/" + f for f in REQUESTS_FOLDERS] + [DOWNLOADS_FOLDER, DIRECT_FOLDER]
         return "done" if all(os.path.isdir(P(d)) for d in want) and not library_folders_not_mine() else "todo"
 
     def run(self):
         if Opt.dry:
-            out("      would create %s and the folders under %s/requests, and make the movies, shows and downloads folders writable for %s" % (DOWNLOADS_FOLDER, Ctx.home, Ctx.user))
+            out("      would create %s and %s and the folders under %s/requests, and make the movies, shows and downloads folders writable for %s" % (DOWNLOADS_FOLDER, DIRECT_FOLDER, Ctx.home, Ctx.user))
             return
         for d in library_folders_not_mine():
             chown(P(d), Ctx.uid, Ctx.gid)
@@ -59,18 +61,19 @@ class RequestsFolders(Step):
             path = Ctx.home + "/" + f
             make_folder(P(path))
             chown(P(path), SEERR_UID if f == "requests/seerr" else Ctx.uid, SEERR_UID if f == "requests/seerr" else Ctx.gid)
-        make_folder(P(DOWNLOADS_FOLDER))
-        chown(P(DOWNLOADS_FOLDER), Ctx.uid, Ctx.gid)
+        for d in (DOWNLOADS_FOLDER, DIRECT_FOLDER):
+            make_folder(P(d))
+            chown(P(d), Ctx.uid, Ctx.gid)
 
 
 class RequestsStack(StackStep):
-    """The five request containers in one stack."""
+    """The six request containers in one stack."""
 
     def applies(self):
         return requests_applies()
 
     def detail(self):
-        return "Seerr %d, Radarr %d, Sonarr %d, Prowlarr %d, qBittorrent %d" % tuple(PORTS[a] for a in ("seerr", "radarr", "sonarr", "prowlarr", "qbittorrent"))
+        return "Seerr %d, Radarr %d, Sonarr %d, Prowlarr %d, qBittorrent %d, JDownloader %d" % tuple(PORTS[a] for a in ("seerr", "radarr", "sonarr", "prowlarr", "qbittorrent", "jdownloader"))
 
     def stamp(self):
         return hashlib.md5((stack_text("requests") + "|".join("%s=%s" % kv for kv in stack_env("requests"))).encode()).hexdigest()
@@ -91,7 +94,7 @@ class RequestsStack(StackStep):
 
 
 register(RequestsStack("requests", ("portainer-env", "folders", "requests-folders", "stack-jellyfin"),
-                       "Requests stack (Seerr, Radarr, Sonarr, Prowlarr and qBittorrent)", 600))
+                       "Requests stack (Seerr, Radarr, Sonarr, Prowlarr, qBittorrent and JDownloader)", 600))
 
 
 def servarr_key(app):

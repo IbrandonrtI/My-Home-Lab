@@ -200,7 +200,7 @@ If you already run a Jellyfin of your own, the installer leaves it as it is and 
 
 ### Requests
 
-An optional set of five apps that lets people ask for a movie or show. They are not part of the normal install, because together they use roughly 1 to 1.5 GB of memory. Set them up with:
+An optional set of six apps. Five let people ask for a movie or show, and the sixth, JDownloader, downloads files from web links. They are not part of the normal install, because together they use roughly 2 to 2.5 GB of memory. Set them up with:
 
 ```bash
 sudo homelab-setup requests
@@ -212,18 +212,21 @@ It asks first, then installs one stack called `requests` ([`stacks/requests.yaml
 - **Radarr** (movies) and **Sonarr** (shows) keep the list of what was asked for and file finished downloads into the `movies` and `shows` folders.
 - **Prowlarr** keeps the indexers in one place and sends them to Radarr and Sonarr, so you add each one only once.
 - **qBittorrent** is the download client. Its downloads go to the `downloads` folder on the Main pool.
+- **JDownloader** downloads files from web pages that give a direct link rather than a torrent. It is not linked to Seerr, Radarr or Sonarr. Open it, paste the links, and the files go to `downloads/direct` on the Main pool.
 
 The installer gives Radarr, Sonarr, Prowlarr and qBittorrent the admin login, adds the root folders and qBittorrent to Radarr and Sonarr, links Prowlarr to both, and signs Seerr in to Jellyfin and links it to Radarr and Sonarr. It adds no indexers and no download sources. Until you add your own in Prowlarr (Indexers), a request is only a note on a list. Each app gets its own dashboard card within a few minutes.
 
 Radarr, Sonarr and qBittorrent run as the lab user, so the setup makes the `movies`, `shows` and `downloads` folders belong to that user if they belonged to someone else. They see the Main pool as `/data`, so the downloads folder and the library are in one place. Keep the `downloads` folder on the same drive as `movies` and `shows` (the Move Folders option on the Drives screen does that), so finished files are moved into the library instead of copied.
 
-The five images follow their newest version, so `sudo homelab-update` keeps them current. The settings are in the `requests` folder of the home folder.
+The six images follow their newest version, so `sudo homelab-update` keeps them current. The settings are in the `requests` folder of the home folder.
 
 | Command | What it does |
 | :--- | :--- |
 | `sudo homelab-setup requests` | Sets the apps up, or checks them and finishes anything that is missing |
 | `sudo homelab-setup requests status` | Shows whether each app runs and is linked |
-| `sudo homelab-setup requests remove` | Removes the five containers; their settings and the downloads folder stay |
+| `sudo homelab-setup requests remove` | Removes the six containers; their settings and the downloads folders stay |
+
+**Using JDownloader.** It opens at port 5800 and has no login of its own, like Metube and Downtify, so use it only on your own network or over Tailscale. It needs about 1 GB of memory. Files it downloads wait in `downloads/direct`; Jellyfin does not see them there. Move each file to `movies` or `shows` and name it the way Jellyfin expects (`Movie Name (2019)/Movie Name (2019).mkv`, or `Show Name/Season 01/Show Name - S01E01.mkv`), then scan the library in Jellyfin. FileBrowser can move and rename files.
 
 ## Where the data lives
 
