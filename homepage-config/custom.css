@@ -1503,6 +1503,9 @@ html.hl-jf-side #hl-jf-slot { display: block; flex: 1 1 auto; min-height: 340px;
   #inner_wrapper #widgets-wrap.hl-stats-on #hl-stats .hl-g-up { flex-grow: 0.55; }
 }
 
+/* On a wide screen the Network cell is never narrower than its numbers and graph, so the graph cannot spill over the line and into Uptime. The other cells give way. */
+@media (min-width: 1181px) { #inner_wrapper #hl-stats .hl-g-net { min-width: max-content; } }
+
 /* Docker CPU and memory per container (drawn by custom.js from docker-trends.json) and the temperature and added-per-day charts (from history.json) on the Stats tab. */
 #hl-docker, #hl-history { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 14px var(--lk-side) 6px; }
 #hl-docker[hidden], #hl-history[hidden] { display: none; }
