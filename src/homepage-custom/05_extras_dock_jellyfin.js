@@ -333,7 +333,7 @@
   function jellyfin() {
     var card = document.getElementById("jellyfin-card"), side = !!card && jfOpen(), root = document.documentElement;
     if (root.classList.contains("hl-jf-side") !== side) root.classList.toggle("hl-jf-side", side);
-    if (!card) return;
+    if (!card) { jfPlace(); return; }
     all(".service-block", card).forEach(function (b) {
       var l = b.querySelector(".service-block-label"), tx = (l ? l.textContent : b.textContent).replace(/[\d.,]+/g, "").trim(), gone = /^songs?$/i.test(tx);
       if (b.classList.contains("hl-gone") !== gone) b.classList.toggle("hl-gone", gone);

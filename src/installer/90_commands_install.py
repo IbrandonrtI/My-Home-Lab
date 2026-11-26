@@ -532,6 +532,8 @@ def system_check():
         names += [c for c in STACKS["audiomuse"][1] if c != "audiomuse-worker" or not State.data.get("audiomuse_paused")]
     if navilist_wanted() and navidrome_wanted():
         names += STACKS["navilist"][1]
+    if requests_applies():
+        names += STACKS["requests"][1]
     names = [c for c in names if not any(c in STACKS[n][1] for n in own)] + adopted_names()
     up = containers_running()
     missing = [c for c in names if c not in up]

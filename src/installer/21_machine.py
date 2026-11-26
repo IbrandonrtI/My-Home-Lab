@@ -507,6 +507,8 @@ def stack_env(name):
                 ("NAVIDROME_AGENTS", NAVIDROME_AGENTS_WITH if audiomuse_wanted() else "")]
     if name == "jellyfin":
         return [("TZ", Ctx.tz)]
+    if name == "requests":
+        return [("TZ", Ctx.tz)]
     if name == "audiomuse":
         return [("TZ", Ctx.tz), ("AUDIOMUSE_DB_PASSWORD", Secrets.get("AUDIOMUSE_DB_PASSWORD")),
                 ("AUDIOMUSE_NAVIDROME_URL", "http://%s:%d" % (svc_host(), PORTS["navidrome"])),
@@ -534,6 +536,10 @@ NAVILIST_ND_USER = "navilist"
 
 def navilist_wanted():
     return bool(State.data.get("navilist")) and not Mode.existing
+
+
+def requests_wanted():
+    return bool(State.data.get("requests")) and not Mode.existing
 
 
 def audiomuse_wanted():

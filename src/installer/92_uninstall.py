@@ -51,12 +51,12 @@ def _adopted_dirs():
     h = Ctx.home
     return {"nextcloud": (h + "/nextcloud", "/mnt/storage/nextcloud"), "immich": (h + "/immich", "/mnt/storage/immich"),
             "speedtest-tracker": (h + "/speedtest-tracker",), "audiomuse": (h + "/audiomuse",), "navidrome": (h + "/navidrome",), "jellyfin": (h + "/jellyfin",),
-            "navilist": (h + "/navilist",), "adguard": ("/opt/adguard-docker",)}
+            "navilist": (h + "/navilist",), "requests": (h + "/requests",), "adguard": ("/opt/adguard-docker",)}
 
 
 def un_data_dirs():
     h = Ctx.home
-    dirs = [h + "/nextcloud", h + "/immich", h + "/speedtest-tracker", h + "/homepage-config", h + "/audiomuse", h + "/navidrome", h + "/jellyfin", h + "/navilist",
+    dirs = [h + "/nextcloud", h + "/immich", h + "/speedtest-tracker", h + "/homepage-config", h + "/audiomuse", h + "/navidrome", h + "/jellyfin", h + "/navilist", h + "/requests",
             "/opt/adguard-docker", "/mnt/storage/immich", "/mnt/storage/nextcloud", boot_share_dir()]
     kept = [d for n in adopted() for d in _adopted_dirs().get(n, ())]
     return [d for d in dirs if os.path.isdir(P(d)) and d not in kept]

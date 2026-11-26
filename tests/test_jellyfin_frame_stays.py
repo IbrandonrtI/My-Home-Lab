@@ -95,5 +95,18 @@ class JellyfinFrameStays(unittest.TestCase):
         self.assertFalse(page.evaluate("document.documentElement.classList.contains('hl-jf-side')"))
 
 
+    def test_the_frame_goes_the_moment_the_card_does(self):
+        """Not on the next half-second check: with that check switched off, the page itself must hide the frame when the card is taken out."""
+        page = self.browser.new_page(viewport={"width": 1400, "height": 900})
+        self.addCleanup(page.close)
+        page.add_init_script("window.setInterval = function () { return 0; };")
+        page.route("http://jf.test/**", lambda route: route.fulfill(status=200, content_type="text/html", body=FRAME))
+        page.goto("file://" + os.path.join(self.dir, "page.html"))
+        page.wait_for_selector("#hl-jf-frame iframe", state="attached")
+        page.wait_for_timeout(400)
+        page.evaluate("document.getElementById('jellyfin-card').remove()")
+        page.wait_for_timeout(150)
+        self.assertTrue(page.evaluate("document.getElementById('hl-jf-frame').classList.contains('hl-away')"))
+
 if __name__ == "__main__":
     unittest.main()

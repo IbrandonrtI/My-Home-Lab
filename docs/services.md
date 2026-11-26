@@ -10,6 +10,7 @@ This is a walk through everything the lab runs, one service at a time: what it's
 - [Files and photos](#files-and-photos)
 - [Music](#music)
 - [Movies and shows](#movies-and-shows)
+- [Requests](#requests)
 - [Where the data lives](#where-the-data-lives)
 - [What runs by itself](#what-runs-by-itself)
 
@@ -31,6 +32,10 @@ This is a walk through everything the lab runs, one service at a time: what it's
 | AudioMuse-AI | 8100 | the local network, and Tailscale on its own port |
 | NaviList | 8200 | the local network, and Tailscale on its own port |
 | Jellyfin | 8096 (web) and 7359 (UDP, app discovery) | the local network, and Tailscale on its own port |
+| Seerr | 5055 | the local network, and Tailscale on its own port |
+| Radarr | 7878 | the local network, and Tailscale on its own port |
+| Sonarr | 8989 | the local network, and Tailscale on its own port |
+| qBittorrent | 8085 (web) and 6881 (torrent traffic) | the local network, and Tailscale on its own port |
 | Downtify | 8000 | the local network, and Tailscale on its own port |
 | MeTube | 8185 | the local network, and Tailscale on its own port |
 
@@ -191,6 +196,32 @@ The Custom CSS also ends with one rule that sets the slideshow height to zero wh
 **Dashboard widget.** The Jellyfin card on the dashboard shows the number of movies and shows and what is playing now. The installer makes the widget's API key (named `homepage`) after it has the Jellyfin login. The widget needs the card to be on the dashboard first. The card is added automatically within five minutes of Jellyfin starting, and the next `sudo homelab-setup refresh` then sets up the widget. If Jellyfin already has a login that the installer did not make, it cannot create the key. In that case open Jellyfin, go to Dashboard, API Keys, press `+`, name the key `homepage`, then run `sudo homelab-setup fill` and paste the key.
 
 If you already run a Jellyfin of your own, the installer leaves it as it is and does not add a second one.
+
+### Requests
+
+An optional set of four apps that lets people ask for a movie or show. They are not part of the normal install, because together they use about 1 GB of memory. Set them up with:
+
+```bash
+sudo homelab-setup requests
+```
+
+It asks first, then installs one stack called `requests` ([`stacks/requests.yaml`](../stacks/requests.yaml)) and links the apps. It needs Jellyfin, and it asks for the admin password once.
+
+- **Seerr** is the page people use. Everyone signs in with their Jellyfin login, searches for a title and presses Request.
+- **Radarr** (movies) and **Sonarr** (shows) keep the list of what was asked for and file finished downloads into the `movies` and `shows` folders.
+- **qBittorrent** is the download client. Its downloads go to the `downloads` folder on the Main pool.
+
+The installer gives Radarr, Sonarr and qBittorrent the admin login, adds the root folders and qBittorrent to Radarr and Sonarr, and signs Seerr in to Jellyfin and links it to Radarr and Sonarr. It adds no indexers and no download sources. Until you add your own in Radarr and Sonarr (Settings, Indexers), a request is only a note on a list. Each app gets its own dashboard card within a few minutes.
+
+Radarr, Sonarr and qBittorrent see the Main pool as `/data`, so the downloads folder and the library are in one place. Keep the `downloads` folder on the same drive as `movies` and `shows` (the Move Folders option on the Drives screen does that), so finished files are moved into the library instead of copied.
+
+The four images follow their newest version, so `sudo homelab-update` keeps them current. The settings are in the `requests` folder of the home folder.
+
+| Command | What it does |
+| :--- | :--- |
+| `sudo homelab-setup requests` | Sets the apps up, or checks them and finishes anything that is missing |
+| `sudo homelab-setup requests status` | Shows whether each app runs and is linked |
+| `sudo homelab-setup requests remove` | Removes the four containers; their settings and the downloads folder stay |
 
 ## Where the data lives
 

@@ -245,11 +245,14 @@ def header_dict(msg):
     return out
 
 
-def http(method, url, body=None, headers=None, timeout=20, form=None, raw=False):
-    """Send an HTTP request and return (status, parsed JSON or text, headers). Status 0 means the connection failed."""
+def http(method, url, body=None, headers=None, timeout=20, form=None, raw=False, urlform=None):
+    """Send an HTTP request and return (status, parsed JSON or text, headers). Status 0 means the connection failed. `form` sends a multipart form, `urlform` an ordinary urlencoded one."""
     hdr = dict(headers or {})
     data = None
-    if form is not None:
+    if urlform is not None:
+        data = urllib.parse.urlencode(urlform).encode()
+        hdr["Content-Type"] = "application/x-www-form-urlencoded"
+    elif form is not None:
         boundary = "----hls" + rand_alnum(16)
         parts = []
         for k, v in form.items():

@@ -1,0 +1,89 @@
+services:
+  seerr:
+    image: ghcr.io/seerr-team/seerr:latest
+    init: true
+    container_name: seerr
+    restart: unless-stopped
+    labels:
+      org.opencontainers.image.title: "Seerr"
+    ports:
+      - "5055:5055"
+    environment:
+      TZ: "${TZ:-UTC}"
+      PORT: "5055"
+    volumes:
+      - /home/your-username/requests/seerr:/app/config
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost:5055/api/v1/status || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 768m
+
+  radarr:
+    image: lscr.io/linuxserver/radarr:latest
+    container_name: radarr
+    restart: unless-stopped
+    labels:
+      org.opencontainers.image.title: "Radarr"
+    ports:
+      - "7878:7878"
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+      TZ: "${TZ:-UTC}"
+    volumes:
+      - /home/your-username/requests/radarr:/config
+      - /mnt/storage:/data
+    deploy:
+      resources:
+        limits:
+          memory: 768m
+
+  sonarr:
+    image: lscr.io/linuxserver/sonarr:latest
+    container_name: sonarr
+    restart: unless-stopped
+    labels:
+      org.opencontainers.image.title: "Sonarr"
+    ports:
+      - "8989:8989"
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+      TZ: "${TZ:-UTC}"
+    volumes:
+      - /home/your-username/requests/sonarr:/config
+      - /mnt/storage:/data
+    deploy:
+      resources:
+        limits:
+          memory: 768m
+
+  qbittorrent:
+    image: lscr.io/linuxserver/qbittorrent:latest
+    container_name: qbittorrent
+    restart: unless-stopped
+    labels:
+      org.opencontainers.image.title: "qBittorrent"
+    ports:
+      - "8085:8085"
+      - "6881:6881"
+      - "6881:6881/udp"
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+      TZ: "${TZ:-UTC}"
+      WEBUI_PORT: "8085"
+      TORRENTING_PORT: "6881"
+    volumes:
+      - /home/your-username/requests/qbittorrent:/config
+      - /mnt/storage:/data
+    deploy:
+      resources:
+        limits:
+          memory: 1g
