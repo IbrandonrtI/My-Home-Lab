@@ -78,7 +78,7 @@ class RequestsStack(StackStep):
         return hashlib.md5((stack_text("requests") + "|".join("%s=%s" % kv for kv in stack_env("requests"))).encode()).hexdigest()
 
     def probe(self):
-        return "done" if stack_up("requests") and State.data.get("requests_stack") == self.stamp() else "todo"
+        return "done" if stack_up("requests") and State.data.get("requests_stack") == self.stamp() and not handmade_flaresolverr() else "todo"
 
     def run(self):
         if Opt.dry:
@@ -260,7 +260,11 @@ def setup_flaresolverr():
         for f in fields:
             f["value"] = host
         mine["tags"] = mine.get("tags") or [tag["id"]]
-        return None if servarr_call("prowlarr", "PUT", "/indexerproxy/%s" % mine.get("id"), mine)[0] in (200, 202) else "it did not accept the change to its FlareSolverr proxy"
+        if servarr_call("prowlarr", "PUT", "/indexerproxy/%s" % mine.get("id"), mine)[0] not in (200, 202):
+            st = http("PUT", url("prowlarr", "/api/v1/indexerproxy/%s?forceSave=true" % mine.get("id")), body=mine, headers={"X-Api-Key": servarr_key("prowlarr")}, timeout=60)[0]
+            if st not in (200, 202):
+                return "it did not accept the change to its FlareSolverr proxy (HTTP %s)" % st
+        return None
     schema = [s for s in servarr_call("prowlarr", "GET", "/indexerproxy/schema")[1] or [] if isinstance(s, dict) and s.get("implementation") == "FlareSolverr"]
     if not schema:
         return "it has no FlareSolverr proxy"

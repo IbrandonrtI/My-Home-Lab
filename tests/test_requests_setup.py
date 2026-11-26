@@ -112,6 +112,8 @@ class Fake(http.server.BaseHTTPRequestHandler):
                     return self.reply(201, {})
                 return self.reply(200, s.get("proxies", []))
             if path.startswith("/api/v3/indexerproxy/") and method == "PUT":
+                if s.get("refuse_proxy") and "forceSave" not in self.path:
+                    return self.reply(400, [{"errorMessage": "Unable to connect"}])
                 body = json.loads(raw)
                 s["proxies"] = [body if str(p.get("id")) == path.rsplit("/", 1)[1] else p for p in s.get("proxies", [])]
                 return self.reply(202, body)
@@ -363,6 +365,14 @@ class RequestsSetup(unittest.TestCase):
         self.assertEqual({f["name"]: f["value"] for f in proxy["fields"]}, {"host": self.fs_host(), "requestTimeout": 90})
         self.assertEqual(proxy["tags"], [3])
 
+    def test_prowlarr_saves_the_changed_proxy_anyway_when_its_own_test_of_flaresolverr_fails(self):
+        self.apps["prowlarr"].state["refuse_proxy"] = True
+        self.apps["prowlarr"].state["proxies"] = [{"id": 1, "name": "FlareSolverr", "implementation": "FlareSolverr", "tags": [3],
+                                                   "fields": [{"name": "host", "value": "http://172.17.0.3:8191/"}]}]
+        self.step.run()
+        self.assertEqual(self.apps["prowlarr"].state["proxies"][0]["fields"][0]["value"], self.fs_host())
+        self.assertEqual(self.step.probe(), "done")
+
     def test_a_proxy_that_is_already_right_is_left_alone(self):
         self.apps["prowlarr"].state["tags"] = [{"id": 3, "label": "my-tag"}]
         self.apps["prowlarr"].state["proxies"] = [{"id": 1, "name": "Mine", "implementation": "FlareSolverr", "tags": [3],
@@ -555,6 +565,14 @@ class FlareSolverrByHand(unittest.TestCase):
     def test_it_is_removed_before_the_stack_is_deployed(self):
         order = self.run_stack_step()
         self.assertEqual([o for o in order if o in ("deploy", "docker rm -f flaresolverr")], ["docker rm -f flaresolverr", "deploy"])
+
+    def test_the_stack_counts_as_unfinished_while_a_hand_made_container_is_there(self):
+        step = self.m.BY_ID["stack-requests"]
+        with mock.patch.object(self.m, "stack_up", lambda name: True), mock.patch.object(step, "stamp", lambda: "x"):
+            self.m.State.data["requests_stack"] = "x"
+            self.assertEqual(step.probe(), "todo")
+            self.project = "requests"
+            self.assertEqual(step.probe(), "done")
 
     def test_the_stacks_own_container_is_not_removed(self):
         self.project = "requests"
