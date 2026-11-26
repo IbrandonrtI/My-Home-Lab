@@ -215,7 +215,7 @@ It asks first, then installs one stack called `requests` ([`stacks/requests.yaml
 
 The installer gives Radarr, Sonarr, Prowlarr and qBittorrent the admin login, adds the root folders and qBittorrent to Radarr and Sonarr, links Prowlarr to both, and signs Seerr in to Jellyfin and links it to Radarr and Sonarr. It adds no indexers and no download sources. Until you add your own in Prowlarr (Indexers), a request is only a note on a list. Each app gets its own dashboard card within a few minutes.
 
-Radarr, Sonarr and qBittorrent see the Main pool as `/data`, so the downloads folder and the library are in one place. Keep the `downloads` folder on the same drive as `movies` and `shows` (the Move Folders option on the Drives screen does that), so finished files are moved into the library instead of copied.
+Radarr, Sonarr and qBittorrent run as the lab user, so the setup makes the `movies`, `shows` and `downloads` folders belong to that user if they belonged to someone else. They see the Main pool as `/data`, so the downloads folder and the library are in one place. Keep the `downloads` folder on the same drive as `movies` and `shows` (the Move Folders option on the Drives screen does that), so finished files are moved into the library instead of copied.
 
 The five images follow their newest version, so `sudo homelab-update` keeps them current. The settings are in the `requests` folder of the home folder.
 

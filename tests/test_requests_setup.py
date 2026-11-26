@@ -59,10 +59,12 @@ class Fake(http.server.BaseHTTPRequestHandler):
             return self.reply(200, "ok")
         if path == "/api/v2/auth/login":
             f = dict(urllib.parse.parse_qsl(raw))
+            if s.get("blocked"):
+                return self.reply(403, "Your IP address has been banned after too many failed authentication attempts.")
             if (f["username"], f["password"]) in s["logins"]:
-                return self.reply(200, "Ok.", {"Set-Cookie": "SID=abc123; HttpOnly; path=/"})
+                return self.reply(200, "Ok.", {"Set-Cookie": "%s; HttpOnly; path=/" % getattr(self.server, "cookie", "QBT_SID_8085=abc123")})
             return self.reply(200, "Fails.")
-        if path == "/api/v2/app/setPreferences" and "SID=abc123" in self.headers.get("Cookie", ""):
+        if path == "/api/v2/app/setPreferences" and "=abc123" in self.headers.get("Cookie", ""):
             s["prefs"] = json.loads(dict(urllib.parse.parse_qsl(raw))["json"])
             return self.reply(200, "")
         self.reply(403, "")
@@ -93,6 +95,8 @@ class Fake(http.server.BaseHTTPRequestHandler):
             return self.reply(200, {"id": 1, "authenticationMethod": "none", "port": 7878})
         if path == "/api/v3/rootfolder":
             if method == "POST":
+                if s.get("refuse_root"):
+                    return self.reply(400, [{"propertyName": "Path", "errorMessage": s["refuse_root"]}])
                 s["roots"].append(json.loads(raw))
                 return self.reply(201, {})
             return self.reply(200, s["roots"])
@@ -199,6 +203,35 @@ class RequestsSetup(unittest.TestCase):
         self.assertEqual(self.apps["seerr"].state["services"]["radarr"]["hostname"], "radarr")
         self.assertEqual(self.apps["radarr"].state["clients"][0]["fields"][0]["value"], "qbittorrent")
 
+    def test_an_older_qbittorrent_cookie_name_works_too(self):
+        self.apps["qbittorrent"].cookie = "SID=abc123"
+        self.step.run()
+        self.assertEqual(self.step.probe(), "done")
+
+    def test_a_blocked_address_is_cleared_by_restarting_qbittorrent(self):
+        state = self.apps["qbittorrent"].state
+        state["blocked"] = True
+        restarts = []
+
+        def docker(*args, **kw):
+            if args[0] == "restart":
+                restarts.append(args)
+                state["blocked"] = False
+            return 0, "A temporary password is provided for this session: temp-pass"
+
+        with mock.patch.object(self.m, "docker", docker):
+            self.step.run()
+        self.assertEqual(len(restarts), 1)
+        self.assertEqual(self.step.probe(), "done")
+
+    def test_the_apps_own_words_are_in_the_message_when_a_folder_is_refused(self):
+        def refuse(app):
+            self.apps[app].state["refuse_root"] = "Folder '/data/movies/' is not writable by user 'abc'"
+        refuse("radarr")
+        with self.assertRaises(self.m.Abort) as cm:
+            self.step.run()
+        self.assertIn("is not writable by user 'abc'", str(cm.exception))
+
     def test_a_part_that_fails_is_reported_and_only_that_part_is_retried(self):
         self.apps["qbittorrent"].state["logins"] = []
         with self.assertRaises(self.m.Abort) as cm:
@@ -241,6 +274,16 @@ class RequestsSetup(unittest.TestCase):
         self.assertEqual(self.step.probe(), "done")
         for app in ("radarr", "sonarr", "seerr", "qbittorrent"):
             self.assertEqual([r for r in self.apps[app].state["log"] if r[0] != "GET"], [], app)
+
+    def test_folders_that_belong_to_someone_else_are_handed_to_the_lab_user(self):
+        m = self.m
+        for d in m.LIBRARY_FOLDERS:
+            os.makedirs(m.P(d), exist_ok=True)
+        with mock.patch.object(m, "FAKE", False), mock.patch.object(m.Ctx, "uid", os.getuid() + 1), mock.patch.object(m, "chown") as chown:
+            step = m.BY_ID["requests-folders"]
+            self.assertEqual(step.probe(), "todo")
+            step.run()
+        self.assertEqual({c.args[0] for c in chown.call_args_list} & {m.P(d) for d in m.LIBRARY_FOLDERS}, {m.P(d) for d in m.LIBRARY_FOLDERS})
 
     def test_a_dry_run_changes_nothing(self):
         with mock.patch.object(self.m.Opt, "dry", True):

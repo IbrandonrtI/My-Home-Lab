@@ -5,6 +5,7 @@ REQUESTS_FOLDERS = ("requests", "requests/seerr", "requests/radarr", "requests/s
 DOWNLOADS_FOLDER = "/mnt/storage/downloads"
 SEERR_UID = 1000
 REQUESTS_ROOTS = {"radarr": "/data/movies", "sonarr": "/data/shows"}
+LIBRARY_FOLDERS = ("/mnt/storage/movies", "/mnt/storage/shows", DOWNLOADS_FOLDER)
 REQUESTS_LABELS = {"seerr": "Seerr", "radarr": "Radarr", "sonarr": "Sonarr", "prowlarr": "Prowlarr", "qbittorrent": "qBittorrent"}
 REQUESTS_PARTS = ("qbittorrent", "radarr", "sonarr", "prowlarr", "seerr")
 SERVARR_API = {"prowlarr": "v1"}
@@ -23,6 +24,18 @@ def requests_all_answer():
     return all(requests_page_answers(a) for a in REQUESTS_PARTS)
 
 
+def library_folders_not_mine():
+    """The movies, shows and downloads folders that exist but belong to someone else. Radarr, Sonarr and qBittorrent run as the lab user and need to write in them."""
+    mine = []
+    for d in LIBRARY_FOLDERS if not FAKE else ():
+        try:
+            if os.path.isdir(P(d)) and os.stat(P(d)).st_uid != Ctx.uid:
+                mine.append(d)
+        except OSError:
+            pass
+    return mine
+
+
 @step
 class RequestsFolders(Step):
     id, group = "requests-folders", "Services"
@@ -34,12 +47,14 @@ class RequestsFolders(Step):
 
     def probe(self):
         want = [Ctx.home + "/" + f for f in REQUESTS_FOLDERS] + [DOWNLOADS_FOLDER]
-        return "done" if all(os.path.isdir(P(d)) for d in want) else "todo"
+        return "done" if all(os.path.isdir(P(d)) for d in want) and not library_folders_not_mine() else "todo"
 
     def run(self):
         if Opt.dry:
-            out("      would create %s and the folders under %s/requests" % (DOWNLOADS_FOLDER, Ctx.home))
+            out("      would create %s and the folders under %s/requests, and make the movies, shows and downloads folders writable for %s" % (DOWNLOADS_FOLDER, Ctx.home, Ctx.user))
             return
+        for d in library_folders_not_mine():
+            chown(P(d), Ctx.uid, Ctx.gid)
         for f in REQUESTS_FOLDERS:
             path = Ctx.home + "/" + f
             make_folder(P(path))
@@ -90,10 +105,10 @@ def servarr_call(app, method, path, body=None):
 
 
 def qbit_login(user, password):
-    """Log in to qBittorrent's web page and return the session header, or None."""
+    """Log in to qBittorrent's web page. Returns (the session header or None, the HTTP status). Newer versions name the cookie QBT_SID_ and the port."""
     st, txt, hd = http("POST", url("qbittorrent", "/api/v2/auth/login"), urlform={"username": user, "password": password}, timeout=30, raw=True)
-    m = re.search(r"SID=([^;,\s]+)", hd.get("set-cookie", "") or "")
-    return {"Cookie": "SID=" + m.group(1)} if st == 200 and m and "Ok" in txt else None
+    m = re.search(r"\b((?:QBT_)?SID(?:_\d+)?)=([^;,\s]+)", hd.get("set-cookie", "") or "")
+    return ({"Cookie": "%s=%s" % (m.group(1), m.group(2))} if st == 200 and m and "Ok" in txt else None), st
 
 
 def qbit_temp_password():
@@ -102,18 +117,40 @@ def qbit_temp_password():
     return found[-1] if found else ""
 
 
+def qbit_session(pw, restarted=False):
+    """A logged-in session for qBittorrent: with the admin login when it was set before, else with the temporary password from its log. After too many failed logins
+    qBittorrent blocks the address until it restarts, so it is restarted once. Returns (session, reason)."""
+    session, st1 = qbit_login(Ctx.admin, pw)
+    if session:
+        return session, ""
+    temp = qbit_temp_password()
+    session, st2 = qbit_login("admin", temp) if temp else (None, 0)
+    if session:
+        return session, ""
+    if 403 in (st1, st2) and not restarted:
+        docker("restart", "qbittorrent", timeout=120)
+        wait_for(lambda: requests_page_answers("qbittorrent"), "qBittorrent to start again", 60, every=3, quiet=True)
+        return qbit_session(pw, True)
+    return None, "its web page did not accept the login (the first-start password was %s in its log)" % ("found" if temp else "not found")
+
+
 def setup_qbittorrent(pw):
     """Give qBittorrent the shared admin login and make /data/downloads its folder. Returns None when it worked, else a short reason."""
-    session = qbit_login(Ctx.admin, pw)
+    session, why = qbit_session(pw)
     if session is None:
-        temp = qbit_temp_password()
-        session = qbit_login("admin", temp) if temp else None
-    if session is None:
-        return "its web page did not accept the first-start password"
+        return why
     prefs = {"web_ui_username": Ctx.admin, "web_ui_password": pw, "save_path": "/data/downloads",
              "web_ui_host_header_validation_enabled": False}
     st, _, _ = http("POST", url("qbittorrent", "/api/v2/app/setPreferences"), urlform={"json": json.dumps(prefs)}, headers=session, timeout=30)
     return None if st == 200 else "it refused the settings (HTTP %s)" % st
+
+
+def servarr_message(reply):
+    """What Radarr, Sonarr or Prowlarr said was wrong, as short text, or an empty string."""
+    body = reply[1]
+    items = body if isinstance(body, list) else [body]
+    texts = [str(i.get("errorMessage") or i.get("message") or "") for i in items if isinstance(i, dict)]
+    return "; ".join(t for t in texts if t)[:200]
 
 
 def servarr_login(app, pw):
@@ -134,9 +171,9 @@ def setup_servarr(app, pw):
         return why
     roots = servarr_call(app, "GET", "/rootfolder")[1]
     if not any(isinstance(r, dict) and r.get("path", "").rstrip("/") == REQUESTS_ROOTS[app] for r in roots or []):
-        st = servarr_call(app, "POST", "/rootfolder", {"path": REQUESTS_ROOTS[app]})[0]
-        if st not in (200, 201):
-            return "it did not accept the folder %s (HTTP %s)" % (REQUESTS_ROOTS[app], st)
+        reply = servarr_call(app, "POST", "/rootfolder", {"path": REQUESTS_ROOTS[app]})
+        if reply[0] not in (200, 201):
+            return "it did not accept the folder %s (HTTP %s%s)" % (REQUESTS_ROOTS[app], reply[0], ": " + servarr_message(reply) if servarr_message(reply) else "")
     clients = servarr_call(app, "GET", "/downloadclient")[1]
     if any(isinstance(c, dict) and c.get("implementation") == "QBittorrent" for c in clients or []):
         return None
