@@ -130,6 +130,9 @@ class Fake(http.server.BaseHTTPRequestHandler):
             body = json.loads(raw)
             if s["need_email"] and "email" not in body:
                 return self.reply(400, {"message": "NO_EMAIL"})
+            s["logins"].append(body)
+            if s.get("refuse_login") or (s.get("refuse_minimal") and "hostname" not in body):
+                return self.reply(500, {"message": "Jellyfin said no"})
             s["login"] = body
             return self.reply(200, {"id": 1}, {"Set-Cookie": "connect.sid=sess1; Path=/; HttpOnly"})
         if "connect.sid=sess1" not in self.headers.get("Cookie", ""):
@@ -308,6 +311,31 @@ class RequestsSetup(unittest.TestCase):
         self.assertEqual((shows["hostname"], shows["apiKey"], shows["activeDirectory"]), ("sonarr", KEYS["sonarr"], "/data/shows"))
         self.assertEqual(self.apps["sonarr"].state["roots"], [{"path": "/data/shows"}])
         self.assertEqual(list(self.apps["seerr"].state["services"]), ["radarr", "sonarr"])
+
+    def test_an_already_set_up_seerr_is_signed_in_to_with_only_the_login(self):
+        self.linked_before_sonarr_came_back()
+        self.step.run()
+        self.assertEqual(sorted(self.apps["seerr"].state["logins"][-1]), ["password", "username"])
+
+    def test_the_full_login_is_tried_when_the_short_one_is_refused(self):
+        self.linked_before_sonarr_came_back()
+        self.apps["seerr"].state["refuse_minimal"] = True
+        self.step.run()
+        self.assertIn("sonarr", self.apps["seerr"].state["services"])
+        self.assertEqual(self.step.probe(), "done")
+
+    def test_a_seerr_that_refuses_every_login_gets_a_note_and_the_rest_is_finished(self):
+        self.linked_before_sonarr_came_back()
+        self.apps["seerr"].state["refuse_login"] = True
+        warned = []
+        with mock.patch.object(self.m, "warn", warned.append):
+            self.step.run()
+        self.assertEqual(self.step.probe(), "done")
+        self.assertEqual([c["implementation"] for c in self.apps["prowlarr"].state["clients"]], ["Radarr", "Sonarr"])
+        self.assertNotIn("sonarr", self.apps["seerr"].state["services"])
+        self.assertEqual(len(warned), 1)
+        self.assertIn("Jellyfin said no", warned[0])
+        self.assertIn("Add Sonarr there yourself", warned[0])
 
     def test_linking_sonarr_again_does_not_add_it_twice(self):
         self.linked_before_sonarr_came_back()

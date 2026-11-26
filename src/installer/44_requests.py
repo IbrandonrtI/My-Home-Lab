@@ -233,16 +233,19 @@ def seerr_call(method, path, session, body=None):
     return http(method, url("seerr", "/api/v1" + path), body=body, headers=session, timeout=60)
 
 
-def seerr_login(pw):
-    """Sign in to Seerr with the Jellyfin admin login. Returns (the session header, None) or (None, a short reason)."""
-    login = {"username": Ctx.admin, "password": pw, "hostname": svc_host(), "port": PORTS["jellyfin"], "useSsl": False, "urlBase": "", "serverType": 2}
+def seerr_login(pw, minimal=False):
+    """Sign in to Seerr with the Jellyfin admin login. Returns (the session header, None) or (None, a short reason). A Seerr that is already set up knows its Jellyfin, so minimal sends only the login."""
+    login = {"username": Ctx.admin, "password": pw}
+    if not minimal:
+        login.update({"hostname": svc_host(), "port": PORTS["jellyfin"], "useSsl": False, "urlBase": "", "serverType": 2})
     st, js, hd = http("POST", url("seerr", "/api/v1/auth/jellyfin"), body=login, timeout=60)
     if st == 400 and "email" in json.dumps(js).lower():
         login["email"] = "%s@localhost" % Ctx.admin
         st, js, hd = http("POST", url("seerr", "/api/v1/auth/jellyfin"), body=login, timeout=60)
     m = re.search(r"connect\.sid=([^;,\s]+)", hd.get("set-cookie", "") or "")
     if st != 200 or not m:
-        return None, "it could not sign in to Jellyfin with the admin login (HTTP %s)" % st
+        said = js.get("message") if isinstance(js, dict) and isinstance(js.get("message"), str) else ""
+        return None, "it could not sign in to Jellyfin with the admin login (HTTP %s%s)" % (st, ": " + said[:80] if said else "")
     return {"Cookie": "connect.sid=" + m.group(1)}, None
 
 
@@ -262,10 +265,14 @@ def seerr_link(app, session):
 
 
 def seerr_add_sonarr_when_missing(pw):
-    """A Seerr that was set up before Sonarr was part of the request apps: sign in again and link Sonarr when Seerr has none. Returns None or a short reason."""
-    session, why = seerr_login(pw)
+    """A Seerr that was set up before Sonarr was part of the request apps: sign in again and link Sonarr when Seerr has none. If Seerr will not let us in, the person is told how to add Sonarr there by hand and the rest carries on."""
+    session, why = seerr_login(pw, minimal=True)
     if why:
-        return why
+        session, why = seerr_login(pw)
+    if why:
+        warn("Seerr was already set up and would not let the installer sign in (%s). Add Sonarr there yourself: in Seerr open Settings, Services, Add Sonarr Server, "
+             "use the host sonarr, port %d, the API key from Sonarr (Settings, General) and the root folder %s." % (why, PORTS["sonarr"], REQUESTS_ROOTS["sonarr"]))
+        return None
     have = seerr_call("GET", "/settings/sonarr", session)[1]
     return seerr_link("sonarr", session) if isinstance(have, list) and not have else None
 
