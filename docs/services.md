@@ -214,7 +214,7 @@ It asks first, then installs one stack called `requests` ([`stacks/requests.yaml
 
 There is no app for TV shows. Seerr still offers a Request button for shows, but nothing fetches them, so add shows to the `shows` folder by hand.
 
-The installer gives Radarr, Prowlarr and qBittorrent the admin login, adds the root folder and qBittorrent to Radarr, links Prowlarr to Radarr, and signs Seerr in to Jellyfin and links it to Radarr. It adds no indexers and no download sources. Until you add your own in Prowlarr (Indexers), a request is only a note on a list. Each app gets its own dashboard card within a few minutes.
+The installer gives Radarr, Prowlarr and qBittorrent the admin login, adds the root folder and qBittorrent to Radarr, links Prowlarr to Radarr, and signs Seerr in to Jellyfin and links it to Radarr. It adds no indexers and no download sources. Until you add your own in Prowlarr (Indexers), a request is only a note on a list. Each app gets its own dashboard card within a few minutes. On the dashboard the four apps sit in the closed Downloaders row together with MeTube and Downtify (see [the dashboard](homepage.md)).
 
 Radarr and qBittorrent run as the lab user, so the setup makes the `movies` and `downloads` folders belong to that user if they belonged to someone else. They see the Main pool as `/data`, so the downloads folder and the library are in one place. Keep the `downloads` folder on the same drive as `movies` (the Move Folders option on the Drives screen does that), so finished files are moved into the library instead of copied.
 

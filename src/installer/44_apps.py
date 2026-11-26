@@ -168,6 +168,58 @@ class WatchingCard(Step):
         out("      The Continue Watching card is under Jellyfin. Move or remove it on the Customize screen, Cards.")
 
 
+DOWNLOADERS_MARK = "/var/lib/homelab/downloaders-card"
+
+
+def downloaders_card_wanted(svc):
+    """True when at least one download app has a card, there is no Downloaders card yet, and the card was never added before."""
+    lines = svc.split("\n")
+    return (card_range(lines, DOWNLOADERS_ID) is None and not os.path.exists(P(DOWNLOADERS_MARK))
+            and any(card_range(lines, m) is not None for m in DOWNLOADERS_MEMBERS))
+
+
+def services_with_downloaders(text):
+    """Add the Downloaders card under the players (after Continue Watching, else Jellyfin, else Navidrome) and put the download apps right under it."""
+    anchor = next((a for a in (WATCHING_ID, "jellyfin-card", "navidrome-card") if card_range(text.split("\n"), a) is not None), None)
+    first = next(m for m in DOWNLOADERS_MEMBERS if card_range(text.split("\n"), m) is not None)
+    text = card_added_after(text, anchor or first, downloaders_card_lines())
+    if anchor is None:
+        text = card_moved_after(text, first, DOWNLOADERS_ID)
+    return cards_grouped_under(text, DOWNLOADERS_ID, DOWNLOADERS_MEMBERS)
+
+
+@step
+class DownloadersCard(Step):
+    """Once: add a closed Downloaders dropdown under the players and move Seerr, Radarr, Prowlarr, qBittorrent, MeTube and Downtify under it. After that the order is set on the Cards screen."""
+    id, group = "downloaders-card", "Homepage"
+    title = "Downloaders dropdown under the players (added once; change it on the Cards screen)"
+    needs = ("homepage-files", "stack-requests", "stack-music-downloader", "watching-card")
+
+    def applies(self):
+        return BY_ID["stack-requests"].applies() or BY_ID["stack-music-downloader"].applies()
+
+    def probe(self):
+        return "todo" if downloaders_card_wanted(read_file(hp_path("services.yaml"))) else "done"
+
+    def run(self):
+        if Opt.dry:
+            out("      would add a Downloaders dropdown under the players and move the download apps under it")
+            return
+        if not FAKE and os.path.exists(P("/usr/local/sbin/homelab-cards")):
+            run([P("/usr/local/sbin/homelab-cards"), "sync"], timeout=120)
+        old = read_file(hp_path("services.yaml"))
+        if not downloaders_card_wanted(old):
+            return
+        new = services_with_downloaders(old)
+        if new != old:
+            if not os.path.exists(hp_path("services.yaml") + ".before-downloaders"):
+                write_file(hp_path("services.yaml") + ".before-downloaders", old, 0o600, (Ctx.uid, Ctx.gid))
+            write_file(hp_path("services.yaml"), new, 0o600, (Ctx.uid, Ctx.gid))
+        os.makedirs(os.path.dirname(P(DOWNLOADERS_MARK)), exist_ok=True)
+        write_file(P(DOWNLOADERS_MARK), "added\n", 0o644)
+        out("      The Downloaders dropdown is under the players, closed. Move or remove it on the Customize screen, Cards.")
+
+
 AUDIOMUSE_PLUGIN_URL = "https://github.com/NeptuneHub/AudioMuse-AI-NV-plugin/releases/download/v11/audiomuseai.ndp"
 AUDIOMUSE_PLUGIN_ID = "audiomuseai"
 

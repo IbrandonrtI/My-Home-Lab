@@ -27,6 +27,11 @@ SERVICES = """- Network & DNS:
         icon: mdi-play-circle-outline
         description: Pick up where you left off
 
+    - Downloaders:
+        id: downloaders-card
+        icon: mdi-download-multiple
+        description: Apps that find and download movies, music and videos
+
 - Customize:
 
     - Customize:
@@ -74,7 +79,7 @@ class CardsMovable(unittest.TestCase):
     def test_continue_watching_moves_up_inside_its_group(self):
         self.p.api_card({"op": "move", "group": "Media & Entertainment", "name": "Continue Watching", "to": "Media & Entertainment", "before": "Navidrome"})
         g, _ = self.card("Continue Watching")
-        self.assertEqual([c["name"] for c in g["cards"]], ["Continue Watching", "Navidrome", "Jellyfin"])
+        self.assertEqual([c["name"] for c in g["cards"]], ["Continue Watching", "Navidrome", "Jellyfin", "Downloaders"])
 
     def test_navidrome_cannot_be_removed_but_continue_watching_can(self):
         with self.assertRaises(self.p.Fail):
@@ -82,6 +87,14 @@ class CardsMovable(unittest.TestCase):
         self.assertIsNotNone(self.card("Navidrome")[0])
         self.p.api_card({"op": "remove", "group": "Media & Entertainment", "name": "Continue Watching"})
         self.assertIsNone(self.card("Continue Watching")[0])
+
+    def test_the_downloaders_row_is_a_plain_card_that_can_be_moved_and_removed(self):
+        _, row = self.card("Downloaders")
+        self.assertFalse(row["managed"] or row["locked"] or row["fixed"])
+        self.p.api_card({"op": "move", "group": "Media & Entertainment", "name": "Downloaders", "to": "Network & DNS"})
+        self.assertEqual(self.card("Downloaders")[0]["name"], "Network & DNS")
+        self.p.api_card({"op": "remove", "group": "Network & DNS", "name": "Downloaders"})
+        self.assertIsNone(self.card("Downloaders")[0])
 
     def test_the_customize_card_still_cannot_be_moved(self):
         with self.assertRaises(self.p.Fail):

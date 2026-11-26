@@ -73,6 +73,31 @@ def watching_card_lines(href):
             ["        icon: mdi-play-circle-outline", "        description: Pick up where you left off"])
 
 
+DOWNLOADERS_ID = "downloaders-card"
+DOWNLOADERS_MEMBERS = ("seerr-card", "radarr-card", "prowlarr-card", "qbittorrent-card", "metube-card", "downtify-card")
+
+
+def downloaders_card_lines():
+    return ["    - Downloaders:", "        id: %s" % DOWNLOADERS_ID, "        icon: mdi-download-multiple",
+            "        description: Apps that find and download movies, music and videos"]
+
+
+def cards_same_group(text, a, b):
+    lines = text.split("\n")
+    ra, rb = card_range(lines, a), card_range(lines, b)
+    return bool(ra and rb) and card_group_head(lines, ra[0]) == card_group_head(lines, rb[0])
+
+
+def cards_grouped_under(text, head_id, member_ids):
+    """Put the member cards one after another right under the head card, in the order given. A card in another group, or missing, is skipped."""
+    prev = head_id
+    for m in member_ids:
+        if cards_same_group(text, m, prev):
+            text = card_moved_after(text, m, prev)
+            prev = m
+    return text
+
+
 def card_retitled(text, card_id, old_title, new_title, old_desc, new_desc):
     lines = text.split("\n")
     r = card_range(lines, card_id)

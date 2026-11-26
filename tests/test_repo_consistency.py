@@ -137,8 +137,23 @@ class PageScripts(unittest.TestCase):
         js, css, setup = read("homepage-config/custom.js"), read("homepage-config/custom.css"), read("installer/homelab-setup")
         self.assertIn('WATCHING_ID = "watching-card"', setup)
         self.assertIn('getElementById("watching-card")', js)
-        self.assertRegex(js, r"\(customize\|linkedit\|terminal\|navidrome\|watching\)-card")
+        self.assertRegex(js, r"\(customize\|linkedit\|terminal\|navidrome\|watching\|downloaders\)-card")
         self.assertIn("li#watching-card", css)
+
+    def test_the_downloaders_dropdown_names_the_same_cards_everywhere(self):
+        """The installer groups six cards under the Downloaders card; the dashboard script hides and shows the same six by id, and the stylesheet sizes the row by its id."""
+        js, css, setup, panel = read("homepage-config/custom.js"), read("homepage-config/custom.css"), read("installer/homelab-setup"), read("scripts/homelab-panel")
+        installer = re.search(r"DOWNLOADERS_MEMBERS = \(([^)]*)\)", setup).group(1)
+        script = re.search(r"var DL_APPS = \[([^\]]*)\]", js).group(1)
+        self.assertEqual(re.findall(r'"([^"]+)"', installer), re.findall(r'"([^"]+)"', script))
+        self.assertEqual(len(re.findall(r'"([^"]+)"', script)), 6)
+        self.assertIn('DOWNLOADERS_ID = "downloaders-card"', setup)
+        self.assertIn('getElementById("downloaders-card")', js)
+        self.assertIn("li#downloaders-card", css)
+        self.assertIn('("watching-card", "downloaders-card")', panel)
+        stacks = read("stacks/requests.yaml") + read("stacks/music-downloader.yaml")
+        for card in re.findall(r'"([^"]+)"', script):
+            self.assertRegex(stacks, r"container_name:\s*%s\s" % card[:-len("-card")], "the card %s should belong to a container of the same name" % card)
 
     def test_the_browser_scripts_parse(self):
         for rel in ("homepage-config/custom.js", "panel/ui/app.js"):

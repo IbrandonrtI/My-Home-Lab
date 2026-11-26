@@ -1662,7 +1662,7 @@ def card_fields(lines, c):
 
 def card_public(lines, c, group):
     f = card_fields(lines, c)
-    managed = bool(f.get("widget")) or (f.get("id", "").endswith("-card") and f.get("id", "") != "watching-card")
+    managed = bool(f.get("widget")) or (f.get("id", "").endswith("-card") and f.get("id", "") not in ("watching-card", "downloaders-card"))
     return {"name": c["name"], "id": f.get("id", ""), "href": f.get("href", ""), "icon": f.get("icon", ""), "description": f.get("description", ""),
             "siteMonitor": f.get("siteMonitor", ""), "widget": f.get("widget", ""), "managed": managed,
             "keys": widget_secrets_public(lines, c),

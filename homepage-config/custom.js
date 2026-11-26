@@ -979,7 +979,7 @@
 
   /* Quick launch: icons of favorite services in the bar under the header. By default it starts with the list below and moves the services opened most often to the front (counted in this browser). */
   var PREFER = ["jellyfin-card", "immich-card", "nextcloud-card", "filebrowser-card", "portainer-card", "adguard-card", "beszel-card", "tailscale-card"];
-  var DOCK_MAX = 5, SKIP = /^(customize|linkedit|terminal|navidrome|watching)-card$/, VKEY = "hl-visits", CKEY = "hl-dock-cache", BKEY = "hl-link-cache", TKEY = "hl-tray", TRAY_MAX = 12;
+  var DOCK_MAX = 5, SKIP = /^(customize|linkedit|terminal|navidrome|watching|downloaders)-card$/, VKEY = "hl-visits", CKEY = "hl-dock-cache", BKEY = "hl-link-cache", TKEY = "hl-tray", TRAY_MAX = 12;
   function lsGet(k) { try { return JSON.parse(window.localStorage.getItem(k) || "null"); } catch (e) { return null; } }
   function lsSet(k, v) { try { window.localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* storage may be blocked */ } }
   var VIS = lsGet(VKEY) || {}, CACHE = lsGet(CKEY) || {}, BM = lsGet(BKEY) || {};
@@ -1394,7 +1394,7 @@
   function palItems() {
     var out = [];
     all(".service").forEach(function (li) {
-      if (/^(stat|cal)-/.test(li.id) || /^(customize|linkedit|terminal|watching)-card$/.test(li.id)) return;
+      if (/^(stat|cal)-/.test(li.id) || /^(customize|linkedit|terminal|watching|downloaders)-card$/.test(li.id)) return;
       var c = cardInfo(li), g = li.closest(".services-group"), gn = g ? g.querySelector(".service-group-name") : null;
       if (c && c.name) out.push({ name: c.name, group: gn ? gn.textContent.trim() : "Services", icon: c.icon, go: function () { c.a.click(); } });
     });
@@ -2009,9 +2009,40 @@
     if (box.getAttribute("data-key") !== key) { box.setAttribute("data-key", key); wtDraw(box, d); }
   }
 
+  /* Downloaders: a closed dropdown row (the downloaders-card) in the media list. While it is closed the apps in DL_APPS are hidden. The choice is kept in this browser. */
+  var DL_APPS = ["seerr-card", "radarr-card", "prowlarr-card", "qbittorrent-card", "metube-card", "downtify-card"];
+  var dlMem = null;
+  function dlChoice(v) {
+    if (v === undefined) { try { return window.localStorage.getItem("hl-downloaders") || dlMem; } catch (e) { return dlMem; } }
+    dlMem = v;
+    try { window.localStorage.setItem("hl-downloaders", v); } catch (e) {  }
+    return null;
+  }
+  function downloaders() {
+    var li = document.getElementById("downloaders-card"), box = document.getElementById("hl-downloaders");
+    var apps = DL_APPS.map(function (id) { return document.getElementById(id); }).filter(function (a) { return a && li && a.parentNode === li.parentNode; });
+    var shut = !!li && apps.length > 0 && dlChoice() !== "open";
+    DL_APPS.forEach(function (id) {
+      var a = document.getElementById(id);
+      if (a && a.classList.contains("hl-dl-shut") !== (shut && apps.indexOf(a) >= 0)) a.classList.toggle("hl-dl-shut", shut && apps.indexOf(a) >= 0);
+    });
+    if (!li) return;
+    if (li.classList.contains("hl-gone") === !!apps.length) li.classList.toggle("hl-gone", !apps.length);
+    if (!apps.length) return;
+    if (!box || box.parentNode !== li) {
+      box = el("button", "hl-dl-head"); box.id = "hl-downloaders"; box.type = "button";
+      box.appendChild(el("span", "hl-dl-chev")); box.appendChild(el("b", "", "Downloaders")); box.appendChild(el("span", "hl-dl-count"));
+      box.addEventListener("click", function () { dlChoice(dlChoice() === "open" ? "closed" : "open"); downloaders(); });
+      li.appendChild(box);
+    }
+    var n = apps.length + (apps.length === 1 ? " app" : " apps");
+    if (box.lastChild.textContent !== n) box.lastChild.textContent = n;
+    if (box.getAttribute("aria-expanded") !== String(!shut)) box.setAttribute("aria-expanded", String(!shut));
+  }
+
   function run() {
     queued = false;
-    dots(); waiting(); status(); hello(); dock(); find(); jellyfin(); stats(); dockerCharts(); historyCharts(); fillRows(); counting(); watching(); fitPops();
+    dots(); waiting(); status(); hello(); dock(); find(); jellyfin(); stats(); dockerCharts(); historyCharts(); fillRows(); counting(); watching(); downloaders(); fitPops();
     if (!TR.busy && Date.now() - TR.at > 30000) trendsLoad();
   }
   function soon() { if (!queued) { queued = true; window.requestAnimationFrame(run); } }
