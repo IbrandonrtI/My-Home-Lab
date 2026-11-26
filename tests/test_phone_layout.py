@@ -43,6 +43,10 @@ PAGE = ('<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" 
         '<script src="custom.js"></script></body></html>')
 
 
+DOT = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+LOGO_PAGE = PAGE.replace('<div id="inner_wrapper">', '<div id="inner_wrapper" style=\'--hl-logo-src: "%s";\'>' % DOT)
+
+
 @unittest.skipUnless(sync_playwright, "Python Playwright is not installed")
 class PhoneLayout(unittest.TestCase):
     @classmethod
@@ -50,8 +54,9 @@ class PhoneLayout(unittest.TestCase):
         cls.dir = tempfile.mkdtemp(prefix="phone-")
         for n in ("custom.css", "custom.js"):
             shutil.copy(os.path.join(helpers.ROOT, "homepage-config", n), cls.dir)
-        with open(os.path.join(cls.dir, "p.html"), "w", encoding="utf-8") as f:
-            f.write(PAGE)
+        for name, html in (("p.html", PAGE), ("logo.html", LOGO_PAGE)):
+            with open(os.path.join(cls.dir, name), "w", encoding="utf-8") as f:
+                f.write(html)
         cls.pw = sync_playwright().start()
         try:
             cls.browser = cls.pw.chromium.launch()
@@ -66,11 +71,11 @@ class PhoneLayout(unittest.TestCase):
         cls.pw.stop()
         shutil.rmtree(cls.dir, True)
 
-    def open(self, width):
+    def open(self, width, page="p.html"):
         ctx = self.browser.new_context(viewport={"width": width, "height": 800}, is_mobile=True, has_touch=True)
         self.addCleanup(ctx.close)
         p = ctx.new_page()
-        p.goto("file://" + os.path.join(self.dir, "p.html"))
+        p.goto("file://" + os.path.join(self.dir, page))
         p.wait_for_timeout(700)
         return p
 
@@ -112,6 +117,36 @@ class PhoneLayout(unittest.TestCase):
                 bar = p.evaluate("(() => { const r = document.getElementById('tabs').getBoundingClientRect(); return [r.left, r.right]; })()")
                 self.assertGreaterEqual(bar[0], 0)
                 self.assertLessEqual(bar[1], width)
+
+    def test_the_logo_is_the_top_of_the_gauge_panel_with_a_line_under_it(self):
+        for width in (320, 390, 430):
+            with self.subTest(width=width):
+                p = self.open(width, "logo.html")
+                r = p.evaluate("""() => { const l = document.getElementById('hl-logo'), s = document.getElementById('hl-stats'), a = l.getBoundingClientRect(), b = s.getBoundingClientRect(), after = getComputedStyle(l, '::after');
+                    return { gap: b.top - a.bottom, left: [a.left, b.left], right: [a.right, b.right], line: [after.height, after.display, after.position], centered: Math.abs((a.left + a.right) / 2 - l.querySelector('img').getBoundingClientRect().left - l.querySelector('img').getBoundingClientRect().width / 2) };
+                }""")
+                self.assertLessEqual(abs(r["gap"]), 1, "the logo and the gauges are one panel, with no gap")
+                self.assertAlmostEqual(r["left"][0], r["left"][1], delta=1)
+                self.assertAlmostEqual(r["right"][0], r["right"][1], delta=1)
+                self.assertEqual(r["line"], ["1px", "block", "absolute"])
+                self.assertLessEqual(r["centered"], 1.5, "the logo is centred in the panel")
+
+    def test_without_a_logo_the_gauges_keep_their_own_rounded_panel(self):
+        p = self.open(390)
+        r = p.evaluate("(() => { const c = getComputedStyle(document.getElementById('hl-stats')); return [c.borderTopLeftRadius, c.borderBottomLeftRadius, c.borderTopWidth]; })()")
+        self.assertEqual(r, ["16px", "16px", "1px"])
+
+    def test_every_gauge_text_starts_in_the_same_place_in_its_column(self):
+        for width in (320, 390, 430):
+            with self.subTest(width=width):
+                p = self.open(width, "logo.html")
+                x = p.evaluate("""() => Object.fromEntries([...document.querySelectorAll('#hl-stats .hl-g')].map(g => [g.className.match(/hl-g-(\\w+)/)[1], Math.round(g.querySelector('.hl-gt').getBoundingClientRect().left * 10) / 10]))""")
+                left = [x[k] for k in ("cpu", "temp", "pool", "net") if k in x]
+                right = [x[k] for k in ("mem", "up", "bak") if k in x]
+                self.assertGreaterEqual(len(left), 4, x)
+                self.assertGreaterEqual(len(right), 3, x)
+                self.assertLessEqual(max(left) - min(left), 1, "left column: %s" % x)
+                self.assertLessEqual(max(right) - min(right), 1, "right column: %s" % x)
 
 
 if __name__ == "__main__":

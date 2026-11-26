@@ -162,6 +162,15 @@
     a.setAttribute("transform", "rotate(-90 22 22)"); a.setAttribute("stroke-dasharray", String(RING)); a.setAttribute("stroke-dashoffset", String(RING));
     return s;
   }
+  /* A ring-sized badge for the gauges that have no ring (uptime, network), so every row's text starts in the same place on a phone. */
+  var BADGE = { up: ["M22 13v9.5l6 4"], net: ["M16 14v16M16 30l-4.5-4.5M16 30l4.5-4.5", "M28 30V14M28 14l-4.5 4.5M28 14l4.5 4.5"] };
+  function badgeSvg(key) {
+    var s = document.createElementNS(SVGNS, "svg"), c = document.createElementNS(SVGNS, "circle");
+    s.setAttribute("class", "hl-ic"); s.setAttribute("viewBox", "0 0 44 44"); s.setAttribute("aria-hidden", "true");
+    c.setAttribute("cx", "22"); c.setAttribute("cy", "22"); c.setAttribute("r", "18"); c.setAttribute("class", "t"); s.appendChild(c);
+    BADGE[key].forEach(function (d, i) { var p = document.createElementNS(SVGNS, "path"); p.setAttribute("d", d); p.setAttribute("class", key === "net" ? (i ? "u" : "d") : "g"); s.appendChild(p); });
+    return s;
+  }
   function netSpark() {
     var D = TR.data;
     if (!D || !D.rx || D.rx.length < 3) return null;
@@ -439,6 +448,7 @@
         var n = el("div", "hl-g hl-g-" + m.key), tx = el("div", "hl-gt"), nm = el("span", "hl-gn"), vl = el("span", "hl-gv"), sb = el("span", "hl-gs2");
         t = GT[m.key] = { node: n, nm: nm, vl: vl, sb: sb, ring: null, sig: "" };
         if (m.kind === "ring") { t.ring = ringSvg(); n.appendChild(t.ring); }
+        else if (BADGE[m.key]) n.appendChild(badgeSvg(m.key));
         tx.appendChild(nm); tx.appendChild(vl); tx.appendChild(sb); n.appendChild(tx);
         if (m.kind === "net") { t.spark = null; t.tx = tx; }
       }
@@ -563,15 +573,17 @@
     });
     box.appendChild(row);
   }
+  /* The row is a list item placed right after the Navidrome and Jellyfin cards (whichever comes later), so it sits under both players. */
   function watching() {
     var lg = document.getElementById("layout-groups"), box = document.getElementById("hl-watching");
-    var on = lg && lg.parentNode && lg.querySelector("#jellyfin-card");
-    if (!on) { if (box && !box.hidden) box.hidden = true; return; }
+    var jf = lg && lg.querySelector("#jellyfin-card"), nd = lg && lg.querySelector("#navidrome-card");
+    var anchor = jf && nd && (jf.compareDocumentPosition(nd) & 4) ? nd : jf;
+    if (!anchor || !anchor.parentNode) { if (box && !box.hidden) box.hidden = true; return; }
     if (!WT.busy && Date.now() - WT.at > 60000) wtLoad();
     var d = WT.data, fresh = d && d.items.length && typeof d.updated === "number" && Date.now() - d.updated * 1000 < WT_STALE;
     if (!fresh) { if (box && !box.hidden) box.hidden = true; return; }
-    if (!box) { box = el("section"); box.id = "hl-watching"; box.setAttribute("aria-label", "Continue watching"); }
-    if (box.parentNode !== lg.parentNode || box.nextSibling !== lg) lg.parentNode.insertBefore(box, lg);
+    if (!box) { box = el("li"); box.id = "hl-watching"; box.setAttribute("aria-label", "Continue watching"); }
+    if (box.previousSibling !== anchor || box.parentNode !== anchor.parentNode) anchor.parentNode.insertBefore(box, anchor.nextSibling);
     if (box.hidden) box.hidden = false;
     var key = JSON.stringify([d.user, d.link, d.server, d.items]) + "|" + d.items.filter(function (i) { return WT.posters[i.poster]; }).length;
     if (box.getAttribute("data-key") !== key) { box.setAttribute("data-key", key); wtDraw(box, d); }

@@ -17,9 +17,12 @@ except ImportError:
     sync_playwright = None
 
 PIXEL = "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA="
+def card(name):
+    return '<li id="%s-card" class="service"><div class="service-card"><div class="service-title"><a href="http://x.test/">Card</a></div></div></li>' % name
+
+
 PAGE = ('<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="custom.css"></head><body>'
-        '<div id="inner_wrapper" style="--lk-side:14px"><div id="layout-groups"><div class="services-group"><ul class="services-list">'
-        '<li id="%s-card" class="service"><div class="service-card"><div class="service-title"><a href="http://x.test/">Card</a></div></div></li></ul></div></div></div>'
+        '<div id="inner_wrapper" style="--lk-side:14px"><div id="layout-groups"><div class="services-group"><ul class="services-list">%s</ul></div></div></div>'
         '<script src="custom.js"></script></body></html>')
 ID1, ID2, ID3 = "a" * 32, "b" * 32, "c" * 32
 
@@ -40,9 +43,10 @@ class ContinueWatching(unittest.TestCase):
         os.makedirs(cls.dir + "/images")
         for n in ("custom.css", "custom.js"):
             shutil.copy(os.path.join(helpers.ROOT, "homepage-config", n), cls.dir)
-        for name, card in (("home.html", "jellyfin"), ("other.html", "plain")):
+        for name, cards in (("home.html", ("navidrome", "jellyfin", "metube")), ("flipped.html", ("jellyfin", "navidrome", "metube")),
+                            ("alone.html", ("metube", "jellyfin", "downtify")), ("other.html", ("plain",))):
             with open(cls.dir + "/" + name, "w") as f:
-                f.write(PAGE % card)
+                f.write(PAGE % "".join(card(c) for c in cards))
 
         class Quiet(http.server.SimpleHTTPRequestHandler):
             def log_message(self, *args):
@@ -107,10 +111,35 @@ class ContinueWatching(unittest.TestCase):
         self.assertEqual(pg.eval_on_selector_all("#hl-watching img", "e => e.length"), 2)
         self.assertEqual(pg.inner_text("#hl-watching .hl-wt-ph"), "N")
 
-    def test_the_row_sits_above_the_services(self):
+    def neighbours(self, pg):
+        return pg.evaluate("""() => { const e = document.getElementById('hl-watching'), id = n => n ? n.id : null;
+            return [id(e.previousElementSibling), id(e.nextElementSibling), e.parentNode.className]; }""")
+
+    def test_the_row_sits_right_under_the_jellyfin_and_navidrome_cards(self):
         pg = self.open(data())
-        r = pg.evaluate("[document.getElementById('hl-watching').getBoundingClientRect().bottom, document.getElementById('layout-groups').getBoundingClientRect().top]")
-        self.assertLessEqual(r[0], r[1])
+        self.assertEqual(self.neighbours(pg), ["jellyfin-card", "metube-card", "services-list"])
+
+    def test_the_row_goes_under_whichever_of_the_two_cards_comes_last(self):
+        self.assertEqual(self.neighbours(self.open(data(), page="flipped.html"))[:2], ["navidrome-card", "metube-card"])
+
+    def test_with_only_jellyfin_the_row_goes_under_it(self):
+        self.assertEqual(self.neighbours(self.open(data(), page="alone.html"))[:2], ["jellyfin-card", "downtify-card"])
+
+    def test_the_row_is_as_wide_as_the_list_it_is_in(self):
+        for width in (1300, 390):
+            with self.subTest(width=width):
+                pg = self.open(data(), width=width)
+                r = pg.evaluate("""() => { const e = document.getElementById('hl-watching').getBoundingClientRect(), u = document.getElementById('hl-watching').parentNode,
+                    b = u.getBoundingClientRect(), c = getComputedStyle(u); return [e.left - (b.left + parseFloat(c.paddingLeft)), (b.right - parseFloat(c.paddingRight)) - e.right]; }""")
+                self.assertLessEqual(abs(r[0]), 1)
+                self.assertLessEqual(abs(r[1]), 1)
+
+    def test_the_row_stays_put_when_the_page_is_updated(self):
+        pg = self.open(data())
+        pg.evaluate("document.querySelector('#metube-card').remove()")
+        pg.wait_for_timeout(500)
+        self.assertEqual(pg.evaluate("document.querySelectorAll('#hl-watching').length"), 1)
+        self.assertEqual(pg.evaluate("document.getElementById('hl-watching').previousElementSibling.id"), "jellyfin-card")
 
     def test_nothing_half_watched_means_no_row(self):
         self.assertFalse(self.shown(self.open(data(items=[]))))

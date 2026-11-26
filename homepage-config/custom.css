@@ -1350,6 +1350,7 @@ html[data-hl-fit="1440"] #information-widgets { zoom: 0.80; }
   #inner_wrapper #hl-stats[hidden] { display: none; }
 }
 /* The gauges look the same on a wide screen and on a phone. */
+#inner_wrapper #hl-stats .hl-ic { display: none; }
 @media (min-width: 1181px), (max-width: 700px) {
   #inner_wrapper #hl-stats .hl-g { --g: var(--lk-accent); position: relative; flex: 1 1 0; min-width: 0; display: flex; align-items: center; justify-content: flex-start; gap: 11px; padding: 3px 12px 3px 16px; font-variant-numeric: tabular-nums; }
   #inner_wrapper #hl-stats .hl-g-net { flex-grow: 1.7; }
@@ -1385,10 +1386,21 @@ html[data-hl-fit="1440"] #information-widgets { zoom: 0.80; }
     background: rgba(var(--lk-glass), var(--lk-glass-a)); border: 1px solid var(--lk-line);
     box-shadow: var(--lk-rim, 0 0 0 0 transparent), 0 0 var(--lk-glowr, 0px) rgba(var(--accent, var(--lk-accent)), var(--lk-glowa, 0));
     -webkit-backdrop-filter: blur(var(--lk-blur, 14px)) saturate(var(--lk-sat, 125%)); backdrop-filter: blur(var(--lk-blur, 14px)) saturate(var(--lk-sat, 125%)); }
+  /* With a logo, the logo is the top of the same panel: the two boxes join, with a thin line under the logo. */
+  #inner_wrapper #widgets-wrap.hl-stats-on.hl-has-logo > #hl-logo { grid-column: 1 / -1; box-sizing: border-box; margin: 0; padding: 12px 12px 14px; border-radius: 16px 16px 0 0; border: 1px solid var(--lk-line); border-bottom: 0;
+    background: rgba(var(--lk-glass), var(--lk-glass-a)); -webkit-backdrop-filter: blur(var(--lk-blur, 14px)) saturate(var(--lk-sat, 125%)); backdrop-filter: blur(var(--lk-blur, 14px)) saturate(var(--lk-sat, 125%)); }
+  #inner_wrapper #widgets-wrap.hl-stats-on.hl-has-logo > #hl-logo::after { display: block; content: ""; position: absolute; left: 14px; right: 14px; top: auto; bottom: 0; width: auto; height: 1px; background: rgba(var(--lk-ink, 255, 255, 255), 0.12); }
+  #inner_wrapper #widgets-wrap.hl-stats-on.hl-has-logo > #hl-stats { margin-top: -8px; padding-top: 6px; border-top: 0; border-radius: 0 0 16px 16px; }
   #inner_wrapper #hl-stats[hidden] { display: none; }
   #inner_wrapper #hl-stats .hl-g { gap: 9px; padding: 5px 8px 5px 12px; }
   #inner_wrapper #hl-stats .hl-g + .hl-g::before { display: none; }
-  #inner_wrapper #hl-stats .hl-ring { width: 32px; height: 32px; }
+  #inner_wrapper #hl-stats .hl-ring, #inner_wrapper #hl-stats .hl-ic { width: 32px; height: 32px; }
+  #inner_wrapper #hl-stats .hl-ic { display: block; flex: 0 0 auto; }
+  #inner_wrapper #hl-stats .hl-ic .t { fill: none; stroke: rgba(var(--lk-ink, 255, 255, 255), 0.12); stroke-width: 5; }
+  #inner_wrapper #hl-stats .hl-ic :is(.g, .d, .u) { fill: none; stroke-width: 3.6; stroke-linecap: round; stroke-linejoin: round; }
+  #inner_wrapper #hl-stats .hl-ic .g { stroke: rgb(var(--g)); }
+  #inner_wrapper #hl-stats .hl-ic .d { stroke: rgb(34, 211, 238); }
+  #inner_wrapper #hl-stats .hl-ic .u { stroke: rgb(167, 139, 250); }
   #inner_wrapper #hl-stats .hl-gv { font-size: 14px; }
   #inner_wrapper #hl-stats .hl-gn { font-size: 11px; }
   #inner_wrapper #hl-stats .hl-g-cpu { order: 1; }
@@ -1540,11 +1552,13 @@ html.hl-jf-side #hl-jf-slot { display: block; flex: 1 1 auto; min-height: 340px;
 @media (prefers-reduced-motion: reduce) { #hl-status.hl-st-wait .hl-st-dot, .service.hl-flash { animation: none; } }
 html.hl-player-min #inner_wrapper #navidrome-card .service-title { cursor: pointer; }
 html.hl-player-min #inner_wrapper #navidrome-card .service-title::after { content: "Open the player"; margin-left: 12px; font-size: 0.8rem; font-weight: 500; color: var(--lk-muted); }
-/* Continue watching: half-watched Jellyfin titles as a row of posters above the services on the Home tab. */
-#hl-watching { margin: 14px var(--lk-side) 6px; padding: 12px 16px 10px; border-radius: 18px; border: 1px solid var(--lk-line); background: rgba(var(--lk-glass), var(--lk-glass-a));
+/* Continue watching: half-watched Jellyfin titles as a row of posters, a list item right under the Navidrome and Jellyfin cards. The id is written twice so it wins over the card-list rules above. */
+#inner_wrapper .services-list > li#hl-watching#hl-watching { list-style: none; display: block; box-sizing: border-box; grid-column: 1 / -1; flex: 0 0 100%; order: -1; align-self: auto; min-width: 0;
+  margin: 2px 0 14px !important; padding: 12px 16px 10px; border-radius: 18px; border: 1px solid var(--lk-line); background: rgba(var(--lk-glass), var(--lk-glass-a));
   box-shadow: 0 16px 36px -22px rgba(var(--lk-shadow, 0, 0, 0), 0.75), var(--lk-rim, 0 0 0 0 transparent);
   -webkit-backdrop-filter: blur(var(--lk-blur, 14px)) saturate(var(--lk-sat, 125%)); backdrop-filter: blur(var(--lk-blur, 14px)) saturate(var(--lk-sat, 125%)); }
-#hl-watching[hidden] { display: none; }
+@media (min-width: 701px) { html.hl-jf-side #inner_wrapper .services-list > li#hl-watching#hl-watching { order: 0; } }
+#inner_wrapper .services-list > li#hl-watching#hl-watching[hidden] { display: none; }
 #hl-watching .hl-wt-head { display: flex; align-items: baseline; gap: 4px 10px; margin-bottom: 10px; }
 #hl-watching .hl-wt-head b { font-size: 15px; font-weight: 650; color: var(--lk-text); }
 #hl-watching .hl-wt-user { font-size: 12px; color: var(--lk-muted); }
@@ -1561,7 +1575,7 @@ html.hl-player-min #inner_wrapper #navidrome-card .service-title::after { conten
 #hl-watching .hl-wt-title { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; margin-top: 3px; font-size: 13px; font-weight: 600; line-height: 1.25; color: var(--lk-text); }
 #hl-watching .hl-wt-sub, #hl-watching .hl-wt-left { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; line-height: 1.3; color: var(--lk-muted); }
 @media (max-width: 700px) {
-  #hl-watching { margin: 12px var(--lk-side) 4px; padding: 10px 12px 6px; }
+  #inner_wrapper .services-list > li#hl-watching#hl-watching { padding: 10px 12px 6px; margin: 0 0 12px !important; }
   #hl-watching .hl-wt-card { flex-basis: 96px; }
   #hl-watching .hl-wt-sub { display: none; }
 }
