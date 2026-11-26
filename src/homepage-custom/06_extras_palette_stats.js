@@ -587,13 +587,23 @@
   }
 
   /* Downloaders: a closed dropdown row (the downloaders-card) in the media list. While it is closed the apps in DL_APPS are hidden. The choice is kept in this browser. */
-  var DL_APPS = ["seerr-card", "radarr-card", "prowlarr-card", "qbittorrent-card", "metube-card", "downtify-card"];
+  var DL_APPS = ["seerr-card", "radarr-card", "sonarr-card", "prowlarr-card", "qbittorrent-card", "metube-card", "downtify-card"];
   var dlMem = null;
   function dlChoice(v) {
     if (v === undefined) { try { return window.localStorage.getItem("hl-downloaders") || dlMem; } catch (e) { return dlMem; } }
     dlMem = v;
     try { window.localStorage.setItem("hl-downloaders", v); } catch (e) {  }
     return null;
+  }
+  /* Open or close the dropdown with the row staying where it is, so the apps and everything below them move down or up. The browser would otherwise scroll the page to keep a card further down in place. */
+  function dlToggle(box) {
+    var root = document.documentElement, top = box.getBoundingClientRect().top;
+    root.style.overflowAnchor = "none";
+    dlChoice(dlChoice() === "open" ? "closed" : "open");
+    downloaders();
+    var moved = box.getBoundingClientRect().top - top;
+    if (moved) window.scrollBy({ top: moved, left: 0, behavior: "instant" });
+    window.requestAnimationFrame(function () { root.style.removeProperty("overflow-anchor"); });
   }
   function downloaders() {
     var li = document.getElementById("downloaders-card"), box = document.getElementById("hl-downloaders");
@@ -609,7 +619,7 @@
     if (!box || box.parentNode !== li) {
       box = el("button", "hl-dl-head"); box.id = "hl-downloaders"; box.type = "button";
       box.appendChild(el("span", "hl-dl-chev")); box.appendChild(el("b", "", "Downloaders")); box.appendChild(el("span", "hl-dl-count"));
-      box.addEventListener("click", function () { dlChoice(dlChoice() === "open" ? "closed" : "open"); downloaders(); });
+      box.addEventListener("click", function () { dlToggle(box); });
       li.appendChild(box);
     }
     var n = apps.length + (apps.length === 1 ? " app" : " apps");

@@ -65,14 +65,14 @@ STACKS = {
     "jellyfin": ("jellyfin.yaml", ["jellyfin"]),
     "audiomuse": ("audiomuse.yaml", ["audiomuse-postgres", "audiomuse-flask", "audiomuse-worker"]),
     "navilist": ("navilist.yaml", ["navilist"]),
-    "requests": ("requests.yaml", ["seerr", "radarr", "prowlarr", "qbittorrent"]),
+    "requests": ("requests.yaml", ["seerr", "radarr", "sonarr", "prowlarr", "qbittorrent"]),
 }
 STACK_ORDER = ["homepage", "adguard", "beszel", "netdata", "speedtest-tracker", "filebrowser",
                "immich", "nextcloud", "beszel-agent", "music-downloader"]
 
 PORTS = {"homepage": 3001, "portainer": 9000, "immich": 2283, "beszel": 8090, "adguard": 3000,
          "nextcloud": 8082, "filebrowser": 8081, "speedtest": 8088, "netdata": 19999, "navidrome": 4533, "jellyfin": 8096, "audiomuse": 8100, "navilist": 8200, "downtify": 8000,
-         "seerr": 5055, "radarr": 7878, "prowlarr": 9696, "qbittorrent": 8085}
+         "seerr": 5055, "radarr": 7878, "sonarr": 8989, "prowlarr": 9696, "qbittorrent": 8085}
 SERVE = [(1000, "homepage"), (1001, "portainer"), (1002, "immich"), (1003, "beszel"), (1004, "adguard"),
          (1005, "nextcloud"), (1006, "filebrowser"), (1007, "speedtest"), (1008, "netdata")]
 
@@ -2432,7 +2432,8 @@ def watching_card_lines(href):
 
 
 DOWNLOADERS_ID = "downloaders-card"
-DOWNLOADERS_MEMBERS = ("seerr-card", "radarr-card", "prowlarr-card", "qbittorrent-card", "metube-card", "downtify-card")
+DOWNLOADERS_MEMBERS = ("seerr-card", "radarr-card", "sonarr-card", "prowlarr-card", "qbittorrent-card", "metube-card", "downtify-card")
+DOWNLOADERS_FIRST = ("seerr-card", "radarr-card", "prowlarr-card", "qbittorrent-card", "metube-card", "downtify-card")
 
 
 def downloaders_card_lines():
@@ -4927,11 +4928,23 @@ class WatchingCard(Step):
 DOWNLOADERS_MARK = "/var/lib/homelab/downloaders-card"
 
 
+def downloaders_handled():
+    """The download app cards the dropdown has already dealt with, read from its marker file, or None when it was never added. The first version of the file only said "added" and covered the first six apps."""
+    if not os.path.exists(P(DOWNLOADERS_MARK)):
+        return None
+    lines = [l.strip() for l in read_file(P(DOWNLOADERS_MARK)).split("\n") if l.strip()]
+    return set(DOWNLOADERS_FIRST) if lines == ["added"] else set(lines)
+
+
 def downloaders_card_wanted(svc):
-    """True when at least one download app has a card, there is no Downloaders card yet, and the card was never added before."""
+    """True when the Downloaders card still has to be added, or when it is there and a download app that it has not dealt with yet has a card. A card the person removed is not added again."""
     lines = svc.split("\n")
-    return (card_range(lines, DOWNLOADERS_ID) is None and not os.path.exists(P(DOWNLOADERS_MARK))
-            and any(card_range(lines, m) is not None for m in DOWNLOADERS_MEMBERS))
+    present = [m for m in DOWNLOADERS_MEMBERS if card_range(lines, m) is not None]
+    head = card_range(lines, DOWNLOADERS_ID) is not None
+    handled = downloaders_handled()
+    if handled is None:
+        return not head and bool(present)
+    return head and any(m not in handled for m in present)
 
 
 def services_with_downloaders(text):
@@ -4944,11 +4957,21 @@ def services_with_downloaders(text):
     return cards_grouped_under(text, DOWNLOADERS_ID, DOWNLOADERS_MEMBERS)
 
 
+def services_with_new_downloaders(text, handled):
+    """Put each download app that is new since the dropdown was added after the app that comes before it in the usual order (else right under the dropdown). The other cards stay where they are."""
+    for i, m in enumerate(DOWNLOADERS_MEMBERS):
+        if m in handled or not cards_same_group(text, m, DOWNLOADERS_ID):
+            continue
+        prev = next((p for p in reversed(DOWNLOADERS_MEMBERS[:i]) if cards_same_group(text, p, DOWNLOADERS_ID)), DOWNLOADERS_ID)
+        text = card_moved_after(text, m, prev)
+    return text
+
+
 @step
 class DownloadersCard(Step):
-    """Once: add a closed Downloaders dropdown under the players and move Seerr, Radarr, Prowlarr, qBittorrent, MeTube and Downtify under it. After that the order is set on the Cards screen."""
+    """Add a closed Downloaders dropdown under the players and put the download apps under it. Apps that get their card later (Sonarr, say) are put there once too. After that the order is set on the Cards screen."""
     id, group = "downloaders-card", "Homepage"
-    title = "Downloaders dropdown under the players (added once; change it on the Cards screen)"
+    title = "Downloaders dropdown under the players (apps are put in once; change it on the Cards screen)"
     needs = ("homepage-files", "stack-requests", "stack-music-downloader", "watching-card")
 
     def applies(self):
@@ -4959,21 +4982,24 @@ class DownloadersCard(Step):
 
     def run(self):
         if Opt.dry:
-            out("      would add a Downloaders dropdown under the players and move the download apps under it")
+            out("      would put the download apps in the Downloaders dropdown under the players")
             return
         if not FAKE and os.path.exists(P("/usr/local/sbin/homelab-cards")):
             run([P("/usr/local/sbin/homelab-cards"), "sync"], timeout=120)
         old = read_file(hp_path("services.yaml"))
         if not downloaders_card_wanted(old):
             return
-        new = services_with_downloaders(old)
+        handled = downloaders_handled()
+        new = services_with_downloaders(old) if handled is None else services_with_new_downloaders(old, handled)
         if new != old:
             if not os.path.exists(hp_path("services.yaml") + ".before-downloaders"):
                 write_file(hp_path("services.yaml") + ".before-downloaders", old, 0o600, (Ctx.uid, Ctx.gid))
             write_file(hp_path("services.yaml"), new, 0o600, (Ctx.uid, Ctx.gid))
+        now = (handled or set()) | {m for m in DOWNLOADERS_MEMBERS if card_range(new.split("\n"), m) is not None}
         os.makedirs(os.path.dirname(P(DOWNLOADERS_MARK)), exist_ok=True)
-        write_file(P(DOWNLOADERS_MARK), "added\n", 0o644)
-        out("      The Downloaders dropdown is under the players, closed. Move or remove it on the Customize screen, Cards.")
+        write_file(P(DOWNLOADERS_MARK), "\n".join(sorted(now)) + "\n", 0o644)
+        out("      The Downloaders dropdown is under the players, closed. Move or remove it on the Customize screen, Cards." if handled is None
+            else "      A new download app was put in the Downloaders dropdown.")
 
 
 AUDIOMUSE_PLUGIN_URL = "https://github.com/NeptuneHub/AudioMuse-AI-NV-plugin/releases/download/v11/audiomuseai.ndp"
@@ -5855,17 +5881,17 @@ class DowntifyLogin(Step):
                 warn("Downtify already has an account called %s, so the first account keeps the name admin and now has the admin password." % user)
         if st != 200:
             raise Abort("Downtify refused the new sign-in (HTTP %s): %s" % (st, str(js)[:200]))
-# Requests: Seerr (where people ask for a movie), Radarr (which keeps the list), Prowlarr (which keeps the indexers) and qBittorrent (the download client).
+# Requests: Seerr (where people ask for a movie or show), Radarr and Sonarr (which keep the lists), Prowlarr (which keeps the indexers for both) and qBittorrent (the download client).
 # Installed only by `homelab-setup requests`. No indexers and no download sources are added.
 
-REQUESTS_FOLDERS = ("requests", "requests/seerr", "requests/radarr", "requests/prowlarr", "requests/qbittorrent")
+REQUESTS_FOLDERS = ("requests", "requests/seerr", "requests/radarr", "requests/sonarr", "requests/prowlarr", "requests/qbittorrent")
 DOWNLOADS_FOLDER = "/mnt/storage/downloads"
 SEERR_UID = 1000
-REQUESTS_ROOTS = {"radarr": "/data/movies"}
-LIBRARY_FOLDERS = ("/mnt/storage/movies", DOWNLOADS_FOLDER)
-REQUESTS_LABELS = {"seerr": "Seerr", "radarr": "Radarr", "prowlarr": "Prowlarr", "qbittorrent": "qBittorrent"}
-REQUESTS_PARTS = ("qbittorrent", "radarr", "prowlarr", "seerr")
-REQUESTS_RETIRED = ("sonarr", "jdownloader")
+REQUESTS_ROOTS = {"radarr": "/data/movies", "sonarr": "/data/shows"}
+LIBRARY_FOLDERS = ("/mnt/storage/movies", "/mnt/storage/shows", DOWNLOADS_FOLDER)
+REQUESTS_LABELS = {"seerr": "Seerr", "radarr": "Radarr", "sonarr": "Sonarr", "prowlarr": "Prowlarr", "qbittorrent": "qBittorrent"}
+REQUESTS_PARTS = ("qbittorrent", "radarr", "sonarr", "prowlarr", "seerr")
+REQUESTS_RETIRED = ("jdownloader",)
 SERVARR_API = {"prowlarr": "v1"}
 
 
@@ -5874,7 +5900,7 @@ def requests_applies():
 
 
 def requests_page_answers(app):
-    path = {"seerr": "/api/v1/status", "radarr": "/ping", "prowlarr": "/ping", "qbittorrent": "/"}[app]
+    path = {"seerr": "/api/v1/status", "radarr": "/ping", "sonarr": "/ping", "prowlarr": "/ping", "qbittorrent": "/"}[app]
     return http("GET", url(app, path), timeout=10)[0] == 200
 
 
@@ -5883,7 +5909,7 @@ def requests_all_answer():
 
 
 def library_folders_not_mine():
-    """The movies and downloads folders that exist but belong to someone else. Radarr and qBittorrent run as the lab user and need to write in them."""
+    """The movies, shows and downloads folders that exist but belong to someone else. Radarr, Sonarr and qBittorrent run as the lab user and need to write in them."""
     mine = []
     for d in LIBRARY_FOLDERS if not FAKE else ():
         try:
@@ -5909,7 +5935,7 @@ class RequestsFolders(Step):
 
     def run(self):
         if Opt.dry:
-            out("      would create %s and the folders under %s/requests, and make the movies and downloads folders writable for %s" % (DOWNLOADS_FOLDER, Ctx.home, Ctx.user))
+            out("      would create %s and the folders under %s/requests, and make the movies, shows and downloads folders writable for %s" % (DOWNLOADS_FOLDER, Ctx.home, Ctx.user))
             return
         for d in library_folders_not_mine():
             chown(P(d), Ctx.uid, Ctx.gid)
@@ -5922,13 +5948,13 @@ class RequestsFolders(Step):
 
 
 class RequestsStack(StackStep):
-    """The four request containers in one stack."""
+    """The five request containers in one stack."""
 
     def applies(self):
         return requests_applies()
 
     def detail(self):
-        return "Seerr %d, Radarr %d, Prowlarr %d, qBittorrent %d" % tuple(PORTS[a] for a in ("seerr", "radarr", "prowlarr", "qbittorrent"))
+        return "Seerr %d, Radarr %d, Sonarr %d, Prowlarr %d, qBittorrent %d" % tuple(PORTS[a] for a in ("seerr", "radarr", "sonarr", "prowlarr", "qbittorrent"))
 
     def stamp(self):
         return hashlib.md5((stack_text("requests") + "|".join("%s=%s" % kv for kv in stack_env("requests"))).encode()).hexdigest()
@@ -5949,7 +5975,7 @@ class RequestsStack(StackStep):
 
 
 register(RequestsStack("requests", ("portainer-env", "folders", "requests-folders", "stack-jellyfin"),
-                       "Requests stack (Seerr, Radarr, Prowlarr and qBittorrent)", 600))
+                       "Requests stack (Seerr, Radarr, Sonarr, Prowlarr and qBittorrent)", 600))
 
 
 def servarr_key(app):
@@ -6054,13 +6080,13 @@ def setup_servarr(app, pw):
 
 
 def setup_prowlarr(pw):
-    """Prowlarr: a login with the shared admin password, and Radarr as the app it sends its indexers to. It adds no indexers."""
+    """Prowlarr: a login with the shared admin password, and Radarr and Sonarr as the apps it sends its indexers to. It adds no indexers."""
     why = servarr_login("prowlarr", pw)
     if why:
         return why
     have = {a.get("implementation") for a in servarr_call("prowlarr", "GET", "/applications")[1] or [] if isinstance(a, dict)}
     schema = {s.get("implementation"): s for s in servarr_call("prowlarr", "GET", "/applications/schema")[1] or [] if isinstance(s, dict)}
-    for app in ("radarr",):
+    for app in ("radarr", "sonarr"):
         name = app.capitalize()
         if name in have:
             continue
@@ -6103,11 +6129,35 @@ def seerr_login(pw):
     return {"Cookie": "connect.sid=" + m.group(1)}, None
 
 
+SEERR_EXTRA = {"radarr": {"minimumAvailability": "released"}, "sonarr": {"enableSeasonFolders": True}}
+
+
+def seerr_link(app, session):
+    """Add Radarr or Sonarr to Seerr. Returns None when it worked, else a short reason."""
+    pid, pname = profile_for(app)
+    if pid is None:
+        return "%s has no quality profile to use" % app.capitalize()
+    body = {"name": app.capitalize(), "hostname": app, "port": PORTS[app], "apiKey": servarr_key(app), "useSsl": False, "baseUrl": "",
+            "activeProfileId": pid, "activeProfileName": pname, "activeDirectory": REQUESTS_ROOTS[app], "is4k": False, "isDefault": True,
+            "syncEnabled": False, "preventSearch": False, "externalUrl": ""}
+    body.update(SEERR_EXTRA[app])
+    return None if seerr_call("POST", "/settings/" + app, session, body)[0] in (200, 201) else "it did not accept %s" % app.capitalize()
+
+
+def seerr_add_sonarr_when_missing(pw):
+    """A Seerr that was set up before Sonarr was part of the request apps: sign in again and link Sonarr when Seerr has none. Returns None or a short reason."""
+    session, why = seerr_login(pw)
+    if why:
+        return why
+    have = seerr_call("GET", "/settings/sonarr", session)[1]
+    return seerr_link("sonarr", session) if isinstance(have, list) and not have else None
+
+
 def setup_seerr(pw):
-    """Seerr: sign in with the Jellyfin admin login, switch on the Jellyfin libraries, and link Radarr. Returns None when it worked, else a short reason."""
+    """Seerr: sign in with the Jellyfin admin login, switch on the Jellyfin libraries, and link Radarr and Sonarr. Returns None when it worked, else a short reason."""
     pub = http("GET", url("seerr", "/api/v1/settings/public"), timeout=20)[1]
     if isinstance(pub, dict) and pub.get("initialized"):
-        return None
+        return seerr_add_sonarr_when_missing(pw)
     session, why = seerr_login(pw)
     if why:
         return why
@@ -6115,16 +6165,10 @@ def setup_seerr(pw):
     ids = [str(x["id"]) for x in libs if isinstance(x, dict) and "id" in x] if isinstance(libs, list) else []
     if ids:
         seerr_call("GET", "/settings/jellyfin/library?enable=" + ",".join(ids), session)
-    for app, extra in (("radarr", {"minimumAvailability": "released"}),):
-        pid, pname = profile_for(app)
-        if pid is None:
-            return "%s has no quality profile to use" % app.capitalize()
-        body = {"name": app.capitalize(), "hostname": app, "port": PORTS[app], "apiKey": servarr_key(app), "useSsl": False, "baseUrl": "",
-                "activeProfileId": pid, "activeProfileName": pname, "activeDirectory": REQUESTS_ROOTS[app], "is4k": False, "isDefault": True,
-                "syncEnabled": False, "preventSearch": False, "externalUrl": ""}
-        body.update(extra)
-        if seerr_call("POST", "/settings/" + app, session, body)[0] not in (200, 201):
-            return "it did not accept %s" % app.capitalize()
+    for app in ("radarr", "sonarr"):
+        why = seerr_link(app, session)
+        if why:
+            return why
     st = seerr_call("POST", "/settings/initialize", session, {})[0]
     return None if st in (200, 201) else "it did not finish its first-time setup (HTTP %s)" % st
 
@@ -6144,12 +6188,15 @@ class RequestsLinks(Step):
 
     def run(self):
         if Opt.dry:
-            out("      would set the admin login in each app, add the folder and qBittorrent to Radarr, link Prowlarr to it, and link Seerr to Jellyfin and Radarr")
+            out("      would set the admin login in each app, add the folders and qBittorrent to Radarr and Sonarr, link Prowlarr to both, and link Seerr to Jellyfin, Radarr and Sonarr")
             return
         pw = need_password("to set the login of the request apps")
         done = State.data.setdefault("requests_linked", {})
-        todo = {"qbittorrent": lambda: setup_qbittorrent(pw), "radarr": lambda: setup_servarr("radarr", pw),
+        todo = {"qbittorrent": lambda: setup_qbittorrent(pw), "radarr": lambda: setup_servarr("radarr", pw), "sonarr": lambda: setup_servarr("sonarr", pw),
                 "prowlarr": lambda: setup_prowlarr(pw), "seerr": lambda: setup_seerr(pw)}
+        if not done.get("sonarr"):
+            done.pop("prowlarr", None)
+            done.pop("seerr", None)
         problems = []
         for app in REQUESTS_PARTS:
             if done.get(app):
@@ -6172,35 +6219,16 @@ class RequestsLinks(Step):
 
 
 def retired_leftovers():
-    """What is still on this machine from the two apps that are no longer part of the request apps (Sonarr and JDownloader)."""
+    """What is still on this machine from JDownloader, which is no longer part of the request apps."""
     found = [c for c in containers_all() if c in REQUESTS_RETIRED]
     found += [d for d in ("%s/requests/%s" % (Ctx.home, a) for a in REQUESTS_RETIRED) if os.path.isdir(P(d))]
-    if (State.data.get("requests_linked") or {}).get("sonarr"):
-        found.append("the Sonarr link")
     return found
-
-
-def unlink_sonarr_in_prowlarr():
-    for entry in servarr_call("prowlarr", "GET", "/applications")[1] or []:
-        if isinstance(entry, dict) and entry.get("implementation") == "Sonarr" and "id" in entry:
-            servarr_call("prowlarr", "DELETE", "/applications/%s" % entry["id"])
-
-
-def unlink_sonarr_in_seerr(pw):
-    """Returns None when Sonarr is no longer in Seerr, else a short reason."""
-    session, why = seerr_login(pw)
-    if why:
-        return why
-    for entry in seerr_call("GET", "/settings/sonarr", session)[1] or []:
-        if isinstance(entry, dict) and "id" in entry:
-            seerr_call("DELETE", "/settings/sonarr/%s" % entry["id"], session)
-    return None
 
 
 @step
 class RequestsRetire(Step):
     id, group = "requests-retire", "Services"
-    title = "Remove Sonarr and JDownloader from the request apps (containers, settings, links and dashboard cards)"
+    title = "Remove JDownloader from the request apps (container, settings and dashboard card)"
     needs = ("stack-requests",)
 
     def applies(self):
@@ -6211,19 +6239,8 @@ class RequestsRetire(Step):
 
     def run(self):
         if Opt.dry:
-            out("      would remove Sonarr from Seerr and Prowlarr, remove the Sonarr and JDownloader containers, delete their settings folders and remove their dashboard cards")
+            out("      would remove the JDownloader container, delete its settings folder and remove its dashboard card")
             return
-        linked = State.data.setdefault("requests_linked", {})
-        warned = []
-        if "prowlarr" in containers_running():
-            try:
-                unlink_sonarr_in_prowlarr()
-            except Exception as e:
-                warned.append("Prowlarr still lists Sonarr (%s); remove it in Prowlarr under Settings, Apps" % e)
-        if linked.get("sonarr") and "seerr" in containers_running():
-            why = unlink_sonarr_in_seerr(need_password("to remove Sonarr from Seerr"))
-            if why:
-                warned.append("Seerr still lists Sonarr (%s); remove it in Seerr under Settings, Services" % why)
         for name in REQUESTS_RETIRED:
             if name in containers_all():
                 docker("rm", "-f", name, timeout=120)
@@ -6233,10 +6250,6 @@ class RequestsRetire(Step):
             os.rmdir(P(DOWNLOADS_FOLDER + "/direct"))
         except OSError:
             pass
-        linked.pop("sonarr", None)
-        State.save()
-        for w in warned:
-            warn(w)
 JELLYFIN_THEME_URL = "https://cdn.jsdelivr.net/gh/n00bcodr/Jellyfish/"
 JELLYFIN_CSS_FILES = ("theme.css", "colors/jellyflix.css", "slideshow.css", "progress_bar.css", "indicators.css", "card_buttons.css",
                       "icontext.css", "scrollbar.css", "streamberry_logo.css")
@@ -9917,7 +9930,7 @@ Commands:
   lastfm                   save your free Last.fm key so Navidrome can suggest similar songs; also: lastfm remove
   audiomuse                set up AudioMuse-AI (Navidrome suggests songs that sound alike); also: audiomuse memory | pause | resume | status | remove
   navilist                 set up naviList (Navidrome playlists from your ListenBrainz and Last.fm listening); also: navilist subscribe | status | remove
-  requests                 set up Seerr, Radarr, Prowlarr and qBittorrent so people can ask for movies; also: requests status | remove
+  requests                 set up Seerr, Radarr, Sonarr, Prowlarr and qBittorrent so people can ask for movies and shows; also: requests status | remove
   uninstall                take HomeLab off this machine; asks whether to keep or wipe the apps' data and the drives (Tailscale, Docker and the drive programs stay); wiping also deletes the downloaded repository folder; add --dry-run to look first
   done STEP | skip STEP    mark a manual step as done, or as not wanted
   unskip STEP              take a skipped step back (only steps that wait for a person can be marked)
@@ -9938,7 +9951,7 @@ COMMANDS = {"checklist": cmd_checklist, "check": cmd_checklist, "install": cmd_i
 
 
 def cmd_requests(rest):
-    """`requests`: set up Seerr, Radarr, Prowlarr and qBittorrent so people can ask for a movie. Also handles status and remove."""
+    """`requests`: set up Seerr, Radarr, Sonarr, Prowlarr and qBittorrent so people can ask for a movie or show. Also handles status and remove."""
     load_all()
     if Mode.existing:
         say("This machine was built by hand, so the installer only reads it. The request apps are not set up here.")
@@ -9959,11 +9972,11 @@ def cmd_requests(rest):
             other = port_taken_by(PORTS[app], mine=STACKS["requests"][1])
             if other:
                 raise Abort("Port %d is already used by the container %s, and %s needs it for its web page. Nothing was changed." % (PORTS[app], other, REQUESTS_LABELS[app]))
-    say("This adds the request apps, roughly 1 GB of memory in total:\n"
-        "  - Seerr: where you search for a movie and ask for it. Everyone signs in with their Jellyfin login.\n"
-        "  - Radarr: keeps the list of movies that were asked for, and puts finished files in the Jellyfin movies folder.\n"
-        "  - Prowlarr: keeps the indexers in one place and sends them to Radarr.\n"
-        "  - qBittorrent: the download client. Radarr is linked to it, and its downloads go to %s.\n"
+    say("This adds the request apps, roughly 1.5 GB of memory in total:\n"
+        "  - Seerr: where you search for a movie or show and ask for it. Everyone signs in with their Jellyfin login.\n"
+        "  - Radarr and Sonarr: keep the list of movies and shows that were asked for, and put finished files in the Jellyfin folders.\n"
+        "  - Prowlarr: keeps the indexers in one place and sends them to Radarr and Sonarr.\n"
+        "  - qBittorrent: the download client. Radarr and Sonarr are linked to it, and its downloads go to %s.\n"
         "The installer links the apps to each other and gives each one the admin login. It adds no download sources and no indexers; "
         "that part is up to you." % DOWNLOADS_FOLDER)
     if State.data.get("requests"):
@@ -9979,9 +9992,9 @@ def cmd_requests(rest):
         warn("The setup did not finish. Read the message above, then run `sudo homelab-setup refresh` to continue.")
         return
     good("The request apps are set up.")
-    say("Open Seerr at %s and sign in with your Jellyfin login. Radarr is at %s, Prowlarr at %s and qBittorrent at %s; each uses the admin login.\n"
-        "Nothing will download until you add a source of your own in Prowlarr (Indexers); Prowlarr passes it on to Radarr."
-        % (url("seerr"), url("radarr"), url("prowlarr"), url("qbittorrent")))
+    say("Open Seerr at %s and sign in with your Jellyfin login. Radarr is at %s, Sonarr at %s, Prowlarr at %s and qBittorrent at %s; each uses the admin login.\n"
+        "Nothing will download until you add a source of your own in Prowlarr (Indexers); Prowlarr passes it on to Radarr and Sonarr."
+        % (url("seerr"), url("radarr"), url("sonarr"), url("prowlarr"), url("qbittorrent")))
 
 
 def requests_status():
@@ -9995,14 +10008,14 @@ def requests_status():
 
 
 def requests_remove():
-    """`requests remove`: remove the four containers. Their settings and the downloads folder are kept."""
+    """`requests remove`: remove the five containers. Their settings and the downloads folder are kept."""
     if not requests_wanted():
         say("The request apps are not set up. Nothing to remove.")
         return
     if Opt.dry:
-        say("This is a dry run: it would remove the four request containers. Nothing was changed.")
+        say("This is a dry run: it would remove the five request containers. Nothing was changed.")
         return
-    if not yesno("Remove Seerr, Radarr, Prowlarr and qBittorrent (their settings and the downloads folder stay on the drive)?", False):
+    if not yesno("Remove Seerr, Radarr, Sonarr, Prowlarr and qBittorrent (their settings and the downloads folder stay on the drive)?", False):
         say("Nothing was changed.")
         return
     if not Portainer.delete("requests"):

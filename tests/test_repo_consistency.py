@@ -17,7 +17,7 @@ ROOT = helpers.ROOT
 # Images allowed to follow a moving tag. Add to this list only on purpose: a pinned version is what makes an update something you choose.
 FLOATING_IMAGES = {"henriquesebastiao/downtify:latest", "ghcr.io/alexta69/metube:latest", "netdata/netdata:stable", "redis:alpine",
                    "ghcr.io/immich-app/immich-server:release", "ghcr.io/immich-app/immich-machine-learning:release",
-                   "ghcr.io/seerr-team/seerr:latest", "lscr.io/linuxserver/radarr:latest", "lscr.io/linuxserver/prowlarr:latest", "lscr.io/linuxserver/qbittorrent:latest"}
+                   "ghcr.io/seerr-team/seerr:latest", "lscr.io/linuxserver/radarr:latest", "lscr.io/linuxserver/sonarr:latest", "lscr.io/linuxserver/prowlarr:latest", "lscr.io/linuxserver/qbittorrent:latest"}
 
 try:
     import yaml
@@ -141,12 +141,12 @@ class PageScripts(unittest.TestCase):
         self.assertIn("li#watching-card", css)
 
     def test_the_downloaders_dropdown_names_the_same_cards_everywhere(self):
-        """The installer groups six cards under the Downloaders card; the dashboard script hides and shows the same six by id, and the stylesheet sizes the row by its id."""
+        """The installer groups seven cards under the Downloaders card; the dashboard script hides and shows the same seven by id, and the stylesheet sizes the row by its id."""
         js, css, setup, panel = read("homepage-config/custom.js"), read("homepage-config/custom.css"), read("installer/homelab-setup"), read("scripts/homelab-panel")
         installer = re.search(r"DOWNLOADERS_MEMBERS = \(([^)]*)\)", setup).group(1)
         script = re.search(r"var DL_APPS = \[([^\]]*)\]", js).group(1)
         self.assertEqual(re.findall(r'"([^"]+)"', installer), re.findall(r'"([^"]+)"', script))
-        self.assertEqual(len(re.findall(r'"([^"]+)"', script)), 6)
+        self.assertEqual(len(re.findall(r'"([^"]+)"', script)), 7)
         self.assertIn('DOWNLOADERS_ID = "downloaders-card"', setup)
         self.assertIn('getElementById("downloaders-card")', js)
         self.assertIn("li#downloaders-card", css)

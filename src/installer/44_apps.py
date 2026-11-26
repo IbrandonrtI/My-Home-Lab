@@ -171,11 +171,23 @@ class WatchingCard(Step):
 DOWNLOADERS_MARK = "/var/lib/homelab/downloaders-card"
 
 
+def downloaders_handled():
+    """The download app cards the dropdown has already dealt with, read from its marker file, or None when it was never added. The first version of the file only said "added" and covered the first six apps."""
+    if not os.path.exists(P(DOWNLOADERS_MARK)):
+        return None
+    lines = [l.strip() for l in read_file(P(DOWNLOADERS_MARK)).split("\n") if l.strip()]
+    return set(DOWNLOADERS_FIRST) if lines == ["added"] else set(lines)
+
+
 def downloaders_card_wanted(svc):
-    """True when at least one download app has a card, there is no Downloaders card yet, and the card was never added before."""
+    """True when the Downloaders card still has to be added, or when it is there and a download app that it has not dealt with yet has a card. A card the person removed is not added again."""
     lines = svc.split("\n")
-    return (card_range(lines, DOWNLOADERS_ID) is None and not os.path.exists(P(DOWNLOADERS_MARK))
-            and any(card_range(lines, m) is not None for m in DOWNLOADERS_MEMBERS))
+    present = [m for m in DOWNLOADERS_MEMBERS if card_range(lines, m) is not None]
+    head = card_range(lines, DOWNLOADERS_ID) is not None
+    handled = downloaders_handled()
+    if handled is None:
+        return not head and bool(present)
+    return head and any(m not in handled for m in present)
 
 
 def services_with_downloaders(text):
@@ -188,11 +200,21 @@ def services_with_downloaders(text):
     return cards_grouped_under(text, DOWNLOADERS_ID, DOWNLOADERS_MEMBERS)
 
 
+def services_with_new_downloaders(text, handled):
+    """Put each download app that is new since the dropdown was added after the app that comes before it in the usual order (else right under the dropdown). The other cards stay where they are."""
+    for i, m in enumerate(DOWNLOADERS_MEMBERS):
+        if m in handled or not cards_same_group(text, m, DOWNLOADERS_ID):
+            continue
+        prev = next((p for p in reversed(DOWNLOADERS_MEMBERS[:i]) if cards_same_group(text, p, DOWNLOADERS_ID)), DOWNLOADERS_ID)
+        text = card_moved_after(text, m, prev)
+    return text
+
+
 @step
 class DownloadersCard(Step):
-    """Once: add a closed Downloaders dropdown under the players and move Seerr, Radarr, Prowlarr, qBittorrent, MeTube and Downtify under it. After that the order is set on the Cards screen."""
+    """Add a closed Downloaders dropdown under the players and put the download apps under it. Apps that get their card later (Sonarr, say) are put there once too. After that the order is set on the Cards screen."""
     id, group = "downloaders-card", "Homepage"
-    title = "Downloaders dropdown under the players (added once; change it on the Cards screen)"
+    title = "Downloaders dropdown under the players (apps are put in once; change it on the Cards screen)"
     needs = ("homepage-files", "stack-requests", "stack-music-downloader", "watching-card")
 
     def applies(self):
@@ -203,21 +225,24 @@ class DownloadersCard(Step):
 
     def run(self):
         if Opt.dry:
-            out("      would add a Downloaders dropdown under the players and move the download apps under it")
+            out("      would put the download apps in the Downloaders dropdown under the players")
             return
         if not FAKE and os.path.exists(P("/usr/local/sbin/homelab-cards")):
             run([P("/usr/local/sbin/homelab-cards"), "sync"], timeout=120)
         old = read_file(hp_path("services.yaml"))
         if not downloaders_card_wanted(old):
             return
-        new = services_with_downloaders(old)
+        handled = downloaders_handled()
+        new = services_with_downloaders(old) if handled is None else services_with_new_downloaders(old, handled)
         if new != old:
             if not os.path.exists(hp_path("services.yaml") + ".before-downloaders"):
                 write_file(hp_path("services.yaml") + ".before-downloaders", old, 0o600, (Ctx.uid, Ctx.gid))
             write_file(hp_path("services.yaml"), new, 0o600, (Ctx.uid, Ctx.gid))
+        now = (handled or set()) | {m for m in DOWNLOADERS_MEMBERS if card_range(new.split("\n"), m) is not None}
         os.makedirs(os.path.dirname(P(DOWNLOADERS_MARK)), exist_ok=True)
-        write_file(P(DOWNLOADERS_MARK), "added\n", 0o644)
-        out("      The Downloaders dropdown is under the players, closed. Move or remove it on the Customize screen, Cards.")
+        write_file(P(DOWNLOADERS_MARK), "\n".join(sorted(now)) + "\n", 0o644)
+        out("      The Downloaders dropdown is under the players, closed. Move or remove it on the Customize screen, Cards." if handled is None
+            else "      A new download app was put in the Downloaders dropdown.")
 
 
 AUDIOMUSE_PLUGIN_URL = "https://github.com/NeptuneHub/AudioMuse-AI-NV-plugin/releases/download/v11/audiomuseai.ndp"

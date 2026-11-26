@@ -44,6 +44,26 @@ services:
         limits:
           memory: 768m
 
+  sonarr:
+    image: lscr.io/linuxserver/sonarr:latest
+    container_name: sonarr
+    restart: unless-stopped
+    labels:
+      org.opencontainers.image.title: "Sonarr"
+    ports:
+      - "8989:8989"
+    environment:
+      PUID: "1000"
+      PGID: "1000"
+      TZ: "${TZ:-UTC}"
+    volumes:
+      - /home/your-username/requests/sonarr:/config
+      - /mnt/storage:/data
+    deploy:
+      resources:
+        limits:
+          memory: 768m
+
   prowlarr:
     image: lscr.io/linuxserver/prowlarr:latest
     container_name: prowlarr

@@ -1,4 +1,4 @@
-"""The request apps (Seerr, Radarr, Prowlarr, qBittorrent): the folders, the stack file and the linking, run against small fake copies of the four apps' web interfaces.
+"""The request apps (Seerr, Radarr, Sonarr, Prowlarr, qBittorrent): the folders, the stack file and the linking, run against small fake copies of the four apps' web interfaces.
 What the real apps do is not tested here; these check that the installer sends what their documented interfaces ask for."""
 import http.server
 import json
@@ -12,7 +12,7 @@ from unittest import mock
 
 import helpers
 
-KEYS = {"radarr": "r" * 32, "prowlarr": "p" * 32}
+KEYS = {"radarr": "r" * 32, "sonarr": "s" * 32, "prowlarr": "p" * 32}
 
 
 class Fake(http.server.BaseHTTPRequestHandler):
@@ -161,7 +161,7 @@ class RequestsSetup(unittest.TestCase):
     def setUp(self):
         self.m = helpers.installer()
         m = self.m
-        self.apps = {"qbittorrent": serve("qbittorrent", logins=[("admin", "temp-pass")]), "radarr": serve("radarr"), "prowlarr": serve("prowlarr"), "seerr": serve("seerr")}
+        self.apps = {"qbittorrent": serve("qbittorrent", logins=[("admin", "temp-pass")]), "radarr": serve("radarr"), "sonarr": serve("sonarr"), "prowlarr": serve("prowlarr"), "seerr": serve("seerr")}
         for srv in self.apps.values():
             self.addCleanup(srv.shutdown)
             self.addCleanup(srv.server_close)
@@ -172,7 +172,7 @@ class RequestsSetup(unittest.TestCase):
                         mock.patch.object(m.Ctx, "home", "/home/brandon"), mock.patch.object(m, "docker", lambda *a, **k: (0, "A temporary password is provided for this session: temp-pass"))):
             patcher.start()
             self.addCleanup(patcher.stop)
-        for app in ("radarr", "prowlarr"):
+        for app in ("radarr", "sonarr", "prowlarr"):
             folder = m.P("/home/brandon/requests/" + app)
             os.makedirs(folder, exist_ok=True)
             with open(folder + "/config.xml", "w") as f:
@@ -189,7 +189,7 @@ class RequestsSetup(unittest.TestCase):
         self.assertEqual(self.step.probe(), "done")
         q = self.apps["qbittorrent"].state["prefs"]
         self.assertEqual((q["web_ui_username"], q["web_ui_password"], q["save_path"]), ("brandon", "Secret-pass-1", "/data/downloads"))
-        for app, root in (("radarr", "/data/movies"),):
+        for app, root in (("radarr", "/data/movies"), ("sonarr", "/data/shows")):
             host = self.apps[app].state["host"]
             self.assertEqual((host["authenticationMethod"], host["authenticationRequired"], host["username"], host["password"]), ("forms", "enabled", "brandon", "Secret-pass-1"))
             self.assertEqual(self.apps[app].state["roots"], [{"path": root}])
@@ -198,17 +198,17 @@ class RequestsSetup(unittest.TestCase):
             self.assertEqual(self.apps[app].state["clients"][0]["implementation"], "QBittorrent")
         prowlarr = self.apps["prowlarr"].state
         self.assertEqual((prowlarr["host"]["authenticationMethod"], prowlarr["host"]["username"], prowlarr["host"]["password"]), ("forms", "brandon", "Secret-pass-1"))
-        self.assertEqual([c["implementation"] for c in prowlarr["clients"]], ["Radarr"])
+        self.assertEqual([c["implementation"] for c in prowlarr["clients"]], ["Radarr", "Sonarr"])
         radarr_app = {f["name"]: f["value"] for f in prowlarr["clients"][0]["fields"]}
         self.assertEqual((radarr_app["prowlarrUrl"], radarr_app["baseUrl"], radarr_app["apiKey"]), ("http://prowlarr:%d" % self.m.PORTS["prowlarr"], "http://radarr:%d" % self.m.PORTS["radarr"], KEYS["radarr"]))
         self.assertEqual(prowlarr["clients"][0]["syncLevel"], "fullSync")
         seerr = self.apps["seerr"].state
         self.assertEqual((seerr["login"]["username"], seerr["login"]["password"], seerr["login"]["hostname"], seerr["login"]["port"]), ("brandon", "Secret-pass-1", "127.0.0.1", 8096))
         self.assertIn("enable=lib1,lib2", [r[1] for r in seerr["log"] if "enable=" in r[1]][0])
-        movies = seerr["services"]["radarr"]
-        self.assertEqual(list(seerr["services"]), ["radarr"])
+        movies, shows = seerr["services"]["radarr"], seerr["services"]["sonarr"]
         self.assertEqual((movies["hostname"], movies["port"], movies["apiKey"], movies["activeProfileId"], movies["activeDirectory"], movies["isDefault"]),
                          ("radarr", self.apps["radarr"].server_address[1], KEYS["radarr"], 4, "/data/movies", True))
+        self.assertEqual((shows["hostname"], shows["apiKey"], shows["activeDirectory"], shows["enableSeasonFolders"]), ("sonarr", KEYS["sonarr"], "/data/shows", True))
         self.assertTrue(seerr["initialized"])
 
     def test_seerr_is_asked_to_use_an_address_the_container_can_reach(self):
@@ -252,7 +252,7 @@ class RequestsSetup(unittest.TestCase):
             self.step.run()
         self.assertIn("qBittorrent", str(cm.exception))
         self.assertEqual(self.step.probe(), "todo")
-        self.assertEqual(self.m.State.data["requests_linked"], {"radarr": True, "prowlarr": True, "seerr": True})
+        self.assertEqual(self.m.State.data["requests_linked"], {"radarr": True, "sonarr": True, "prowlarr": True, "seerr": True})
         self.apps["qbittorrent"].state["logins"] = [("admin", "temp-pass")]
         before = len(self.apps["radarr"].state["log"])
         self.step.run()
@@ -271,10 +271,11 @@ class RequestsSetup(unittest.TestCase):
         self.step.run()
         self.assertEqual(self.step.probe(), "done")
 
-    def test_a_seerr_that_is_already_set_up_is_left_alone(self):
+    def test_a_seerr_that_is_already_set_up_with_both_apps_is_left_alone(self):
         self.apps["seerr"].state["initialized"] = True
+        self.apps["seerr"].state["services"] = {"radarr": {"name": "Radarr"}, "sonarr": {"name": "Sonarr"}}
         self.step.run()
-        self.assertEqual([r for r in self.apps["seerr"].state["log"] if r[0] == "POST"], [])
+        self.assertEqual([r for r in self.apps["seerr"].state["log"] if r[0] == "POST" and "/settings/" in r[1]], [])
 
     def test_seerr_gets_an_address_for_the_email_when_it_asks(self):
         self.apps["seerr"].state["need_email"] = True
@@ -282,12 +283,39 @@ class RequestsSetup(unittest.TestCase):
         self.assertEqual(self.apps["seerr"].state["login"]["email"], "brandon@localhost")
 
     def test_an_older_install_without_prowlarr_only_links_prowlarr(self):
-        self.m.State.data["requests_linked"] = {"qbittorrent": True, "radarr": True, "seerr": True}
+        self.m.State.data["requests_linked"] = {"qbittorrent": True, "radarr": True, "sonarr": True, "seerr": True}
         self.assertEqual(self.step.probe(), "todo")
         self.step.run()
         self.assertEqual(self.step.probe(), "done")
-        for app in ("radarr", "seerr", "qbittorrent"):
+        for app in ("radarr", "sonarr", "seerr", "qbittorrent"):
             self.assertEqual([r for r in self.apps[app].state["log"] if r[0] != "GET"], [], app)
+
+    def linked_before_sonarr_came_back(self):
+        """An install that was linked while Sonarr was out: Prowlarr and Seerr are set up with Radarr only."""
+        self.step.run()
+        self.apps["sonarr"].state["log"].clear()
+        self.apps["prowlarr"].state["clients"] = [c for c in self.apps["prowlarr"].state["clients"] if c["implementation"] == "Radarr"]
+        self.apps["seerr"].state["services"].pop("sonarr")
+        self.m.State.data["requests_linked"] = {"qbittorrent": True, "radarr": True, "prowlarr": True, "seerr": True}
+
+    def test_sonarr_is_linked_to_prowlarr_and_seerr_on_an_install_that_already_had_them_set_up(self):
+        self.linked_before_sonarr_came_back()
+        self.assertEqual(self.step.probe(), "todo")
+        self.step.run()
+        self.assertEqual(self.step.probe(), "done")
+        self.assertEqual([c["implementation"] for c in self.apps["prowlarr"].state["clients"]], ["Radarr", "Sonarr"])
+        shows = self.apps["seerr"].state["services"]["sonarr"]
+        self.assertEqual((shows["hostname"], shows["apiKey"], shows["activeDirectory"]), ("sonarr", KEYS["sonarr"], "/data/shows"))
+        self.assertEqual(self.apps["sonarr"].state["roots"], [{"path": "/data/shows"}])
+        self.assertEqual(list(self.apps["seerr"].state["services"]), ["radarr", "sonarr"])
+
+    def test_linking_sonarr_again_does_not_add_it_twice(self):
+        self.linked_before_sonarr_came_back()
+        self.step.run()
+        self.m.State.data["requests_linked"] = {"qbittorrent": True, "radarr": True, "prowlarr": True, "seerr": True}
+        self.step.run()
+        self.assertEqual([c["implementation"] for c in self.apps["prowlarr"].state["clients"]], ["Radarr", "Sonarr"])
+        self.assertEqual(len([r for r in self.apps["seerr"].state["log"] if r[0] == "POST" and r[1].endswith("/settings/sonarr")]), 2)  # once in the first setup, once when it came back; not a third time
 
     def test_folders_that_belong_to_someone_else_are_handed_to_the_lab_user(self):
         m = self.m
@@ -304,19 +332,16 @@ class RequestsSetup(unittest.TestCase):
             self.step.run()
         self.assertEqual([r for a in self.apps.values() for r in a.state["log"]], [])
 
-    def older_install_with_sonarr_and_jdownloader(self):
-        """An install made before the two apps were taken out: containers, settings folders, a Prowlarr and a Seerr entry for Sonarr."""
+    def older_install_with_jdownloader(self):
+        """An install made before JDownloader was taken out: its container, its settings folder and the direct folder."""
         m = self.m
-        for a in ("sonarr", "jdownloader"):
-            os.makedirs(m.P("/home/brandon/requests/" + a), exist_ok=True)
-            open(m.P("/home/brandon/requests/%s/settings" % a), "w").close()
+        os.makedirs(m.P("/home/brandon/requests/jdownloader"), exist_ok=True)
+        open(m.P("/home/brandon/requests/jdownloader/settings"), "w").close()
         shutil.rmtree(m.P("/mnt/storage/downloads/direct"), ignore_errors=True)
         os.makedirs(m.P("/mnt/storage/downloads/direct"), exist_ok=True)
         self.addCleanup(shutil.rmtree, m.P("/mnt/storage/downloads/direct"), True)
-        self.apps["prowlarr"].state["clients"] = [{"implementation": "Radarr", "id": 1}, {"implementation": "Sonarr", "id": 2}]
-        self.apps["seerr"].state["services"] = {"radarr": {"name": "Radarr"}, "sonarr": {"name": "Sonarr"}}
-        m.State.data["requests_linked"] = {"qbittorrent": True, "radarr": True, "sonarr": True, "prowlarr": True, "seerr": True}
-        present, removed, forgotten = {"seerr", "radarr", "prowlarr", "sonarr", "jdownloader"}, [], []
+        self.addCleanup(shutil.rmtree, m.P("/home/brandon/requests/jdownloader"), True)
+        present, removed, forgotten = {"seerr", "radarr", "sonarr", "prowlarr", "jdownloader"}, [], []
 
         def fake_docker(*args, **kwargs):
             if args[:2] == ("rm", "-f"):
@@ -325,53 +350,46 @@ class RequestsSetup(unittest.TestCase):
             return 0, ""
 
         for patcher in (mock.patch.object(m, "docker", fake_docker), mock.patch.object(m, "containers_all", lambda: set(present)),
-                        mock.patch.object(m, "containers_running", lambda: {"prowlarr", "seerr"}), mock.patch.object(m, "forget_card", forgotten.append)):
+                        mock.patch.object(m, "forget_card", forgotten.append)):
             patcher.start()
             self.addCleanup(patcher.stop)
         return removed, forgotten
 
-    def test_sonarr_and_jdownloader_are_removed_from_an_older_install(self):
-        removed, forgotten = self.older_install_with_sonarr_and_jdownloader()
+    def test_jdownloader_is_removed_from_an_older_install_and_the_other_apps_are_not_touched(self):
+        removed, forgotten = self.older_install_with_jdownloader()
         step = self.m.BY_ID["requests-retire"]
         self.assertEqual(step.probe(), "todo")
         step.run()
-        self.assertEqual(sorted(removed), ["jdownloader", "sonarr"])
-        self.assertEqual(sorted(forgotten), ["jdownloader", "sonarr"])
-        for a in ("sonarr", "jdownloader"):
-            self.assertFalse(os.path.exists(self.m.P("/home/brandon/requests/" + a)))
+        self.assertEqual(removed, ["jdownloader"])
+        self.assertEqual(forgotten, ["jdownloader"])
+        self.assertFalse(os.path.exists(self.m.P("/home/brandon/requests/jdownloader")))
         self.assertFalse(os.path.exists(self.m.P("/mnt/storage/downloads/direct")))
-        self.assertEqual([c["implementation"] for c in self.apps["prowlarr"].state["clients"]], ["Radarr"])
-        self.assertEqual(list(self.apps["seerr"].state["services"]), ["radarr"])
-        self.assertNotIn("sonarr", self.m.State.data["requests_linked"])
         self.assertTrue(os.path.isdir(self.m.P("/home/brandon/requests/radarr")))
+        self.assertTrue(os.path.isdir(self.m.P("/home/brandon/requests/sonarr")))
         self.assertEqual(step.probe(), "done")
 
     def test_a_direct_folder_with_files_in_it_is_kept(self):
-        self.older_install_with_sonarr_and_jdownloader()
+        self.older_install_with_jdownloader()
         mine = self.m.P("/mnt/storage/downloads/direct/movie.mkv")
         open(mine, "w").close()
         self.m.BY_ID["requests-retire"].run()
         self.assertTrue(os.path.exists(mine))
 
-    def test_a_seerr_that_will_not_let_us_in_is_reported_and_the_rest_is_still_removed(self):
-        removed, _ = self.older_install_with_sonarr_and_jdownloader()
-        warned = []
-        with mock.patch.object(self.m, "seerr_login", lambda pw: (None, "it could not sign in (HTTP 401)")), mock.patch.object(self.m, "warn", warned.append):
-            self.m.BY_ID["requests-retire"].run()
-        self.assertEqual(sorted(removed), ["jdownloader", "sonarr"])
-        self.assertEqual(len(warned), 1)
-        self.assertIn("Seerr still lists Sonarr", warned[0])
+    def test_nothing_is_done_when_jdownloader_was_never_there(self):
+        with mock.patch.object(self.m, "containers_all", lambda: {"radarr", "sonarr"}):
+            self.assertEqual(self.m.BY_ID["requests-retire"].probe(), "done")
 
-    def test_nothing_is_done_when_the_two_apps_were_never_there(self):
-        with mock.patch.object(self.m, "containers_all", lambda: {"radarr"}):
+    def test_sonarr_is_not_treated_as_a_leftover(self):
+        self.assertNotIn("sonarr", self.m.REQUESTS_RETIRED)
+        with mock.patch.object(self.m, "containers_all", lambda: {"sonarr"}):
             self.assertEqual(self.m.BY_ID["requests-retire"].probe(), "done")
 
     def test_a_dry_run_of_the_removal_changes_nothing(self):
-        removed, forgotten = self.older_install_with_sonarr_and_jdownloader()
+        removed, forgotten = self.older_install_with_jdownloader()
         with mock.patch.object(self.m.Opt, "dry", True):
             self.m.BY_ID["requests-retire"].run()
         self.assertEqual((removed, forgotten), ([], []))
-        self.assertTrue(os.path.isdir(self.m.P("/home/brandon/requests/sonarr")))
+        self.assertTrue(os.path.isdir(self.m.P("/home/brandon/requests/jdownloader")))
 
 
 class RequestsFilesAndCommand(unittest.TestCase):
@@ -387,17 +405,16 @@ class RequestsFilesAndCommand(unittest.TestCase):
         text = self.m.stack_text("requests")
         self.assertNotIn("your-username", text)
         self.assertIn("/home/test/requests/radarr:/config", text)
-        self.assertEqual(re.findall(r'PUID: "(\d+)"', text), ["1000"] * 3)
+        self.assertEqual(re.findall(r'PUID: "(\d+)"', text), ["1000"] * 4)
 
     def test_ports_in_the_stack_file_match_the_installer(self):
         with open(os.path.join(helpers.ROOT, "stacks", "requests.yaml")) as f:
             text = f.read()
-        for app in ("seerr", "radarr", "prowlarr", "qbittorrent"):
+        for app in ("seerr", "radarr", "sonarr", "prowlarr", "qbittorrent"):
             self.assertIn('"%d:%d"' % (self.m.PORTS[app], self.m.PORTS[app]), text)
-        self.assertEqual(self.m.STACKS["requests"][1], ["seerr", "radarr", "prowlarr", "qbittorrent"])
-        for gone in ("sonarr", "jdownloader"):
-            self.assertNotIn(gone, text)
-            self.assertNotIn(gone, self.m.PORTS)
+        self.assertEqual(self.m.STACKS["requests"][1], ["seerr", "radarr", "sonarr", "prowlarr", "qbittorrent"])
+        self.assertNotIn("jdownloader", text)
+        self.assertNotIn("jdownloader", self.m.PORTS)
 
     def test_the_folders_are_made_once(self):
         step = self.m.BY_ID["requests-folders"]

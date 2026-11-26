@@ -52,6 +52,10 @@ SERVICES = """- Network & DNS:
         id: radarr-card
         href: http://192.168.1.5:7878
 
+    - Sonarr:
+        id: sonarr-card
+        href: http://192.168.1.5:8989
+
     - Prowlarr:
         id: prowlarr-card
         href: http://192.168.1.5:9696
@@ -63,7 +67,7 @@ SERVICES = """- Network & DNS:
         href: http://192.168.1.5:2283
 """
 
-UNDER_PLAYERS = ["adguard-card", "navidrome-card", "jellyfin-card", "watching-card", "downloaders-card", "seerr-card", "radarr-card", "prowlarr-card",
+UNDER_PLAYERS = ["adguard-card", "navidrome-card", "jellyfin-card", "watching-card", "downloaders-card", "seerr-card", "radarr-card", "sonarr-card", "prowlarr-card",
                  "qbittorrent-card", "metube-card", "downtify-card", "frame-card", "immich-card"]
 
 
@@ -93,7 +97,7 @@ class DownloadersCardText(unittest.TestCase):
 
     def test_apps_that_are_not_installed_are_skipped(self):
         text = SERVICES
-        for gone in ("seerr-card", "radarr-card", "prowlarr-card", "qbittorrent-card"):
+        for gone in ("seerr-card", "radarr-card", "sonarr-card", "prowlarr-card", "qbittorrent-card"):
             text = self.m.services_without_card(text, gone)
         self.assertEqual(ids(self.m.services_with_downloaders(text)), ["adguard-card", "navidrome-card", "jellyfin-card", "watching-card", "downloaders-card",
                                                                         "metube-card", "downtify-card", "frame-card", "immich-card"])
@@ -109,8 +113,25 @@ class DownloadersCardText(unittest.TestCase):
         once = self.m.services_with_downloaders(SERVICES)
         self.assertEqual(self.m.cards_grouped_under(once, "downloaders-card", self.m.DOWNLOADERS_MEMBERS), once)
 
-    def test_the_member_list_is_the_six_download_apps(self):
-        self.assertEqual(self.m.DOWNLOADERS_MEMBERS, ("seerr-card", "radarr-card", "prowlarr-card", "qbittorrent-card", "metube-card", "downtify-card"))
+    def test_the_member_list_is_the_seven_download_apps(self):
+        self.assertEqual(self.m.DOWNLOADERS_MEMBERS, ("seerr-card", "radarr-card", "sonarr-card", "prowlarr-card", "qbittorrent-card", "metube-card", "downtify-card"))
+        self.assertEqual(self.m.DOWNLOADERS_FIRST, tuple(m for m in self.m.DOWNLOADERS_MEMBERS if m != "sonarr-card"))
+
+    def test_a_new_app_goes_after_the_app_that_comes_before_it_and_nothing_else_moves(self):
+        """The dropdown was added without Sonarr; the person has moved Downtify to the top of it. Sonarr's card, made later, lands after Radarr."""
+        without = self.m.services_without_card(SERVICES, "sonarr-card")
+        arranged = self.m.card_moved_after(self.m.services_with_downloaders(without), "downtify-card", "downloaders-card")
+        later = self.m.card_added_after(arranged, "frame-card", ["    - Sonarr:", "        id: sonarr-card", "        href: http://192.168.1.5:8989"])
+        new = self.m.services_with_new_downloaders(later, set(self.m.DOWNLOADERS_FIRST))
+        self.assertEqual(ids(new), ["adguard-card", "navidrome-card", "jellyfin-card", "watching-card", "downloaders-card", "downtify-card", "seerr-card", "radarr-card",
+                                    "sonarr-card", "prowlarr-card", "qbittorrent-card", "metube-card", "frame-card", "immich-card"])
+
+    def test_a_new_app_goes_under_the_dropdown_when_it_is_the_first_one_there(self):
+        only = self.m.services_without_card(self.m.services_with_downloaders(self.m.services_without_card(SERVICES, "sonarr-card")), "seerr-card")
+        for gone in ("radarr-card", "prowlarr-card", "qbittorrent-card", "metube-card", "downtify-card"):
+            only = self.m.services_without_card(only, gone)
+        later = self.m.card_added_after(only, "frame-card", ["    - Sonarr:", "        id: sonarr-card", "        href: http://192.168.1.5:8989"])
+        self.assertEqual(ids(self.m.services_with_new_downloaders(later, set(self.m.DOWNLOADERS_FIRST)))[3:6], ["watching-card", "downloaders-card", "sonarr-card"])
 
 
 class DownloadersCardStep(unittest.TestCase):
@@ -180,6 +201,43 @@ class DownloadersCardStep(unittest.TestCase):
         self.step.run()
         self.assertEqual(self.get(), SERVICES)
         self.assertFalse(os.path.exists(self.m.P(self.m.DOWNLOADERS_MARK)))
+
+    def sonarr_arrives_after_the_dropdown_was_added(self, marker):
+        self.put(self.m.services_without_card(SERVICES, "sonarr-card"))
+        self.step.run()
+        if marker is not None:
+            with open(self.m.P(self.m.DOWNLOADERS_MARK), "w") as f:
+                f.write(marker)
+        self.put(self.m.card_added_after(self.get(), "frame-card", ["    - Sonarr:", "        id: sonarr-card", "        href: http://192.168.1.5:8989"]))
+
+    def test_sonarr_is_put_in_the_dropdown_when_its_card_appears_later(self):
+        self.sonarr_arrives_after_the_dropdown_was_added(None)
+        self.assertEqual(self.step.probe(), "todo")
+        self.step.run()
+        self.assertEqual(ids(self.get())[4:9], ["downloaders-card", "seerr-card", "radarr-card", "sonarr-card", "prowlarr-card"])
+        self.assertEqual(self.step.probe(), "done")
+        self.assertIn("sonarr-card", self.m.downloaders_handled())
+
+    def test_the_first_version_of_the_marker_file_counts_as_the_six_original_apps(self):
+        self.sonarr_arrives_after_the_dropdown_was_added("added\n")
+        self.assertEqual(self.m.downloaders_handled(), set(self.m.DOWNLOADERS_FIRST))
+        self.assertEqual(self.step.probe(), "todo")
+        self.step.run()
+        self.assertEqual(ids(self.get())[7], "sonarr-card")
+
+    def test_a_card_the_person_moved_out_of_the_dropdown_is_not_pulled_back(self):
+        self.sonarr_arrives_after_the_dropdown_was_added(None)
+        self.step.run()
+        moved = self.m.card_moved_after(self.get(), "sonarr-card", "frame-card")
+        self.put(moved)
+        self.assertEqual(self.step.probe(), "done")
+        self.step.run()
+        self.assertEqual(self.get(), moved)
+
+    def test_a_new_app_is_left_alone_when_the_person_removed_the_dropdown(self):
+        self.sonarr_arrives_after_the_dropdown_was_added(None)
+        self.put(self.m.services_without_card(self.get(), "downloaders-card"))
+        self.assertEqual(self.step.probe(), "done")
 
     def test_it_comes_after_the_steps_that_make_the_cards(self):
         self.assertTrue({"homepage-files", "stack-requests", "stack-music-downloader", "watching-card"} <= set(self.step.needs))

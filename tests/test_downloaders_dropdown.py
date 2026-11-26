@@ -14,7 +14,7 @@ try:
 except ImportError:
     sync_playwright = None
 
-APPS = ("seerr", "radarr", "prowlarr", "qbittorrent", "metube", "downtify")
+APPS = ("seerr", "radarr", "sonarr", "prowlarr", "qbittorrent", "metube", "downtify")
 PLAYERS = ("navidrome", "jellyfin", "watching")
 PAGE = ('<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="custom.css"></head><body>'
         '<div id="inner_wrapper" style="--lk-side:14px"><div id="layout-groups"><div class="services-group"><ul class="services-list">%s</ul></div></div></div>'
@@ -44,6 +44,10 @@ class DownloadersDropdown(unittest.TestCase):
         for name, cards in pages.items():
             with open(cls.dir + "/" + name, "w") as f:
                 f.write(page(*cards))
+        below = "".join("<div class='services-group'><ul class='services-list'>%s</ul></div>" % "".join("<li id='g%dx%d-card' class='service' style='height:90px'>x</li>" % (g, i) for i in range(12)) for g in range(4))
+        with open(cls.dir + "/tall.html", "w") as f:
+            f.write(page(*(PLAYERS + ("downloaders",) + APPS)).replace("</ul></div></div></div>", "</ul></div>" + below + "</div></div>")
+                    .replace("</head>", "<style>#navidrome-card, #jellyfin-card { min-height: 700px; } .services-group:first-child { overflow-anchor: none; }</style></head>"))
 
         class Quiet(http.server.SimpleHTTPRequestHandler):
             def log_message(self, *args):
@@ -89,7 +93,7 @@ class DownloadersDropdown(unittest.TestCase):
         pg = self.open()
         self.assertEqual(self.apps_shown(pg), [])
         self.assertTrue(self.shown(pg, "downloaders"))
-        self.assertEqual(pg.inner_text("#hl-downloaders"), "Downloaders\n6 apps")
+        self.assertEqual(pg.inner_text("#hl-downloaders"), "Downloaders\n7 apps")
         self.assertEqual(pg.get_attribute("#hl-downloaders", "aria-expanded"), "false")
 
     def test_a_click_opens_it_and_another_click_closes_it(self):
@@ -99,6 +103,25 @@ class DownloadersDropdown(unittest.TestCase):
         self.assertEqual(pg.get_attribute("#hl-downloaders", "aria-expanded"), "true")
         pg.click("#hl-downloaders")
         self.assertEqual(self.apps_shown(pg), [])
+
+    def test_opening_and_closing_keep_the_row_where_it_is_and_move_what_is_below(self):
+        """The media group is made a poor anchor for the browser's scroll anchoring here, which is what made the page jump on a real dashboard."""
+        pg = self.open("tall.html", width=2560)
+        pg.set_viewport_size({"width": 2560, "height": 1247})
+        top = pg.evaluate("document.getElementById('hl-downloaders').getBoundingClientRect().top + scrollY")
+        for at in (0.3, 0.6):
+            with self.subTest(at=at):
+                pg.evaluate("window.scrollTo(0, %f)" % (top - 1247 * at))
+                pg.wait_for_timeout(300)
+                before = pg.evaluate("[scrollY, document.getElementById('hl-downloaders').getBoundingClientRect().top, document.querySelector('#g0x0-card').getBoundingClientRect().top]")
+                pg.click("#hl-downloaders")
+                pg.wait_for_timeout(500)
+                opened = pg.evaluate("[scrollY, document.getElementById('hl-downloaders').getBoundingClientRect().top, document.querySelector('#g0x0-card').getBoundingClientRect().top]")
+                self.assertEqual(opened[:2], before[:2])
+                self.assertGreater(opened[2], before[2] + 100)
+                pg.click("#hl-downloaders")
+                pg.wait_for_timeout(500)
+                self.assertEqual(pg.evaluate("[scrollY, document.getElementById('hl-downloaders').getBoundingClientRect().top]"), before[:2])
 
     def test_the_keyboard_works_too(self):
         pg = self.open()
@@ -125,8 +148,9 @@ class DownloadersDropdown(unittest.TestCase):
             with self.subTest(width=width):
                 pg = self.open(width=width)
                 pg.click("#hl-downloaders")
+                pg.wait_for_timeout(400)
                 order = pg.evaluate("[...document.querySelectorAll('.services-list > li')].filter(l => getComputedStyle(l).display !== 'none')"
-                                    ".sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top || a.getBoundingClientRect().left - b.getBoundingClientRect().left).map(l => l.id.replace('-card', ''))")
+                                    ".sort((a, b) => Math.round(a.getBoundingClientRect().top / 8) - Math.round(b.getBoundingClientRect().top / 8) || a.getBoundingClientRect().left - b.getBoundingClientRect().left).map(l => l.id.replace('-card', ''))")
                 self.assertEqual(order, ["navidrome", "jellyfin", "downloaders"] + list(APPS) + ["adguard"])  # Continue Watching is hidden here: there is nothing half-watched in this page
 
     def test_the_row_is_as_wide_as_the_list_it_is_in(self):
