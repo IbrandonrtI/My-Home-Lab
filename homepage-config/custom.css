@@ -1410,8 +1410,11 @@ html[data-hl-fit="1440"] #information-widgets { zoom: 0.80; }
   #inner_wrapper #hl-stats .hl-g-pool { order: 5; }
   #inner_wrapper #hl-stats .hl-g-bak { order: 6; }
   #inner_wrapper #hl-stats .hl-g-net { order: 7; grid-column: 1 / -1; }
-  #inner_wrapper #hl-stats .hl-g-net .hl-gt { min-width: 0; }
-  #inner_wrapper #hl-stats .hl-g-net .hl-gs { margin-left: auto; width: 84px; }
+  /* Network gets its own row under a thin line, and the graph starts next to the numbers and fills the rest of the row. */
+  #inner_wrapper #hl-stats .hl-g.hl-g-net { position: relative; margin-top: 8px; padding-top: 9px; }
+  #inner_wrapper #hl-stats .hl-g.hl-g-net::before { display: block; content: ""; position: absolute; left: 10px; right: 10px; top: 0; bottom: auto; width: auto; height: 1px; background: rgba(var(--lk-ink, 255, 255, 255), 0.12); }
+  #inner_wrapper #hl-stats .hl-g-net .hl-gt { min-width: 0; flex: 0 0 auto; }
+  #inner_wrapper #hl-stats .hl-g-net .hl-gs { flex: 1 1 0; width: auto; min-width: 36px; height: 32px; margin: 0 6px 0 2px; }
   #inner_wrapper #hl-stats { order: -1; }
   #inner_wrapper #information-widgets-right > [class*="information-widget-datetime"], #inner_wrapper #information-widgets-right > [class*="information-widget-openmeteo"] { min-height: 48px !important; padding: 6px 10px !important; }
   #inner_wrapper #information-widgets-right > [class*="information-widget-datetime"] *, #inner_wrapper #information-widgets-right > [class*="information-widget-openmeteo"] * { font-size: 13px !important; }

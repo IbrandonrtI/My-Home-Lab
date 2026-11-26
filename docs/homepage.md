@@ -44,7 +44,7 @@ This is where the services live, in groups:
 
 Each card has a dot that shows whether the service is up, and most show live numbers. The AdGuard card shows how many queries it has blocked, the Immich card counts photos and videos, and so on. Click a card to open the service.
 
-A small pill at the end of the tab bar sums up those dots, for example `13/13`. Pressing it says *All services are healthy*, or how many are not answering with a button for each one that scrolls to its card; the pill turns red and reads `2 down` when something is not answering. For the first seconds after the page opens (or after the dashboard restarts) a red dot is shown as *Checking the services*, because a service that is still starting looks the same. The pill shows only on a tab that has status dots, so Stats and Links have none.
+A small pill at the end of the tab bar sums up those dots, for example `13/13`. Pressing it says *All services are healthy*, or how many are not answering with a button for each one that scrolls to its card; the pill turns red and reads `2 down` when something is not answering. For the first seconds after the page opens (or after the dashboard restarts) a red dot is shown as *Checking the services*, because a service that is still starting looks the same. The dots exist only on the Home tab, so on the other tabs the pill keeps the count from the last time Home was open, and its details say how long ago that was. A name in the list takes you back to the Home tab and to its card. The pill, the bell and the install ring open their details inside the screen, even on a phone where the bell sits in the middle of the bar.
 
 The Navidrome card is a bit different. It has the music player inside it, so songs play without leaving the dashboard. The player starts as a slim bar. Press the arrow or the bar (*Open the player*) to open it, and the same arrow closes it again. Closing it doesn't stop the music, and the choice is remembered in that browser. Another small button changes the player's height.
 
@@ -136,7 +136,7 @@ Motion is Subtle by default. A device that is set to reduce motion always gets n
 
 ## On a phone
 
-On a phone the cards stack in one column. It's the same dashboard, so the services and the player work the same way. The gauges at the top sit in one compact panel of two columns, with the logo (if you added one) centered at the top of that panel above a thin line, and the tab names are sized to fit the width of the screen. The Continue watching row scrolls sideways.
+On a phone the cards stack in one column. It's the same dashboard, so the services and the player work the same way. The gauges at the top sit in one compact panel of two columns, and Network has its own row under a thin line, with its graph reaching across to the edge. If you added a logo, it sits centered at the top of that panel, above a thin line. The tab names are sized to fit the width of the screen. The Continue watching row scrolls sideways.
 
 <img src="images/homepage-phone.png" alt="The dashboard on a phone" width="300">
 

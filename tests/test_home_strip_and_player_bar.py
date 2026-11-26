@@ -49,10 +49,10 @@ class HomeStripAndPlayerBar(unittest.TestCase):
         cls.pw.stop()
         shutil.rmtree(cls.dir, True)
 
-    def open(self, html, name="p.html"):
+    def open(self, html, name="p.html", width=1400):
         with open(os.path.join(self.dir, name), "w", encoding="utf-8") as f:
             f.write(html)
-        ctx = self.browser.new_context(viewport={"width": 1400, "height": 900})
+        ctx = self.browser.new_context(viewport={"width": width, "height": 900})
         self.addCleanup(ctx.close)
         page_ = ctx.new_page()
         page_.route("http://**/**", lambda r: r.fulfill(status=200, content_type="text/html", body="<title>x</title>"))
@@ -70,7 +70,7 @@ class HomeStripAndPlayerBar(unittest.TestCase):
         page_.wait_for_timeout(300)
 
     def strip(self, page_):
-        return page_.eval_on_selector("#hl-status", "e => e.hidden ? '' : e.textContent")
+        return page_.evaluate("(() => { const e = document.getElementById('hl-status'); return !e || e.hidden ? '' : e.textContent; })()")
 
     def pill(self, page_):
         return page_.eval_on_selector("#hl-status > button", "e => e.textContent.trim()")
@@ -115,7 +115,56 @@ class HomeStripAndPlayerBar(unittest.TestCase):
         self.assertEqual(self.pill(page_), "2 down")
         page_.evaluate("document.querySelectorAll('.site-monitor-status').forEach(e => e.remove())")
         page_.wait_for_timeout(300)
-        self.assertEqual(self.strip(page_), "", "a tab without status dots has no pill")
+        self.assertEqual(self.pill(page_), "2 down", "a tab without status dots keeps the last count")
+        self.assertIn("Last checked", self.strip(page_))
+        self.assertIn("on the Home tab", self.strip(page_))
+
+    def test_a_page_that_never_had_dots_has_no_pill(self):
+        page_ = self.open(page([]))
+        self.assertEqual(self.strip(page_), "")
+
+    def test_the_count_carries_over_to_a_tab_without_dots(self):
+        page_ = self.open(page([card("a", "Alpha", "up"), card("b", "Beta", "up")]))
+        self.assertEqual(self.pill(page_), "2/2")
+        with open(os.path.join(self.dir, "links.html"), "w", encoding="utf-8") as f:
+            f.write(page([]))
+        page_.goto("file://" + os.path.join(self.dir, "links.html"))
+        page_.wait_for_timeout(600)
+        self.assertEqual(self.pill(page_), "2/2")
+        self.assertIn("All services are healthy", self.strip(page_))
+        self.assertIn("Last checked just now, on the Home tab.", self.strip(page_))
+        self.assertEqual(page_.evaluate("document.getElementById('hl-status').parentNode.id"), "tabs")
+
+    def test_a_name_on_a_tab_without_dots_takes_you_back_to_its_card(self):
+        page_ = self.open(page([card("a", "Alpha", "up"), card("b", "Beta", "down")]))
+        self.later(page_)
+        self.poke(page_)
+        self.assertEqual(self.pill(page_), "1 down")
+        other = page([]).replace('<button id="home-tab" aria-selected="true">Home</button>', '<button id="home-tab">Home</button>').replace(
+            "</body>", "<script>document.getElementById('home-tab').addEventListener('click', function () { document.querySelector('.services-list').innerHTML = '%s'; });</script></body>" % card("b", "Beta", "down").replace("'", "\\'"))
+        with open(os.path.join(self.dir, "links2.html"), "w", encoding="utf-8") as f:
+            f.write(other)
+        page_.goto("file://" + os.path.join(self.dir, "links2.html"))
+        page_.wait_for_timeout(600)
+        self.assertEqual(self.pill(page_), "1 down")
+        page_.click("#hl-status > button")
+        page_.click("#hl-status .hl-st-chip")
+        page_.wait_for_timeout(500)
+        self.assertTrue(page_.evaluate("document.getElementById('b-card') !== null && document.getElementById('b-card').classList.contains('hl-flash')"))
+
+    def test_a_popup_that_hangs_from_a_button_in_the_middle_of_a_phone_stays_on_screen(self):
+        html = page([card("a", "Alpha", "up"), card("b", "Beta", "up")]).replace("</head>", "<style>#tabs{padding-right:190px !important}</style></head>")
+        page_ = self.open(html, "narrow.html", width=390)
+        page_.click("#hl-status > button")
+        page_.wait_for_timeout(400)
+        r = page_.eval_on_selector("#hl-status .hl-bellpop", "e => { const b = e.getBoundingClientRect(); return [b.left, b.right, document.documentElement.clientWidth]; }")
+        self.assertGreaterEqual(r[0], 0, "the popup runs off the left edge")
+        self.assertLessEqual(r[1], r[2], "the popup runs off the right edge")
+        page_.click("#hl-status > button")
+        page_.click("#hl-status > button")
+        page_.wait_for_timeout(400)
+        r = page_.eval_on_selector("#hl-status .hl-bellpop", "e => { const b = e.getBoundingClientRect(); return [b.left, b.right]; }")
+        self.assertGreaterEqual(r[0], 0, "still on screen when opened again")
 
     def test_the_player_starts_as_a_slim_bar_and_remembers_the_choice(self):
         page_ = self.open(page([card("a", "Alpha", "up")], player=True), "player.html")

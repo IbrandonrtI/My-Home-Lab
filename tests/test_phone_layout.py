@@ -44,6 +44,8 @@ PAGE = ('<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" 
 
 
 DOT = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+TRENDS = ('<script>window.fetch = function (u) { return String(u).indexOf("trends.json") < 0 ? Promise.reject(new Error("no file")) : Promise.resolve({ ok: true, json: function () {'
+          ' return Promise.resolve({ updated: 1, rx: [1, 5, 2, 8, 3, 9, 4, 6], tx: [1, 2, 1, 3, 2, 1, 2, 3] }); } }); };</script>')
 LOGO_PAGE = PAGE.replace('<div id="inner_wrapper">', '<div id="inner_wrapper" style=\'--hl-logo-src: "%s";\'>' % DOT)
 
 
@@ -54,7 +56,7 @@ class PhoneLayout(unittest.TestCase):
         cls.dir = tempfile.mkdtemp(prefix="phone-")
         for n in ("custom.css", "custom.js"):
             shutil.copy(os.path.join(helpers.ROOT, "homepage-config", n), cls.dir)
-        for name, html in (("p.html", PAGE), ("logo.html", LOGO_PAGE)):
+        for name, html in (("p.html", PAGE), ("logo.html", LOGO_PAGE), ("graph.html", LOGO_PAGE.replace('<script src="custom.js">', TRENDS + '<script src="custom.js">'))):
             with open(os.path.join(cls.dir, name), "w", encoding="utf-8") as f:
                 f.write(html)
         cls.pw = sync_playwright().start()
@@ -147,6 +149,24 @@ class PhoneLayout(unittest.TestCase):
                 self.assertGreaterEqual(len(right), 3, x)
                 self.assertLessEqual(max(left) - min(left), 1, "left column: %s" % x)
                 self.assertLessEqual(max(right) - min(right), 1, "right column: %s" % x)
+
+    def test_the_network_graph_starts_next_to_the_numbers_and_fills_the_row(self):
+        for width in (320, 390, 430):
+            with self.subTest(width=width):
+                p = self.open(width, "graph.html")
+                r = p.evaluate("""() => { const g = document.querySelector('#hl-stats .hl-g-net'), t = g.querySelector('.hl-gt').getBoundingClientRect(), s = g.querySelector('.hl-gs');
+                    if (!s) return null; const b = s.getBoundingClientRect(), row = g.getBoundingClientRect(); return { gap: b.left - t.right, toEdge: row.right - b.right, width: b.width }; }""")
+                self.assertIsNotNone(r, "the graph is drawn")
+                self.assertLessEqual(r["gap"], 24, "the graph starts next to the numbers")
+                self.assertLessEqual(r["toEdge"], 16, "the graph reaches the end of the row")
+                self.assertGreater(r["width"], 40)
+
+    def test_a_thin_line_separates_network_from_the_gauges_above(self):
+        p = self.open(390, "logo.html")
+        r = p.evaluate("""() => { const g = document.querySelector('#hl-stats .hl-g-net'), a = getComputedStyle(g, '::before'), above = document.querySelector('#hl-stats .hl-g-bak').getBoundingClientRect(), row = g.getBoundingClientRect();
+            return { line: [a.display, a.height, a.position], room: row.top - above.bottom }; }""")
+        self.assertEqual(r["line"], ["block", "1px", "absolute"])
+        self.assertGreaterEqual(r["room"], 6, "the line has room above Network")
 
 
 if __name__ == "__main__":
