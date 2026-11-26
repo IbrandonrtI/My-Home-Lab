@@ -122,6 +122,8 @@ services:
     volumes:
       - /home/your-username/requests/jdownloader:/config
       - /mnt/storage/downloads/direct:/output
+      - /mnt/storage/movies:/movies
+      - /mnt/storage/shows:/shows
     deploy:
       resources:
         limits:

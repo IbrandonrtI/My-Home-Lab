@@ -212,7 +212,7 @@ It asks first, then installs one stack called `requests` ([`stacks/requests.yaml
 - **Radarr** (movies) and **Sonarr** (shows) keep the list of what was asked for and file finished downloads into the `movies` and `shows` folders.
 - **Prowlarr** keeps the indexers in one place and sends them to Radarr and Sonarr, so you add each one only once.
 - **qBittorrent** is the download client. Its downloads go to the `downloads` folder on the Main pool.
-- **JDownloader** downloads files from web pages that give a direct link rather than a torrent. It is not linked to Seerr, Radarr or Sonarr. Open it, paste the links, and the files go to `downloads/direct` on the Main pool.
+- **JDownloader** downloads files from web pages that give a direct link rather than a torrent. It is not linked to Seerr, Radarr or Sonarr. Open it, paste the links, and choose where they are saved: `/output` is `downloads/direct`, `/movies` is the Jellyfin movies folder and `/shows` is the shows folder.
 
 The installer gives Radarr, Sonarr, Prowlarr and qBittorrent the admin login, adds the root folders and qBittorrent to Radarr and Sonarr, links Prowlarr to both, and signs Seerr in to Jellyfin and links it to Radarr and Sonarr. It adds no indexers and no download sources. Until you add your own in Prowlarr (Indexers), a request is only a note on a list. Each app gets its own dashboard card within a few minutes.
 
@@ -226,7 +226,7 @@ The six images follow their newest version, so `sudo homelab-update` keeps them 
 | `sudo homelab-setup requests status` | Shows whether each app runs and is linked |
 | `sudo homelab-setup requests remove` | Removes the six containers; their settings and the downloads folders stay |
 
-**Using JDownloader.** It opens at port 5800 and has no login of its own, like Metube and Downtify, so use it only on your own network or over Tailscale. It needs about 1 GB of memory. Files it downloads wait in `downloads/direct`; Jellyfin does not see them there. Move each file to `movies` or `shows` and name it the way Jellyfin expects (`Movie Name (2019)/Movie Name (2019).mkv`, or `Show Name/Season 01/Show Name - S01E01.mkv`), then scan the library in Jellyfin. FileBrowser can move and rename files.
+**Using JDownloader.** It opens at port 5800 and has no login of its own, like Metube and Downtify, so use it only on your own network or over Tailscale. It needs about 1 GB of memory. In the Add New Links window, set the save folder and the package name. For a movie, choose `/movies` and name the package `Movie Name (2019)`; the file is saved in `movies/Movie Name (2019)/`, where Jellyfin finds it after the next library scan. For a show, choose `/shows/Show Name/Season 01`. Jellyfin needs the episode number in a show's file name (`Show Name - S01E01.mkv`), and JDownloader keeps the name the site gives the file, so rename it if the site does not use that form. Anything saved to `/output` waits in `downloads/direct` and is not visible to Jellyfin until you move it.
 
 ## Where the data lives
 

@@ -320,6 +320,8 @@ class RequestsFilesAndCommand(unittest.TestCase):
         text = self.m.stack_text("requests")
         self.assertIn("jlesage/jdownloader-2", text)
         self.assertIn("/mnt/storage/downloads/direct:/output", text)
+        self.assertIn("/mnt/storage/movies:/movies", text)
+        self.assertIn("/mnt/storage/shows:/shows", text)
         self.assertIn("/home/test/requests/jdownloader:/config", text)
         self.assertEqual(self.m.DIRECT_FOLDER, self.m.DOWNLOADS_FOLDER + "/direct")
         self.assertIn("jdownloader", self.m.REQUESTS_APPS)
