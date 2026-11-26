@@ -1,4 +1,4 @@
-"""The Continue watching row on the Home tab, drawn from images/watching.json and images/watching-posters.json. Needs Python Playwright and a Chromium browser, and is skipped without them."""
+"""The Continue Watching card on the Home tab (a card you can move on the Cards screen), drawn from images/watching.json and images/watching-posters.json. Needs Python Playwright and a Chromium browser, and is skipped without them."""
 import functools
 import http.server
 import json
@@ -43,8 +43,8 @@ class ContinueWatching(unittest.TestCase):
         os.makedirs(cls.dir + "/images")
         for n in ("custom.css", "custom.js"):
             shutil.copy(os.path.join(helpers.ROOT, "homepage-config", n), cls.dir)
-        for name, cards in (("home.html", ("navidrome", "jellyfin", "metube")), ("flipped.html", ("jellyfin", "navidrome", "metube")),
-                            ("alone.html", ("metube", "jellyfin", "downtify")), ("other.html", ("plain",))):
+        for name, cards in (("home.html", ("navidrome", "jellyfin", "watching", "metube")), ("moved.html", ("watching", "metube", "navidrome", "jellyfin")),
+                            ("nocard.html", ("navidrome", "jellyfin", "metube")), ("other.html", ("plain",))):
             with open(cls.dir + "/" + name, "w") as f:
                 f.write(PAGE % "".join(card(c) for c in cards))
 
@@ -88,7 +88,7 @@ class ContinueWatching(unittest.TestCase):
         return pg
 
     def shown(self, pg):
-        return pg.evaluate("(() => { const e = document.getElementById('hl-watching'); return !!e && !e.hidden && e.getBoundingClientRect().height > 0; })()")
+        return pg.evaluate("(() => { const e = document.getElementById('hl-watching'); return !!e && e.getBoundingClientRect().height > 0; })()")
 
     def test_the_row_shows_each_title_with_its_progress(self):
         pg = self.open(data())
@@ -111,25 +111,35 @@ class ContinueWatching(unittest.TestCase):
         self.assertEqual(pg.eval_on_selector_all("#hl-watching img", "e => e.length"), 2)
         self.assertEqual(pg.inner_text("#hl-watching .hl-wt-ph"), "N")
 
-    def neighbours(self, pg):
-        return pg.evaluate("""() => { const e = document.getElementById('hl-watching'), id = n => n ? n.id : null;
-            return [id(e.previousElementSibling), id(e.nextElementSibling), e.parentNode.className]; }""")
+    def test_the_row_is_drawn_inside_the_continue_watching_card_wherever_it_is(self):
+        for page, before in (("home.html", "jellyfin-card"), ("moved.html", None)):
+            with self.subTest(page=page):
+                pg = self.open(data(), page=page)
+                self.assertEqual(pg.evaluate("document.getElementById('hl-watching').parentNode.id"), "watching-card")
+                self.assertEqual(pg.evaluate("document.getElementById('watching-card').previousElementSibling && document.getElementById('watching-card').previousElementSibling.id"), before)
 
-    def test_the_row_sits_right_under_the_jellyfin_and_navidrome_cards(self):
+    def test_the_card_own_text_is_hidden_behind_the_row(self):
         pg = self.open(data())
-        self.assertEqual(self.neighbours(pg), ["jellyfin-card", "metube-card", "services-list"])
+        self.assertEqual(pg.evaluate("getComputedStyle(document.querySelector('#watching-card .service-card')).display"), "none")
 
-    def test_the_row_goes_under_whichever_of_the_two_cards_comes_last(self):
-        self.assertEqual(self.neighbours(self.open(data(), page="flipped.html"))[:2], ["navidrome-card", "metube-card"])
+    def test_the_card_goes_when_there_is_nothing_to_show(self):
+        pg = self.open(data(items=[]))
+        self.assertEqual(pg.evaluate("getComputedStyle(document.getElementById('watching-card')).display"), "none")
 
-    def test_with_only_jellyfin_the_row_goes_under_it(self):
-        self.assertEqual(self.neighbours(self.open(data(), page="alone.html"))[:2], ["jellyfin-card", "downtify-card"])
+    def test_without_the_card_nothing_is_added_to_the_page(self):
+        pg = self.open(data(), page="nocard.html")
+        self.assertEqual(pg.evaluate("document.querySelectorAll('#hl-watching').length"), 0)
+
+    def test_navidrome_and_jellyfin_keep_the_order_the_page_gives_them(self):
+        pg = self.open(data(), page="moved.html")
+        self.assertEqual(pg.evaluate("[...document.querySelectorAll('.services-list > li')].sort((a, b) => a.getBoundingClientRect().top - b.getBoundingClientRect().top || a.getBoundingClientRect().left - b.getBoundingClientRect().left).map(l => l.id)"),
+                         ["watching-card", "metube-card", "navidrome-card", "jellyfin-card"])
 
     def test_the_row_is_as_wide_as_the_list_it_is_in(self):
         for width in (1300, 390):
             with self.subTest(width=width):
                 pg = self.open(data(), width=width)
-                r = pg.evaluate("""() => { const e = document.getElementById('hl-watching').getBoundingClientRect(), u = document.getElementById('hl-watching').parentNode,
+                r = pg.evaluate("""() => { const e = document.getElementById('watching-card').getBoundingClientRect(), u = document.getElementById('watching-card').parentNode,
                     b = u.getBoundingClientRect(), c = getComputedStyle(u); return [e.left - (b.left + parseFloat(c.paddingLeft)), (b.right - parseFloat(c.paddingRight)) - e.right]; }""")
                 self.assertLessEqual(abs(r[0]), 1)
                 self.assertLessEqual(abs(r[1]), 1)
@@ -139,7 +149,10 @@ class ContinueWatching(unittest.TestCase):
         pg.evaluate("document.querySelector('#metube-card').remove()")
         pg.wait_for_timeout(500)
         self.assertEqual(pg.evaluate("document.querySelectorAll('#hl-watching').length"), 1)
-        self.assertEqual(pg.evaluate("document.getElementById('hl-watching').previousElementSibling.id"), "jellyfin-card")
+        self.assertEqual(pg.evaluate("document.getElementById('hl-watching').parentNode.id"), "watching-card")
+        pg.evaluate("document.getElementById('hl-watching').remove()")
+        pg.wait_for_timeout(3500)
+        self.assertEqual(pg.evaluate("document.querySelectorAll('#hl-watching').length"), 1)
 
     def test_nothing_half_watched_means_no_row(self):
         self.assertFalse(self.shown(self.open(data(items=[]))))

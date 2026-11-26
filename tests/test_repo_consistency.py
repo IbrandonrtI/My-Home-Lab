@@ -131,6 +131,14 @@ class PageScripts(unittest.TestCase):
         self.assertIn('"watching"', stats)
         self.assertIn('("homelab-stats watching", "* * * * * /usr/local/sbin/homelab-stats watching >/dev/null 2>&1")', setup)
 
+    def test_the_continue_watching_card_id_matches_everywhere(self):
+        """The installer writes the card, the dashboard script fills it, and the stylesheet sizes it, all by the same id."""
+        js, css, setup = read("homepage-config/custom.js"), read("homepage-config/custom.css"), read("installer/homelab-setup")
+        self.assertIn('WATCHING_ID = "watching-card"', setup)
+        self.assertIn('getElementById("watching-card")', js)
+        self.assertRegex(js, r"\(customize\|linkedit\|terminal\|navidrome\|watching\)-card")
+        self.assertIn("li#watching-card", css)
+
     def test_the_browser_scripts_parse(self):
         for rel in ("homepage-config/custom.js", "panel/ui/app.js"):
             r = subprocess.run(["node", "--check", os.path.join(ROOT, rel)], capture_output=True, text=True)

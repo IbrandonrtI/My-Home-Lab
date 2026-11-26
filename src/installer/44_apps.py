@@ -72,9 +72,9 @@ register(JellyfinStack("jellyfin", ("portainer-env", "folders"), "Jellyfin media
 
 @step
 class NavidromeCard(Step):
-    """Add the Navidrome card, with its built-in player, to the dashboard and create the Navidrome login."""
+    """Add the Navidrome card, with Navidrome's player inside it, to the dashboard and create the Navidrome login."""
     id, group = "navidrome-card", "Homepage"
-    title = "Navidrome login and its dashboard card (first in its group) with Navidrome's own player inside"
+    title = "Navidrome login and its dashboard card with Navidrome's own player inside"
     needs = ("stack-navidrome", "homepage-files", "scripts")
 
     def applies(self):
@@ -84,11 +84,11 @@ class NavidromeCard(Step):
         svc = read_file(hp_path("services.yaml"))
         if card_widget_type(svc, "navidrome-card") != "iframe":
             return "todo"
-        return "done" if card_range(svc.split("\n"), PLAYER_ID) is None and navidrome_card_first(svc) and navidrome_card_named(svc) == svc else "todo"
+        return "done" if card_range(svc.split("\n"), PLAYER_ID) is None and navidrome_card_named(svc) == svc else "todo"
 
     def run(self):
         if Opt.dry:
-            out("      would create the Navidrome login (%s), then put Navidrome's player inside its dashboard card, first in its group" % Ctx.admin)
+            out("      would create the Navidrome login (%s), then put Navidrome's player inside its dashboard card" % Ctx.admin)
             return
         old = read_file(hp_path("services.yaml"))
         new = old
@@ -112,13 +112,12 @@ class NavidromeCard(Step):
                 old = navidrome_card_added(old, svc_host())
         new = services_without_card(old, PLAYER_ID)
         new = services_with_iframe_widget(new, "navidrome-card", Ctx.lan or svc_host())
-        new = card_to_top(new, "navidrome-card")
         new = navidrome_card_named(new)
         if new != old:
             if not os.path.exists(hp_path("services.yaml") + ".before-navidrome"):
                 write_file(hp_path("services.yaml") + ".before-navidrome", old, 0o600, (Ctx.uid, Ctx.gid))
             write_file(hp_path("services.yaml"), new, 0o600, (Ctx.uid, Ctx.gid))
-            out("      The Navidrome card is first in its group, called Navidrome (\"Music Streaming Server\"), and has Navidrome's own player inside "
+            out("      The Navidrome card is called Navidrome (\"Music Streaming Server\"), and has Navidrome's own player inside "
                 "(previous, next, shuffle, repeat). Clicking its title opens the full Navidrome page.")
 
 
@@ -129,6 +128,44 @@ def navidrome_card_added(text, host):
     if m:
         return text[:m.end()] + card + "\n" + text[m.end():]
     return text.rstrip("\n") + "\n\n- Media & Entertainment:\n\n" + card
+
+
+WATCHING_MARK = "/var/lib/homelab/continue-watching-card"
+
+
+def watching_card_wanted(svc):
+    """True when the services file has a Jellyfin card but no Continue Watching card yet, and the card was never added before."""
+    return card_range(svc.split("\n"), "jellyfin-card") is not None and card_range(svc.split("\n"), WATCHING_ID) is None and not os.path.exists(P(WATCHING_MARK))
+
+
+@step
+class WatchingCard(Step):
+    """Once: put Jellyfin right under Navidrome and add the Continue Watching card under Jellyfin. After that the cards are ordered on the Cards screen, and a removed card stays removed."""
+    id, group = "watching-card", "Homepage"
+    title = "Continue Watching card under Jellyfin (added once; move it on the Cards screen)"
+    needs = ("stack-jellyfin", "homepage-files")
+
+    def applies(self):
+        return BY_ID["stack-jellyfin"].applies()
+
+    def probe(self):
+        return "todo" if watching_card_wanted(read_file(hp_path("services.yaml"))) else "done"
+
+    def run(self):
+        if Opt.dry:
+            out("      would add a Continue Watching card under the Jellyfin card")
+            return
+        old = read_file(hp_path("services.yaml"))
+        new = card_moved_after(old, "jellyfin-card", "navidrome-card")
+        if card_range(new.split("\n"), WATCHING_ID) is None:
+            new = card_added_after(new, "jellyfin-card", watching_card_lines(card_href(new, "jellyfin-card")))
+        if new != old:
+            if not os.path.exists(hp_path("services.yaml") + ".before-watching"):
+                write_file(hp_path("services.yaml") + ".before-watching", old, 0o600, (Ctx.uid, Ctx.gid))
+            write_file(hp_path("services.yaml"), new, 0o600, (Ctx.uid, Ctx.gid))
+        os.makedirs(os.path.dirname(P(WATCHING_MARK)), exist_ok=True)
+        write_file(P(WATCHING_MARK), "added\n", 0o644)
+        out("      The Continue Watching card is under Jellyfin. Move or remove it on the Customize screen, Cards.")
 
 
 AUDIOMUSE_PLUGIN_URL = "https://github.com/NeptuneHub/AudioMuse-AI-NV-plugin/releases/download/v11/audiomuseai.ndp"

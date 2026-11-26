@@ -234,12 +234,12 @@ def card_fields(lines, c):
 
 def card_public(lines, c, group):
     f = card_fields(lines, c)
-    managed = bool(f.get("widget")) or f.get("id", "").endswith("-card")
+    managed = bool(f.get("widget")) or (f.get("id", "").endswith("-card") and f.get("id", "") != "watching-card")
     return {"name": c["name"], "id": f.get("id", ""), "href": f.get("href", ""), "icon": f.get("icon", ""), "description": f.get("description", ""),
             "siteMonitor": f.get("siteMonitor", ""), "widget": f.get("widget", ""), "managed": managed,
             "keys": widget_secrets_public(lines, c),
             "hl": bool(HL_ID.match(f.get("id", ""))),
-            "locked": f.get("id", "") in ("customize-card", "navidrome-card")}
+            "locked": f.get("id", "") == "customize-card", "fixed": f.get("id", "") == "navidrome-card"}
 
 
 def services_state():

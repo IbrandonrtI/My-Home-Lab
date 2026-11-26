@@ -480,7 +480,7 @@ function viewItems(kind) {
       h("div", { class: "txt" }, h("b", {}, it.name), h("span", {}, [it.description, it.href].filter(Boolean).join("  ·  ") || "No address")),
       isCards && !it.locked ? h("button", { class: "small", onclick: () => quickIcon(g, it) }, "Icon…") : null,
       h("button", { class: "small", onclick: () => editor(g, it) }, "Change"),
-      h("button", { class: "small danger", onclick: () => remove(g, it) }, it.hl ? "Hide" : "Remove"));
+      isCards && it.fixed ? null : h("button", { class: "small danger", onclick: () => remove(g, it) }, it.hl ? "Hide" : "Remove"));
     return row;
   }
   function groupCards() {

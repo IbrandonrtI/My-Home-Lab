@@ -25,23 +25,52 @@ def card_widget_type(text, card_id):
     return m.group(1) if m else ""
 
 
-def card_to_top(text, card_id):
+def card_group_head(lines, index):
+    """The line of the group (the '- Name:' line) that holds the card at this line."""
+    return next((i for i in range(index, -1, -1) if re.match(r"^- .+:\s*$", lines[i])), None)
+
+
+def card_moved_after(text, card_id, after_id):
+    """Put one card right after another one when both are in the same group. Any other case is left as it is."""
     lines = text.split("\n")
-    r = card_range(lines, card_id)
-    if not r:
+    r, a = card_range(lines, card_id), card_range(lines, after_id)
+    if not r or not a or card_group_head(lines, r[0]) != card_group_head(lines, a[0]):
         return text
-    head = next((i for i in range(r[0], -1, -1) if re.match(r"^- .+:\s*$", lines[i])), None)
-    if head is None:
-        return text
-    first = next((i for i in range(head + 1, len(lines)) if re.match(r"^\s+- .+:\s*$", lines[i])), None)
-    if first is None or first >= r[0]:
+    nxt = next((i for i in range(a[1], len(lines)) if lines[i].strip()), None)
+    if nxt == r[0]:
         return text
     block = lines[r[0]:r[1]]
     del lines[r[0]:r[1]]
     while r[0] < len(lines) and r[0] > 0 and not lines[r[0]].strip() and not lines[r[0] - 1].strip():
         del lines[r[0]]
-    lines[first:first] = block + [""]
+    a = card_range(lines, after_id)
+    lines[a[1]:a[1]] = [""] + block
     return "\n".join(lines)
+
+
+def card_added_after(text, after_id, block):
+    """Add a card (a list of lines) right after the card with this id, in the same group."""
+    lines = text.split("\n")
+    a = card_range(lines, after_id)
+    if not a:
+        return text
+    lines[a[1]:a[1]] = [""] + block
+    return "\n".join(lines)
+
+
+def card_href(text, card_id):
+    lines = text.split("\n")
+    r = card_range(lines, card_id)
+    m = next((re.match(r"^\s+href:\s*(\S+)\s*$", l) for l in lines[r[0]:r[1]] if r and re.match(r"^\s+href:\s*\S+\s*$", l)), None) if r else None
+    return m.group(1).strip("\"'") if m else ""
+
+
+WATCHING_ID = "watching-card"
+
+
+def watching_card_lines(href):
+    return (["    - Continue Watching:", "        id: %s" % WATCHING_ID] + (["        href: %s" % href] if href else []) +
+            ["        icon: mdi-play-circle-outline", "        description: Pick up where you left off"])
 
 
 def card_retitled(text, card_id, old_title, new_title, old_desc, new_desc):
@@ -115,10 +144,6 @@ def services_without_card(text, card_id):
         s -= 1
     del lines[s:r[1]]
     return "\n".join(lines)
-
-
-def navidrome_card_first(text):
-    return card_to_top(text, "navidrome-card") == text
 
 
 HP_CARDS = {

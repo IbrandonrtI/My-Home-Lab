@@ -573,18 +573,15 @@
     });
     box.appendChild(row);
   }
-  /* The row is a list item placed right after the Navidrome and Jellyfin cards (whichever comes later), so it sits under both players. */
+  /* The row lives inside the Continue Watching card (id watching-card), so it sits wherever that card was placed on the Cards screen. With nothing to show the card is hidden. */
   function watching() {
-    var lg = document.getElementById("layout-groups"), box = document.getElementById("hl-watching");
-    var jf = lg && lg.querySelector("#jellyfin-card"), nd = lg && lg.querySelector("#navidrome-card");
-    var anchor = jf && nd && (jf.compareDocumentPosition(nd) & 4) ? nd : jf;
-    if (!anchor || !anchor.parentNode) { if (box && !box.hidden) box.hidden = true; return; }
+    var li = document.getElementById("watching-card"), box = document.getElementById("hl-watching");
+    if (!li) return;
     if (!WT.busy && Date.now() - WT.at > 60000) wtLoad();
     var d = WT.data, fresh = d && d.items.length && typeof d.updated === "number" && Date.now() - d.updated * 1000 < WT_STALE;
-    if (!fresh) { if (box && !box.hidden) box.hidden = true; return; }
-    if (!box) { box = el("li"); box.id = "hl-watching"; box.setAttribute("aria-label", "Continue watching"); }
-    if (box.previousSibling !== anchor || box.parentNode !== anchor.parentNode) anchor.parentNode.insertBefore(box, anchor.nextSibling);
-    if (box.hidden) box.hidden = false;
+    if (li.classList.contains("hl-gone") === !!fresh) li.classList.toggle("hl-gone", !fresh);
+    if (!fresh) return;
+    if (!box || box.parentNode !== li) { box = el("div"); box.id = "hl-watching"; box.setAttribute("aria-label", "Continue watching"); li.appendChild(box); }
     var key = JSON.stringify([d.user, d.link, d.server, d.items]) + "|" + d.items.filter(function (i) { return WT.posters[i.poster]; }).length;
     if (box.getAttribute("data-key") !== key) { box.setAttribute("data-key", key); wtDraw(box, d); }
   }

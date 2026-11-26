@@ -230,6 +230,8 @@ def api_card(body):
         pub = card_public(lines, c, g["name"])
         if pub["locked"]:
             raise Fail("This card is part of the panel itself and cannot be removed here.")
+        if pub["fixed"]:
+            raise Fail("The Navidrome card is part of HomeLab and cannot be removed. You can move it to another group.")
         if pub["hl"] or g["name"] in AUTOMATIC:
             hl_adopt(lines)
         del lines[c["start"]:c["end"]]

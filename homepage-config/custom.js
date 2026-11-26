@@ -979,7 +979,7 @@
 
   /* Quick launch: icons of favorite services in the bar under the header. By default it starts with the list below and moves the services opened most often to the front (counted in this browser). */
   var PREFER = ["jellyfin-card", "immich-card", "nextcloud-card", "filebrowser-card", "portainer-card", "adguard-card", "beszel-card", "tailscale-card"];
-  var DOCK_MAX = 5, SKIP = /^(customize|linkedit|terminal|navidrome)-card$/, VKEY = "hl-visits", CKEY = "hl-dock-cache", BKEY = "hl-link-cache", TKEY = "hl-tray", TRAY_MAX = 12;
+  var DOCK_MAX = 5, SKIP = /^(customize|linkedit|terminal|navidrome|watching)-card$/, VKEY = "hl-visits", CKEY = "hl-dock-cache", BKEY = "hl-link-cache", TKEY = "hl-tray", TRAY_MAX = 12;
   function lsGet(k) { try { return JSON.parse(window.localStorage.getItem(k) || "null"); } catch (e) { return null; } }
   function lsSet(k, v) { try { window.localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* storage may be blocked */ } }
   var VIS = lsGet(VKEY) || {}, CACHE = lsGet(CKEY) || {}, BM = lsGet(BKEY) || {};
@@ -1394,7 +1394,7 @@
   function palItems() {
     var out = [];
     all(".service").forEach(function (li) {
-      if (/^(stat|cal)-/.test(li.id) || /^(customize|linkedit|terminal)-card$/.test(li.id)) return;
+      if (/^(stat|cal)-/.test(li.id) || /^(customize|linkedit|terminal|watching)-card$/.test(li.id)) return;
       var c = cardInfo(li), g = li.closest(".services-group"), gn = g ? g.querySelector(".service-group-name") : null;
       if (c && c.name) out.push({ name: c.name, group: gn ? gn.textContent.trim() : "Services", icon: c.icon, go: function () { c.a.click(); } });
     });
@@ -1996,18 +1996,15 @@
     });
     box.appendChild(row);
   }
-  /* The row is a list item placed right after the Navidrome and Jellyfin cards (whichever comes later), so it sits under both players. */
+  /* The row lives inside the Continue Watching card (id watching-card), so it sits wherever that card was placed on the Cards screen. With nothing to show the card is hidden. */
   function watching() {
-    var lg = document.getElementById("layout-groups"), box = document.getElementById("hl-watching");
-    var jf = lg && lg.querySelector("#jellyfin-card"), nd = lg && lg.querySelector("#navidrome-card");
-    var anchor = jf && nd && (jf.compareDocumentPosition(nd) & 4) ? nd : jf;
-    if (!anchor || !anchor.parentNode) { if (box && !box.hidden) box.hidden = true; return; }
+    var li = document.getElementById("watching-card"), box = document.getElementById("hl-watching");
+    if (!li) return;
     if (!WT.busy && Date.now() - WT.at > 60000) wtLoad();
     var d = WT.data, fresh = d && d.items.length && typeof d.updated === "number" && Date.now() - d.updated * 1000 < WT_STALE;
-    if (!fresh) { if (box && !box.hidden) box.hidden = true; return; }
-    if (!box) { box = el("li"); box.id = "hl-watching"; box.setAttribute("aria-label", "Continue watching"); }
-    if (box.previousSibling !== anchor || box.parentNode !== anchor.parentNode) anchor.parentNode.insertBefore(box, anchor.nextSibling);
-    if (box.hidden) box.hidden = false;
+    if (li.classList.contains("hl-gone") === !!fresh) li.classList.toggle("hl-gone", !fresh);
+    if (!fresh) return;
+    if (!box || box.parentNode !== li) { box = el("div"); box.id = "hl-watching"; box.setAttribute("aria-label", "Continue watching"); li.appendChild(box); }
     var key = JSON.stringify([d.user, d.link, d.server, d.items]) + "|" + d.items.filter(function (i) { return WT.posters[i.poster]; }).length;
     if (box.getAttribute("data-key") !== key) { box.setAttribute("data-key", key); wtDraw(box, d); }
   }

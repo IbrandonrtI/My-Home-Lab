@@ -50,7 +50,9 @@ The Navidrome card is a bit different. It has the music player inside it, so son
 
 ![The Navidrome card with the player open](images/navidrome-card.png)
 
-**Continue watching.** When Jellyfin has a card, a row of posters appears on the Home tab, right under the Navidrome and Jellyfin cards, with what one Jellyfin user has started and not finished, newest first. Each poster shows how far along it is and how much time is left. Episodes show the show's name and poster, with the season and episode underneath. Press a poster to open it in Jellyfin. The row shows the first administrator's progress; to show someone else's, put their Jellyfin user name in `/var/lib/homelab/watching-user`. The list is refreshed every minute by the same job that gathers the stats, and the posters are kept as small pictures so the row loads at once. The row hides itself when there is nothing to continue or when the list is more than 30 minutes old. To fill it right away, run `sudo homelab-stats watching`.
+**Continue watching.** When Jellyfin has a card, refresh adds a Continue Watching card under it, once. The card shows a row of posters with what one Jellyfin user has started and not finished, newest first. Each poster shows how far along it is and how much time is left. Episodes show the show's name and poster, with the season and episode underneath. Press a poster to open it in Jellyfin. The row shows the first administrator's progress; to show someone else's, put their Jellyfin user name in `/var/lib/homelab/watching-user`. The list is refreshed every minute by the same job that gathers the stats, and the posters are kept as small pictures so the row loads at once. The card hides itself when there is nothing to continue or when the list is more than 30 minutes old. To fill it right away, run `sudo homelab-stats watching`.
+
+Continue Watching and Navidrome are ordinary cards on the Customize screen, under Cards. Drag either one to a new place in its group or into any other group. The group that holds Navidrome stays at the top of the page and keeps the wide player layout. A removed Continue Watching card is not added again; to bring it back, delete `/var/lib/homelab/continue-watching-card` and run `sudo homelab-setup refresh`. The Navidrome card can be moved but not removed.
 
 The calendar shows holidays, any online calendars you add (Google, school) and your own events. Add them from the terminal with `homelab event add` and `homelab calendar add`.
 
@@ -136,7 +138,7 @@ Motion is Subtle by default. A device that is set to reduce motion always gets n
 
 ## On a phone
 
-On a phone the cards stack in one column. It's the same dashboard, so the services and the player work the same way. The gauges at the top sit in one compact panel of two columns, and Network has its own row under a thin line, with its graph reaching across to the edge. If you added a logo, it sits centered at the top of that panel, above a thin line. The tab names are sized to fit the width of the screen. The Continue watching row scrolls sideways.
+On a phone the cards stack in one column. It's the same dashboard, so the services and the player work the same way. The gauges at the top sit in one compact panel of two columns, and Network has its own row under a thin line, with its graph reaching across to the edge. If you added a logo, it sits centered at the top of that panel, above a thin line. The tab names are sized to fit the width of the screen. The Continue Watching row scrolls sideways.
 
 <img src="images/homepage-phone.png" alt="The dashboard on a phone" width="300">
 

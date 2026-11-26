@@ -412,7 +412,7 @@
   function palItems() {
     var out = [];
     all(".service").forEach(function (li) {
-      if (/^(stat|cal)-/.test(li.id) || /^(customize|linkedit|terminal)-card$/.test(li.id)) return;
+      if (/^(stat|cal)-/.test(li.id) || /^(customize|linkedit|terminal|watching)-card$/.test(li.id)) return;
       var c = cardInfo(li), g = li.closest(".services-group"), gn = g ? g.querySelector(".service-group-name") : null;
       if (c && c.name) out.push({ name: c.name, group: gn ? gn.textContent.trim() : "Services", icon: c.icon, go: function () { c.a.click(); } });
     });
