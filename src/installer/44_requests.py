@@ -1,4 +1,4 @@
-# Requests: Seerr (where people ask for a movie or show), Radarr and Sonarr (which keep the lists), Prowlarr (which keeps the indexers for both) and qBittorrent (the download client).
+# Requests: Seerr (where people ask for a movie or show), Radarr and Sonarr (which keep the lists), Prowlarr (which keeps the indexers for both), FlareSolverr (which lets Prowlarr open indexers behind a Cloudflare check) and qBittorrent (the download client).
 # Installed only by `homelab-setup requests`. No indexers and no download sources are added.
 
 REQUESTS_FOLDERS = ("requests", "requests/seerr", "requests/radarr", "requests/sonarr", "requests/prowlarr", "requests/qbittorrent")
@@ -6,8 +6,9 @@ DOWNLOADS_FOLDER = "/mnt/storage/downloads"
 SEERR_UID = 1000
 REQUESTS_ROOTS = {"radarr": "/data/movies", "sonarr": "/data/shows"}
 LIBRARY_FOLDERS = ("/mnt/storage/movies", "/mnt/storage/shows", DOWNLOADS_FOLDER)
-REQUESTS_LABELS = {"seerr": "Seerr", "radarr": "Radarr", "sonarr": "Sonarr", "prowlarr": "Prowlarr", "qbittorrent": "qBittorrent"}
-REQUESTS_PARTS = ("qbittorrent", "radarr", "sonarr", "prowlarr", "seerr")
+REQUESTS_LABELS = {"seerr": "Seerr", "radarr": "Radarr", "sonarr": "Sonarr", "prowlarr": "Prowlarr", "flaresolverr": "FlareSolverr", "qbittorrent": "qBittorrent"}
+REQUESTS_PARTS = ("qbittorrent", "radarr", "sonarr", "prowlarr", "flaresolverr", "seerr")
+FLARESOLVERR_TAG = "flaresolverr"
 REQUESTS_RETIRED = ("jdownloader",)
 SERVARR_API = {"prowlarr": "v1"}
 
@@ -17,7 +18,7 @@ def requests_applies():
 
 
 def requests_page_answers(app):
-    path = {"seerr": "/api/v1/status", "radarr": "/ping", "sonarr": "/ping", "prowlarr": "/ping", "qbittorrent": "/"}[app]
+    path = {"seerr": "/api/v1/status", "radarr": "/ping", "sonarr": "/ping", "prowlarr": "/ping", "flaresolverr": "/", "qbittorrent": "/"}[app]
     return http("GET", url(app, path), timeout=10)[0] == 200
 
 
@@ -65,13 +66,13 @@ class RequestsFolders(Step):
 
 
 class RequestsStack(StackStep):
-    """The five request containers in one stack."""
+    """The six request containers in one stack."""
 
     def applies(self):
         return requests_applies()
 
     def detail(self):
-        return "Seerr %d, Radarr %d, Sonarr %d, Prowlarr %d, qBittorrent %d" % tuple(PORTS[a] for a in ("seerr", "radarr", "sonarr", "prowlarr", "qbittorrent"))
+        return "Seerr %d, Radarr %d, Sonarr %d, Prowlarr %d, FlareSolverr %d, qBittorrent %d" % tuple(PORTS[a] for a in ("seerr", "radarr", "sonarr", "prowlarr", "flaresolverr", "qbittorrent"))
 
     def stamp(self):
         return hashlib.md5((stack_text("requests") + "|".join("%s=%s" % kv for kv in stack_env("requests"))).encode()).hexdigest()
@@ -80,6 +81,12 @@ class RequestsStack(StackStep):
         return "done" if stack_up("requests") and State.data.get("requests_stack") == self.stamp() else "todo"
 
     def run(self):
+        if Opt.dry:
+            if handmade_flaresolverr():
+                out("      would remove the FlareSolverr container that was started by hand; the stack starts its own")
+        elif handmade_flaresolverr():
+            docker("rm", "-f", "flaresolverr", timeout=120)
+            good("The FlareSolverr container that was started by hand was removed; the requests stack starts its own on the same port")
         StackStep.run(self, start_first=State.data.get("requests_stack") == self.stamp())
         if Opt.dry:
             return
@@ -88,11 +95,23 @@ class RequestsStack(StackStep):
         State.data["requests_stack"] = self.stamp()
         State.save()
         if not FAKE and os.path.exists(P("/usr/local/sbin/homelab-cards")):
+            if not State.data.get("flaresolverr_card_allowed"):
+                run([P("/usr/local/sbin/homelab-cards"), "unignore", "flaresolverr"], timeout=60)
+                State.data["flaresolverr_card_allowed"] = True
+                State.save()
             run([P("/usr/local/sbin/homelab-cards"), "sync"], timeout=120)
 
 
 register(RequestsStack("requests", ("portainer-env", "folders", "requests-folders", "stack-jellyfin"),
-                       "Requests stack (Seerr, Radarr, Sonarr, Prowlarr and qBittorrent)", 600))
+                       "Requests stack (Seerr, Radarr, Sonarr, Prowlarr, FlareSolverr and qBittorrent)", 600))
+
+
+def handmade_flaresolverr():
+    """True when a container named flaresolverr exists that the requests stack did not make (one started by hand). It uses the name and the port the stack needs, so it is removed first; it keeps no data."""
+    if "flaresolverr" not in containers_all():
+        return False
+    rc, project = docker("inspect", "-f", '{{index .Config.Labels "com.docker.compose.project"}}', "flaresolverr", timeout=30)
+    return rc == 0 and project.strip() != "requests"
 
 
 def servarr_key(app):
@@ -222,6 +241,41 @@ def setup_prowlarr(pw):
     return None
 
 
+def setup_flaresolverr():
+    """Prowlarr: FlareSolverr as an indexer proxy with the tag flaresolverr. Prowlarr uses it for the indexers that carry the tag. Returns None when it worked, else a short reason."""
+    host = "http://flaresolverr:%d/" % PORTS["flaresolverr"]
+    proxies = servarr_call("prowlarr", "GET", "/indexerproxy")[1]
+    mine = next((p for p in proxies if isinstance(p, dict) and p.get("implementation") == "FlareSolverr"), None) if isinstance(proxies, list) else None
+    fields = [f for f in (mine or {}).get("fields", []) if f.get("name") == "host"]
+    if mine and mine.get("tags") and all(f.get("value") == host for f in fields):
+        return None
+    tags = servarr_call("prowlarr", "GET", "/tag")[1]
+    tag = next((t for t in tags if isinstance(t, dict) and str(t.get("label", "")).lower() == FLARESOLVERR_TAG), None) if isinstance(tags, list) else None
+    if tag is None:
+        reply = servarr_call("prowlarr", "POST", "/tag", {"label": FLARESOLVERR_TAG})
+        if reply[0] not in (200, 201) or not isinstance(reply[1], dict) or "id" not in reply[1]:
+            return "it did not accept the tag %s (HTTP %s)" % (FLARESOLVERR_TAG, reply[0])
+        tag = reply[1]
+    if mine:
+        for f in fields:
+            f["value"] = host
+        mine["tags"] = mine.get("tags") or [tag["id"]]
+        return None if servarr_call("prowlarr", "PUT", "/indexerproxy/%s" % mine.get("id"), mine)[0] in (200, 202) else "it did not accept the change to its FlareSolverr proxy"
+    schema = [s for s in servarr_call("prowlarr", "GET", "/indexerproxy/schema")[1] or [] if isinstance(s, dict) and s.get("implementation") == "FlareSolverr"]
+    if not schema:
+        return "it has no FlareSolverr proxy"
+    entry = schema[0]
+    for f in entry.get("fields", []):
+        if f.get("name") == "host":
+            f["value"] = host
+    entry.update({"name": "FlareSolverr", "tags": [tag["id"]]})
+    if servarr_call("prowlarr", "POST", "/indexerproxy", entry)[0] not in (200, 201):
+        st = http("POST", url("prowlarr", "/api/v1/indexerproxy?forceSave=true"), body=entry, headers={"X-Api-Key": servarr_key("prowlarr")}, timeout=60)[0]
+        if st not in (200, 201):
+            return "it did not accept FlareSolverr as an indexer proxy (HTTP %s)" % st
+    return None
+
+
 def profile_for(app):
     """The quality profile Seerr should use: the first one that mentions 1080p, else the first."""
     profiles = [p for p in servarr_call(app, "GET", "/qualityprofile")[1] or [] if isinstance(p, dict) and "id" in p]
@@ -312,12 +366,12 @@ class RequestsLinks(Step):
 
     def run(self):
         if Opt.dry:
-            out("      would set the admin login in each app, add the folders and qBittorrent to Radarr and Sonarr, link Prowlarr to both, and link Seerr to Jellyfin, Radarr and Sonarr")
+            out("      would set the admin login in each app, add the folders and qBittorrent to Radarr and Sonarr, link Prowlarr to both and to FlareSolverr, and link Seerr to Jellyfin, Radarr and Sonarr")
             return
         pw = need_password("to set the login of the request apps")
         done = State.data.setdefault("requests_linked", {})
         todo = {"qbittorrent": lambda: setup_qbittorrent(pw), "radarr": lambda: setup_servarr("radarr", pw), "sonarr": lambda: setup_servarr("sonarr", pw),
-                "prowlarr": lambda: setup_prowlarr(pw), "seerr": lambda: setup_seerr(pw)}
+                "prowlarr": lambda: setup_prowlarr(pw), "flaresolverr": setup_flaresolverr, "seerr": lambda: setup_seerr(pw)}
         if not done.get("sonarr"):
             done.pop("prowlarr", None)
             done.pop("seerr", None)

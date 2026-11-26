@@ -1,4 +1,4 @@
-"""The request apps (Seerr, Radarr, Sonarr, Prowlarr, qBittorrent): the folders, the stack file and the linking, run against small fake copies of the four apps' web interfaces.
+"""The request apps (Seerr, Radarr, Sonarr, Prowlarr, FlareSolverr, qBittorrent): the folders, the stack file and the linking, run against small fake copies of the apps' web interfaces.
 What the real apps do is not tested here; these check that the installer sends what their documented interfaces ask for."""
 import http.server
 import json
@@ -55,6 +55,8 @@ class Fake(http.server.BaseHTTPRequestHandler):
             return self.qbit(method, path, raw)
         if app == "seerr":
             return self.seerr(method, path, raw)
+        if app == "flaresolverr":
+            return self.reply(200, {"msg": "FlareSolverr is ready!"})
         return self.servarr(method, path, raw)
 
     def qbit(self, method, path, raw):
@@ -91,6 +93,28 @@ class Fake(http.server.BaseHTTPRequestHandler):
                     s["clients"].append(dict(json.loads(raw), id=len(s["clients"]) + 1))
                     return self.reply(201, {})
                 return self.reply(200, s["clients"])
+            if path == "/api/v3/tag":
+                if method == "POST":
+                    if s.get("refuse_tag"):
+                        return self.reply(400, [{"errorMessage": "no tags today"}])
+                    tag = dict(json.loads(raw), id=len(s.setdefault("tags", [])) + 11)
+                    s["tags"].append(tag)
+                    return self.reply(201, tag)
+                return self.reply(200, s.get("tags", []))
+            if path == "/api/v3/indexerproxy/schema":
+                return self.reply(200, [{"implementation": "Http", "fields": []}, {"implementation": "FlareSolverr", "configContract": "FlareSolverrSettings",
+                                        "fields": [{"name": "host", "value": "http://localhost:8191/"}, {"name": "requestTimeout", "value": 60}], "tags": []}])
+            if path == "/api/v3/indexerproxy":
+                if method == "POST":
+                    if s.get("refuse_proxy") and "forceSave" not in self.path:
+                        return self.reply(400, [{"errorMessage": "Unable to connect"}])
+                    s.setdefault("proxies", []).append(dict(json.loads(raw), id=len(s.get("proxies", [])) + 1))
+                    return self.reply(201, {})
+                return self.reply(200, s.get("proxies", []))
+            if path.startswith("/api/v3/indexerproxy/") and method == "PUT":
+                body = json.loads(raw)
+                s["proxies"] = [body if str(p.get("id")) == path.rsplit("/", 1)[1] else p for p in s.get("proxies", [])]
+                return self.reply(202, body)
             if path.startswith("/api/v3/applications/") and method == "DELETE":
                 s["clients"] = [c for c in s["clients"] if str(c.get("id")) != path.rsplit("/", 1)[1]]
                 return self.reply(200, {})
@@ -164,7 +188,7 @@ class RequestsSetup(unittest.TestCase):
     def setUp(self):
         self.m = helpers.installer()
         m = self.m
-        self.apps = {"qbittorrent": serve("qbittorrent", logins=[("admin", "temp-pass")]), "radarr": serve("radarr"), "sonarr": serve("sonarr"), "prowlarr": serve("prowlarr"), "seerr": serve("seerr")}
+        self.apps = {"qbittorrent": serve("qbittorrent", logins=[("admin", "temp-pass")]), "radarr": serve("radarr"), "sonarr": serve("sonarr"), "prowlarr": serve("prowlarr"), "flaresolverr": serve("flaresolverr"), "seerr": serve("seerr")}
         for srv in self.apps.values():
             self.addCleanup(srv.shutdown)
             self.addCleanup(srv.server_close)
@@ -255,7 +279,7 @@ class RequestsSetup(unittest.TestCase):
             self.step.run()
         self.assertIn("qBittorrent", str(cm.exception))
         self.assertEqual(self.step.probe(), "todo")
-        self.assertEqual(self.m.State.data["requests_linked"], {"radarr": True, "sonarr": True, "prowlarr": True, "seerr": True})
+        self.assertEqual(self.m.State.data["requests_linked"], {"radarr": True, "sonarr": True, "prowlarr": True, "flaresolverr": True, "seerr": True})
         self.apps["qbittorrent"].state["logins"] = [("admin", "temp-pass")]
         before = len(self.apps["radarr"].state["log"])
         self.step.run()
@@ -292,6 +316,74 @@ class RequestsSetup(unittest.TestCase):
         self.assertEqual(self.step.probe(), "done")
         for app in ("radarr", "sonarr", "seerr", "qbittorrent"):
             self.assertEqual([r for r in self.apps[app].state["log"] if r[0] != "GET"], [], app)
+
+    def fs_host(self):
+        return "http://flaresolverr:%d/" % self.m.PORTS["flaresolverr"]
+
+    def test_flaresolverr_is_added_to_prowlarr_as_a_proxy_with_its_own_tag(self):
+        self.step.run()
+        prowlarr = self.apps["prowlarr"].state
+        self.assertEqual([t["label"] for t in prowlarr["tags"]], ["flaresolverr"])
+        (proxy,) = prowlarr["proxies"]
+        fields = {f["name"]: f["value"] for f in proxy["fields"]}
+        self.assertEqual((proxy["implementation"], proxy["name"], proxy["tags"], fields["host"], fields["requestTimeout"]),
+                         ("FlareSolverr", "FlareSolverr", [prowlarr["tags"][0]["id"]], self.fs_host(), 60))
+
+    def test_no_indexer_is_tagged_or_added(self):
+        self.step.run()
+        self.assertEqual([r for r in self.apps["prowlarr"].state["log"] if "/indexer" in r[1] and "indexerproxy" not in r[1]], [])
+
+    def test_an_install_without_flaresolverr_only_gets_the_proxy(self):
+        self.m.State.data["requests_linked"] = {"qbittorrent": True, "radarr": True, "sonarr": True, "prowlarr": True, "seerr": True}
+        self.assertEqual(self.step.probe(), "todo")
+        self.step.run()
+        self.assertEqual(self.step.probe(), "done")
+        for app in ("radarr", "sonarr", "seerr", "qbittorrent"):
+            self.assertEqual([r for r in self.apps[app].state["log"] if r[0] != "GET"], [], app)
+        self.assertEqual([r[0] + " " + r[1].split("?")[0] for r in self.apps["prowlarr"].state["log"] if r[0] != "GET"], ["POST /api/v1/tag", "POST /api/v1/indexerproxy"])
+
+    def test_a_second_run_adds_no_second_tag_or_proxy(self):
+        self.step.run()
+        self.m.State.data["requests_linked"] = {}
+        self.step.run()
+        self.assertEqual(len(self.apps["prowlarr"].state["tags"]), 1)
+        self.assertEqual(len(self.apps["prowlarr"].state["proxies"]), 1)
+
+    def test_a_tag_that_is_already_there_is_used_and_not_made_again(self):
+        self.apps["prowlarr"].state["tags"] = [{"id": 3, "label": "FlareSolverr"}]
+        self.step.run()
+        self.assertEqual(len(self.apps["prowlarr"].state["tags"]), 1)
+        self.assertEqual(self.apps["prowlarr"].state["proxies"][0]["tags"], [3])
+
+    def test_a_proxy_that_points_somewhere_else_is_pointed_at_the_container(self):
+        self.apps["prowlarr"].state["proxies"] = [{"id": 1, "name": "FlareSolverr", "implementation": "FlareSolverr", "tags": [3],
+                                                   "fields": [{"name": "host", "value": "http://172.17.0.3:8191/"}, {"name": "requestTimeout", "value": 90}]}]
+        self.step.run()
+        (proxy,) = self.apps["prowlarr"].state["proxies"]
+        self.assertEqual({f["name"]: f["value"] for f in proxy["fields"]}, {"host": self.fs_host(), "requestTimeout": 90})
+        self.assertEqual(proxy["tags"], [3])
+
+    def test_a_proxy_that_is_already_right_is_left_alone(self):
+        self.apps["prowlarr"].state["tags"] = [{"id": 3, "label": "my-tag"}]
+        self.apps["prowlarr"].state["proxies"] = [{"id": 1, "name": "Mine", "implementation": "FlareSolverr", "tags": [3],
+                                                   "fields": [{"name": "host", "value": self.fs_host()}]}]
+        self.step.run()
+        self.assertEqual([r for r in self.apps["prowlarr"].state["log"] if "indexerproxy" in r[1] and r[0] != "GET"], [])
+        self.assertEqual(len(self.apps["prowlarr"].state["tags"]), 1)
+
+    def test_prowlarr_saves_the_proxy_anyway_when_its_own_test_of_flaresolverr_fails(self):
+        self.apps["prowlarr"].state["refuse_proxy"] = True
+        self.step.run()
+        self.assertEqual(len(self.apps["prowlarr"].state["proxies"]), 1)
+        self.assertEqual(self.step.probe(), "done")
+
+    def test_a_refused_tag_is_reported_by_name_and_the_other_parts_are_kept(self):
+        self.apps["prowlarr"].state["refuse_tag"] = True
+        with self.assertRaises(self.m.Abort) as cm:
+            self.step.run()
+        self.assertIn("FlareSolverr", str(cm.exception))
+        self.assertEqual(self.step.probe(), "todo")
+        self.assertEqual(self.m.State.data["requests_linked"], {"qbittorrent": True, "radarr": True, "sonarr": True, "prowlarr": True, "seerr": True})
 
     def linked_before_sonarr_came_back(self):
         """An install that was linked while Sonarr was out: Prowlarr and Seerr are set up with Radarr only."""
@@ -420,6 +512,70 @@ class RequestsSetup(unittest.TestCase):
         self.assertTrue(os.path.isdir(self.m.P("/home/brandon/requests/jdownloader")))
 
 
+class FlareSolverrByHand(unittest.TestCase):
+    """A FlareSolverr container started by hand uses the name and the port the stack needs."""
+
+    def setUp(self):
+        self.m = helpers.installer()
+        self.calls, self.present, self.project = [], {"flaresolverr", "radarr"}, ""
+
+        def fake_docker(*args, **kw):
+            self.calls.append(args)
+            if args[0] == "inspect":
+                return (0, self.project + "\n") if self.project is not None else (1, "")
+            return 0, ""
+
+        for patcher in (mock.patch.object(self.m, "docker", fake_docker), mock.patch.object(self.m, "containers_all", lambda: set(self.present)),
+                        mock.patch.object(self.m.State, "data", {"requests": True}), mock.patch.object(self.m.State, "save", lambda *a, **k: None)):
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def test_a_container_without_the_stack_label_is_by_hand(self):
+        self.assertTrue(self.m.handmade_flaresolverr())
+
+    def test_the_stacks_own_container_is_not(self):
+        self.project = "requests"
+        self.assertFalse(self.m.handmade_flaresolverr())
+
+    def test_nothing_is_removed_when_there_is_no_such_container_or_it_cannot_be_inspected(self):
+        self.present = {"radarr"}
+        self.assertFalse(self.m.handmade_flaresolverr())
+        self.present, self.project = {"flaresolverr"}, None
+        self.assertFalse(self.m.handmade_flaresolverr())
+
+    def run_stack_step(self):
+        order = []
+        step = self.m.BY_ID["stack-requests"]
+        with mock.patch.object(self.m.StackStep, "run", lambda *a, **k: order.append("deploy")), mock.patch.object(self.m, "wait_for", lambda *a, **k: True), \
+                mock.patch.object(self.m, "run", lambda cmd, **k: order.append(" ".join(os.path.basename(c) for c in cmd)) or (0, "")):
+            self.m.docker = lambda *a, **k: order.append("docker " + " ".join(a)) or ((0, self.project + "\n") if a[0] == "inspect" else (0, ""))
+            step.run()
+        return order
+
+    def test_it_is_removed_before_the_stack_is_deployed(self):
+        order = self.run_stack_step()
+        self.assertEqual([o for o in order if o in ("deploy", "docker rm -f flaresolverr")], ["docker rm -f flaresolverr", "deploy"])
+
+    def test_the_stacks_own_container_is_not_removed(self):
+        self.project = "requests"
+        self.assertNotIn("docker rm -f flaresolverr", self.run_stack_step())
+
+    def test_a_dry_run_removes_nothing(self):
+        with mock.patch.object(self.m.Opt, "dry", True):
+            self.assertNotIn("docker rm -f flaresolverr", self.run_stack_step())
+
+    def test_the_card_is_allowed_again_once_and_then_made(self):
+        home = self.m.P("/usr/local/sbin/homelab-cards")
+        os.makedirs(os.path.dirname(home), exist_ok=True)
+        open(home, "w").close()
+        self.addCleanup(os.remove, home)
+        with mock.patch.object(self.m, "FAKE", False):
+            first = self.run_stack_step()
+            second = self.run_stack_step()
+        self.assertEqual([o for o in first if o.startswith("homelab-cards")], ["homelab-cards unignore flaresolverr", "homelab-cards sync"])
+        self.assertEqual([o for o in second if o.startswith("homelab-cards")], ["homelab-cards sync"])
+
+
 class RequestsFilesAndCommand(unittest.TestCase):
     def setUp(self):
         self.m = helpers.installer()
@@ -438,11 +594,20 @@ class RequestsFilesAndCommand(unittest.TestCase):
     def test_ports_in_the_stack_file_match_the_installer(self):
         with open(os.path.join(helpers.ROOT, "stacks", "requests.yaml")) as f:
             text = f.read()
-        for app in ("seerr", "radarr", "sonarr", "prowlarr", "qbittorrent"):
+        for app in ("seerr", "radarr", "sonarr", "prowlarr", "flaresolverr", "qbittorrent"):
             self.assertIn('"%d:%d"' % (self.m.PORTS[app], self.m.PORTS[app]), text)
-        self.assertEqual(self.m.STACKS["requests"][1], ["seerr", "radarr", "sonarr", "prowlarr", "qbittorrent"])
+        self.assertEqual(self.m.STACKS["requests"][1], ["seerr", "radarr", "sonarr", "prowlarr", "flaresolverr", "qbittorrent"])
+        self.assertEqual(self.m.PORTS["flaresolverr"], 8191)
         self.assertNotIn("jdownloader", text)
         self.assertNotIn("jdownloader", self.m.PORTS)
+
+    def test_the_dashboard_card_for_flaresolverr_gets_a_title_a_section_and_a_description(self):
+        cards = helpers.load_script("homelab_cards", "scripts/homelab-cards")
+        c = {"name": "flaresolverr", "image": "ghcr.io/flaresolverr/flaresolverr:latest", "project": "requests", "ports": [8191], "status": "running",
+             "labels": {"org.opencontainers.image.title": "FlareSolverr"}}
+        self.assertEqual(cards.guess_section(c), ("Media & Entertainment", True))
+        self.assertEqual(cards.display_name(c), "FlareSolverr")
+        self.assertEqual(cards.description_of(c, online=False), "Helps Prowlarr open protected indexers")
 
     def test_the_folders_are_made_once(self):
         step = self.m.BY_ID["requests-folders"]

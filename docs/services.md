@@ -200,7 +200,7 @@ If you already run a Jellyfin of your own, the installer leaves it as it is and 
 
 ### Requests
 
-An optional set of five apps that lets people ask for a movie or show. They are not part of the normal install, because together they use roughly 1.5 GB of memory. Set them up with:
+An optional set of six apps that lets people ask for a movie or show. They are not part of the normal install, because together they use roughly 2 GB of memory. Set them up with:
 
 ```bash
 sudo homelab-setup requests
@@ -211,19 +211,22 @@ It asks first, then installs one stack called `requests` ([`stacks/requests.yaml
 - **Seerr** is the page people use. Everyone signs in with their Jellyfin login, searches for a title and presses Request.
 - **Radarr** (movies) and **Sonarr** (shows) keep the list of what was asked for and file finished downloads into the `movies` and `shows` folders.
 - **Prowlarr** keeps the indexers in one place and sends them to Radarr and Sonarr, so you add each one only once.
+- **FlareSolverr** lets Prowlarr open indexers that sit behind a Cloudflare check. It has no login and no settings of its own.
 - **qBittorrent** is the download client. Its downloads go to the `downloads` folder on the Main pool.
 
-The installer gives Radarr, Sonarr, Prowlarr and qBittorrent the admin login, adds the root folders and qBittorrent to Radarr and Sonarr, links Prowlarr to both, and signs Seerr in to Jellyfin and links it to Radarr and Sonarr. It adds no indexers and no download sources. Until you add your own in Prowlarr (Indexers), a request is only a note on a list. Each app gets its own dashboard card within a few minutes. On the dashboard the five apps sit in the closed Downloaders row together with MeTube and Downtify (see [the dashboard](homepage.md)). An install that was set up while Sonarr was out gets it back with the next `sudo homelab-setup refresh`: the stack starts it again, and Prowlarr and Seerr are linked to it (this asks for the admin password). If Seerr will not let the installer sign in, the installer finishes the rest and prints the steps to add Sonarr in Seerr by hand.
+The installer gives Radarr, Sonarr, Prowlarr and qBittorrent the admin login, adds the root folders and qBittorrent to Radarr and Sonarr, links Prowlarr to both, adds FlareSolverr to Prowlarr as an indexer proxy with the tag `flaresolverr`, and signs Seerr in to Jellyfin and links it to Radarr and Sonarr. It adds no indexers and no download sources. Until you add your own in Prowlarr (Indexers), a request is only a note on a list. Each app gets its own dashboard card within a few minutes. On the dashboard the apps sit in the closed Downloaders row together with MeTube and Downtify (see [the dashboard](homepage.md)). An install that was set up while Sonarr was out gets it back with the next `sudo homelab-setup refresh`: the stack starts it again, and Prowlarr and Seerr are linked to it (this asks for the admin password). If Seerr will not let the installer sign in, the installer finishes the rest and prints the steps to add Sonarr in Seerr by hand.
+
+Prowlarr only uses FlareSolverr for an indexer that has the proxy's tag, which is `flaresolverr` when the installer made the proxy. When an indexer reports a Cloudflare check, open it in Prowlarr (Indexers), add that tag under Tags and save. The installer does not tag any indexer for you. A FlareSolverr container that you started by hand (named `flaresolverr`) is removed by the next `sudo homelab-setup refresh`, because the stack needs its name and its port 8191; the stack starts its own, and the card and the Tailscale address are made for it. If Prowlarr already has a FlareSolverr proxy that points somewhere else, its address is changed to the stack's container.
 
 Radarr, Sonarr and qBittorrent run as the lab user, so the setup makes the `movies`, `shows` and `downloads` folders belong to that user if they belonged to someone else. They see the Main pool as `/data`, so the downloads folder and the library are in one place. Keep the `downloads` folder on the same drive as `movies` and `shows` (the Move Folders option on the Drives screen does that), so finished files are moved into the library instead of copied.
 
-The five images follow their newest version, so `sudo homelab-update` keeps them current. The settings are in the `requests` folder of the home folder.
+The six images follow their newest version, so `sudo homelab-update` keeps them current. The settings are in the `requests` folder of the home folder.
 
 | Command | What it does |
 | :--- | :--- |
 | `sudo homelab-setup requests` | Sets the apps up, or checks them and finishes anything that is missing |
 | `sudo homelab-setup requests status` | Shows whether each app runs and is linked |
-| `sudo homelab-setup requests remove` | Removes the five containers; their settings and the downloads folder stay |
+| `sudo homelab-setup requests remove` | Removes the six containers; their settings and the downloads folder stay |
 
 **JDownloader.** Earlier versions also installed JDownloader. The next `sudo homelab-setup refresh` removes its container, its settings folder in the `requests` folder and its dashboard card. It never touches files in `movies`, `shows` or `downloads`; an empty `downloads/direct` folder is removed, and one that holds files is left alone.
 

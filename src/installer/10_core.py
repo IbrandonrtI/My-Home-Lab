@@ -65,14 +65,14 @@ STACKS = {
     "jellyfin": ("jellyfin.yaml", ["jellyfin"]),
     "audiomuse": ("audiomuse.yaml", ["audiomuse-postgres", "audiomuse-flask", "audiomuse-worker"]),
     "navilist": ("navilist.yaml", ["navilist"]),
-    "requests": ("requests.yaml", ["seerr", "radarr", "sonarr", "prowlarr", "qbittorrent"]),
+    "requests": ("requests.yaml", ["seerr", "radarr", "sonarr", "prowlarr", "flaresolverr", "qbittorrent"]),
 }
 STACK_ORDER = ["homepage", "adguard", "beszel", "netdata", "speedtest-tracker", "filebrowser",
                "immich", "nextcloud", "beszel-agent", "music-downloader"]
 
 PORTS = {"homepage": 3001, "portainer": 9000, "immich": 2283, "beszel": 8090, "adguard": 3000,
          "nextcloud": 8082, "filebrowser": 8081, "speedtest": 8088, "netdata": 19999, "navidrome": 4533, "jellyfin": 8096, "audiomuse": 8100, "navilist": 8200, "downtify": 8000,
-         "seerr": 5055, "radarr": 7878, "sonarr": 8989, "prowlarr": 9696, "qbittorrent": 8085}
+         "seerr": 5055, "radarr": 7878, "sonarr": 8989, "prowlarr": 9696, "flaresolverr": 8191, "qbittorrent": 8085}
 SERVE = [(1000, "homepage"), (1001, "portainer"), (1002, "immich"), (1003, "beszel"), (1004, "adguard"),
          (1005, "nextcloud"), (1006, "filebrowser"), (1007, "speedtest"), (1008, "netdata")]
 

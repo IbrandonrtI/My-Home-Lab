@@ -14,7 +14,7 @@ try:
 except ImportError:
     sync_playwright = None
 
-APPS = ("seerr", "radarr", "sonarr", "prowlarr", "qbittorrent", "metube", "downtify")
+APPS = ("seerr", "radarr", "sonarr", "prowlarr", "flaresolverr", "qbittorrent", "metube", "downtify")
 PLAYERS = ("navidrome", "jellyfin", "watching")
 PAGE = ('<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="custom.css"></head><body>'
         '<div id="inner_wrapper" style="--lk-side:14px"><div id="layout-groups"><div class="services-group"><ul class="services-list">%s</ul></div></div></div>'
@@ -93,7 +93,7 @@ class DownloadersDropdown(unittest.TestCase):
         pg = self.open()
         self.assertEqual(self.apps_shown(pg), [])
         self.assertTrue(self.shown(pg, "downloaders"))
-        self.assertEqual(pg.inner_text("#hl-downloaders"), "Downloaders\n7 apps")
+        self.assertEqual(pg.inner_text("#hl-downloaders"), "Downloaders\n8 apps")
         self.assertEqual(pg.get_attribute("#hl-downloaders", "aria-expanded"), "false")
 
     def test_a_click_opens_it_and_another_click_closes_it(self):

@@ -83,6 +83,22 @@ services:
         limits:
           memory: 512m
 
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    container_name: flaresolverr
+    restart: unless-stopped
+    labels:
+      org.opencontainers.image.title: "FlareSolverr"
+    ports:
+      - "8191:8191"
+    environment:
+      TZ: "${TZ:-UTC}"
+      LOG_LEVEL: "info"
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+
   qbittorrent:
     image: lscr.io/linuxserver/qbittorrent:latest
     container_name: qbittorrent

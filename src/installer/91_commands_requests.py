@@ -1,7 +1,7 @@
 
 
 def cmd_requests(rest):
-    """`requests`: set up Seerr, Radarr, Sonarr, Prowlarr and qBittorrent so people can ask for a movie or show. Also handles status and remove."""
+    """`requests`: set up Seerr, Radarr, Sonarr, Prowlarr, FlareSolverr and qBittorrent so people can ask for a movie or show. Also handles status and remove."""
     load_all()
     if Mode.existing:
         say("This machine was built by hand, so the installer only reads it. The request apps are not set up here.")
@@ -22,10 +22,11 @@ def cmd_requests(rest):
             other = port_taken_by(PORTS[app], mine=STACKS["requests"][1])
             if other:
                 raise Abort("Port %d is already used by the container %s, and %s needs it for its web page. Nothing was changed." % (PORTS[app], other, REQUESTS_LABELS[app]))
-    say("This adds the request apps, roughly 1.5 GB of memory in total:\n"
+    say("This adds the request apps, roughly 2 GB of memory in total:\n"
         "  - Seerr: where you search for a movie or show and ask for it. Everyone signs in with their Jellyfin login.\n"
         "  - Radarr and Sonarr: keep the list of movies and shows that were asked for, and put finished files in the Jellyfin folders.\n"
         "  - Prowlarr: keeps the indexers in one place and sends them to Radarr and Sonarr.\n"
+        "  - FlareSolverr: lets Prowlarr open indexers that sit behind a Cloudflare check. Prowlarr uses it for the indexers that have the tag flaresolverr.\n"
         "  - qBittorrent: the download client. Radarr and Sonarr are linked to it, and its downloads go to %s.\n"
         "The installer links the apps to each other and gives each one the admin login. It adds no download sources and no indexers; "
         "that part is up to you." % DOWNLOADS_FOLDER)
@@ -43,8 +44,9 @@ def cmd_requests(rest):
         return
     good("The request apps are set up.")
     say("Open Seerr at %s and sign in with your Jellyfin login. Radarr is at %s, Sonarr at %s, Prowlarr at %s and qBittorrent at %s; each uses the admin login.\n"
-        "Nothing will download until you add a source of your own in Prowlarr (Indexers); Prowlarr passes it on to Radarr and Sonarr."
-        % (url("seerr"), url("radarr"), url("sonarr"), url("prowlarr"), url("qbittorrent")))
+        "Nothing will download until you add a source of your own in Prowlarr (Indexers); Prowlarr passes it on to Radarr and Sonarr. "
+        "For an indexer behind a Cloudflare check, give it the tag flaresolverr in its settings. FlareSolverr is at %s."
+        % (url("seerr"), url("radarr"), url("sonarr"), url("prowlarr"), url("qbittorrent"), url("flaresolverr")))
 
 
 def requests_status():
@@ -58,14 +60,14 @@ def requests_status():
 
 
 def requests_remove():
-    """`requests remove`: remove the five containers. Their settings and the downloads folder are kept."""
+    """`requests remove`: remove the six containers. Their settings and the downloads folder are kept."""
     if not requests_wanted():
         say("The request apps are not set up. Nothing to remove.")
         return
     if Opt.dry:
-        say("This is a dry run: it would remove the five request containers. Nothing was changed.")
+        say("This is a dry run: it would remove the six request containers. Nothing was changed.")
         return
-    if not yesno("Remove Seerr, Radarr, Sonarr, Prowlarr and qBittorrent (their settings and the downloads folder stay on the drive)?", False):
+    if not yesno("Remove Seerr, Radarr, Sonarr, Prowlarr, FlareSolverr and qBittorrent (their settings and the downloads folder stay on the drive)?", False):
         say("Nothing was changed.")
         return
     if not Portainer.delete("requests"):

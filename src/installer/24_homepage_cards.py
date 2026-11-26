@@ -74,7 +74,7 @@ def watching_card_lines(href):
 
 
 DOWNLOADERS_ID = "downloaders-card"
-DOWNLOADERS_MEMBERS = ("seerr-card", "radarr-card", "sonarr-card", "prowlarr-card", "qbittorrent-card", "metube-card", "downtify-card")
+DOWNLOADERS_MEMBERS = ("seerr-card", "radarr-card", "sonarr-card", "prowlarr-card", "flaresolverr-card", "qbittorrent-card", "metube-card", "downtify-card")
 DOWNLOADERS_FIRST = ("seerr-card", "radarr-card", "prowlarr-card", "qbittorrent-card", "metube-card", "downtify-card")
 
 

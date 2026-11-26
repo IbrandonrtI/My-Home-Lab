@@ -114,8 +114,8 @@ class DownloadersCardText(unittest.TestCase):
         self.assertEqual(self.m.cards_grouped_under(once, "downloaders-card", self.m.DOWNLOADERS_MEMBERS), once)
 
     def test_the_member_list_is_the_seven_download_apps(self):
-        self.assertEqual(self.m.DOWNLOADERS_MEMBERS, ("seerr-card", "radarr-card", "sonarr-card", "prowlarr-card", "qbittorrent-card", "metube-card", "downtify-card"))
-        self.assertEqual(self.m.DOWNLOADERS_FIRST, tuple(m for m in self.m.DOWNLOADERS_MEMBERS if m != "sonarr-card"))
+        self.assertEqual(self.m.DOWNLOADERS_MEMBERS, ("seerr-card", "radarr-card", "sonarr-card", "prowlarr-card", "flaresolverr-card", "qbittorrent-card", "metube-card", "downtify-card"))
+        self.assertEqual(self.m.DOWNLOADERS_FIRST, tuple(m for m in self.m.DOWNLOADERS_MEMBERS if m not in ("sonarr-card", "flaresolverr-card")))
 
     def test_a_new_app_goes_after_the_app_that_comes_before_it_and_nothing_else_moves(self):
         """The dropdown was added without Sonarr; the person has moved Downtify to the top of it. Sonarr's card, made later, lands after Radarr."""
@@ -217,6 +217,17 @@ class DownloadersCardStep(unittest.TestCase):
         self.assertEqual(ids(self.get())[4:9], ["downloaders-card", "seerr-card", "radarr-card", "sonarr-card", "prowlarr-card"])
         self.assertEqual(self.step.probe(), "done")
         self.assertIn("sonarr-card", self.m.downloaders_handled())
+
+    def test_flaresolverr_is_put_in_the_dropdown_right_after_prowlarr_when_its_card_appears_later(self):
+        self.put(SERVICES)
+        self.step.run()
+        self.assertIn("sonarr-card", self.m.downloaders_handled())
+        self.put(self.m.card_added_after(self.get(), "frame-card", ["    - FlareSolverr:", "        id: flaresolverr-card", "        href: http://192.168.1.5:8191"]))
+        self.assertEqual(self.step.probe(), "todo")
+        self.step.run()
+        self.assertEqual(ids(self.get())[4:10], ["downloaders-card", "seerr-card", "radarr-card", "sonarr-card", "prowlarr-card", "flaresolverr-card"])
+        self.assertEqual(self.step.probe(), "done")
+        self.assertIn("flaresolverr-card", self.m.downloaders_handled())
 
     def test_the_first_version_of_the_marker_file_counts_as_the_six_original_apps(self):
         self.sonarr_arrives_after_the_dropdown_was_added("added\n")
