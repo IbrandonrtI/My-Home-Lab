@@ -34,7 +34,6 @@ This is a walk through everything the lab runs, one service at a time: what it's
 | Jellyfin | 8096 (web) and 7359 (UDP, app discovery) | the local network, and Tailscale on its own port |
 | Seerr | 5055 | the local network, and Tailscale on its own port |
 | Radarr | 7878 | the local network, and Tailscale on its own port |
-| Sonarr | 8989 | the local network, and Tailscale on its own port |
 | Prowlarr | 9696 | the local network, and Tailscale on its own port |
 | qBittorrent | 8085 (web) and 6881 (torrent traffic) | the local network, and Tailscale on its own port |
 | Downtify | 8000 | the local network, and Tailscale on its own port |
@@ -200,7 +199,7 @@ If you already run a Jellyfin of your own, the installer leaves it as it is and 
 
 ### Requests
 
-An optional set of six apps. Five let people ask for a movie or show, and the sixth, JDownloader, downloads files from web links. They are not part of the normal install, because together they use roughly 2 to 2.5 GB of memory. Set them up with:
+An optional set of four apps that lets people ask for a movie. They are not part of the normal install, because together they use roughly 1 GB of memory. Set them up with:
 
 ```bash
 sudo homelab-setup requests
@@ -209,24 +208,25 @@ sudo homelab-setup requests
 It asks first, then installs one stack called `requests` ([`stacks/requests.yaml`](../stacks/requests.yaml)) and links the apps. It needs Jellyfin, and it asks for the admin password once.
 
 - **Seerr** is the page people use. Everyone signs in with their Jellyfin login, searches for a title and presses Request.
-- **Radarr** (movies) and **Sonarr** (shows) keep the list of what was asked for and file finished downloads into the `movies` and `shows` folders.
-- **Prowlarr** keeps the indexers in one place and sends them to Radarr and Sonarr, so you add each one only once.
+- **Radarr** keeps the list of movies that were asked for and files finished downloads into the `movies` folder.
+- **Prowlarr** keeps the indexers in one place and sends them to Radarr, so you add each one only once.
 - **qBittorrent** is the download client. Its downloads go to the `downloads` folder on the Main pool.
-- **JDownloader** downloads files from web pages that give a direct link rather than a torrent. It is not linked to Seerr, Radarr or Sonarr. Open it, paste the links, and choose where they are saved: `/output` is `downloads/direct`, `/movies` is the Jellyfin movies folder and `/shows` is the shows folder.
 
-The installer gives Radarr, Sonarr, Prowlarr and qBittorrent the admin login, adds the root folders and qBittorrent to Radarr and Sonarr, links Prowlarr to both, and signs Seerr in to Jellyfin and links it to Radarr and Sonarr. It adds no indexers and no download sources. Until you add your own in Prowlarr (Indexers), a request is only a note on a list. Each app gets its own dashboard card within a few minutes.
+There is no app for TV shows. Seerr still offers a Request button for shows, but nothing fetches them, so add shows to the `shows` folder by hand.
 
-Radarr, Sonarr and qBittorrent run as the lab user, so the setup makes the `movies`, `shows` and `downloads` folders belong to that user if they belonged to someone else. They see the Main pool as `/data`, so the downloads folder and the library are in one place. Keep the `downloads` folder on the same drive as `movies` and `shows` (the Move Folders option on the Drives screen does that), so finished files are moved into the library instead of copied.
+The installer gives Radarr, Prowlarr and qBittorrent the admin login, adds the root folder and qBittorrent to Radarr, links Prowlarr to Radarr, and signs Seerr in to Jellyfin and links it to Radarr. It adds no indexers and no download sources. Until you add your own in Prowlarr (Indexers), a request is only a note on a list. Each app gets its own dashboard card within a few minutes.
 
-The six images follow their newest version, so `sudo homelab-update` keeps them current. The settings are in the `requests` folder of the home folder.
+Radarr and qBittorrent run as the lab user, so the setup makes the `movies` and `downloads` folders belong to that user if they belonged to someone else. They see the Main pool as `/data`, so the downloads folder and the library are in one place. Keep the `downloads` folder on the same drive as `movies` (the Move Folders option on the Drives screen does that), so finished files are moved into the library instead of copied.
+
+The four images follow their newest version, so `sudo homelab-update` keeps them current. The settings are in the `requests` folder of the home folder.
 
 | Command | What it does |
 | :--- | :--- |
 | `sudo homelab-setup requests` | Sets the apps up, or checks them and finishes anything that is missing |
 | `sudo homelab-setup requests status` | Shows whether each app runs and is linked |
-| `sudo homelab-setup requests remove` | Removes the six containers; their settings and the downloads folders stay |
+| `sudo homelab-setup requests remove` | Removes the four containers; their settings and the downloads folder stay |
 
-**Using JDownloader.** It opens at port 5800 and has no login of its own, like Metube and Downtify, so use it only on your own network or over Tailscale. It needs about 1 GB of memory. In the Add New Links window, set the save folder and the package name. For a movie, choose `/movies` and name the package `Movie Name (2019)`; the file is saved in `movies/Movie Name (2019)/`, where Jellyfin finds it after the next library scan. For a show, choose `/shows/Show Name/Season 01`. Jellyfin needs the episode number in a show's file name (`Show Name - S01E01.mkv`), and JDownloader keeps the name the site gives the file, so rename it if the site does not use that form. Anything saved to `/output` waits in `downloads/direct` and is not visible to Jellyfin until you move it.
+**Older installs.** Earlier versions also installed Sonarr and JDownloader. The next `sudo homelab-setup refresh` removes both: it takes Sonarr out of Seerr (it asks for the admin password for that) and out of Prowlarr, removes the two containers, deletes their settings folders in the `requests` folder, and removes their dashboard cards. It never touches files in `movies`, `shows` or `downloads`; an empty `downloads/direct` folder is removed, and one that holds files is left alone.
 
 ## Where the data lives
 
