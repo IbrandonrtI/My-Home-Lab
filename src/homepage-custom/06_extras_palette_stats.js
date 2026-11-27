@@ -587,7 +587,7 @@
   }
 
   /* Downloaders: a closed dropdown row (the downloaders-card) in the media list. While it is closed the apps in DL_APPS are hidden. The choice is kept in this browser. */
-  var DL_APPS = ["seerr-card", "radarr-card", "sonarr-card", "prowlarr-card", "flaresolverr-card", "qbittorrent-card", "metube-card", "downtify-card"];
+  var DL_APPS = ["metube-card", "downtify-card"];
   var dlMem = null;
   function dlChoice(v) {
     if (v === undefined) { try { return window.localStorage.getItem("hl-downloaders") || dlMem; } catch (e) { return dlMem; } }

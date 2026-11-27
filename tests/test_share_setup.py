@@ -1,4 +1,4 @@
-"""Sharing the movies, shows and downloads folders with Windows (Samba): the settings file, the steps and the command, with the system commands replaced by a recorder.
+"""Sharing the movies and shows folders with Windows (Samba): the settings file, the steps and the command, with the system commands replaced by a recorder.
 What Samba and Windows do with it is not tested here."""
 import os
 import shutil
@@ -50,18 +50,19 @@ class ShareSetup(unittest.TestCase):
     def ran(self, *start):
         return [c for c, _ in self.calls if tuple(c[:len(start)]) == start]
 
-    def test_the_settings_share_the_three_folders_for_the_lab_user_with_write_access(self):
+    def test_the_settings_share_the_two_folders_for_the_lab_user_with_write_access(self):
         text = self.m.share_config_text()
-        for name, path in (("movies", "/mnt/storage/movies"), ("shows", "/mnt/storage/shows"), ("downloads", "/mnt/storage/downloads")):
+        for name, path in (("movies", "/mnt/storage/movies"), ("shows", "/mnt/storage/shows")):
             self.assertIn("[%s]\n   path = %s\n" % (name, path), text)
-        self.assertEqual(text.count("read only = no"), 3)
-        self.assertEqual(text.count("valid users = brandon"), 3)
-        self.assertEqual(text.count("force user = brandon"), 3)
+        self.assertEqual(text.count("read only = no"), 2)
+        self.assertNotIn("downloads", text)
+        self.assertEqual(text.count("valid users = brandon"), 2)
+        self.assertEqual(text.count("force user = brandon"), 2)
         self.assertEqual(text.count("guest ok"), 0)
 
     def test_only_the_home_network_and_tailscale_may_connect(self):
         text = self.m.share_config_text()
-        self.assertEqual(text.count("hosts deny = ALL"), 3)
+        self.assertEqual(text.count("hosts deny = ALL"), 2)
         for allowed in ("192.168.0.0/16", "10.0.0.0/8", "172.16.0.0/12", "100.64.0.0/10"):
             self.assertIn(allowed, text)
         self.assertNotIn("0.0.0.0/0", text)
@@ -82,7 +83,6 @@ class ShareSetup(unittest.TestCase):
         self.assertEqual(step.probe(), "todo")
         step.run()
         self.assertEqual(step.probe(), "done")
-        self.assertTrue(os.path.isdir(self.m.P("/mnt/storage/downloads")))
 
     def test_the_settings_are_written_included_once_and_samba_is_started(self):
         step = self.m.BY_ID["share-config"]
@@ -163,8 +163,8 @@ class ShareSetup(unittest.TestCase):
         with open(os.path.join(helpers.ROOT, "installer", "homelab-setup")) as f:
             text = f.read()
         self.assertIn("elif cmd == \"share\"", text)
-        self.assertEqual(text.count('"navilist", "requests", "share"'), 3)
-        self.assertIn("  share                    share the movies, shows and downloads folders with Windows", text)
+        self.assertEqual(text.count('"navilist", "share"'), 3)
+        self.assertIn("  share                    share the movies and shows folders with Windows", text)
 
 
 if __name__ == "__main__":

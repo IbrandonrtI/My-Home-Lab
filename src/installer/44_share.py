@@ -1,7 +1,7 @@
-# Folder sharing: the movies, shows and downloads folders as Windows network folders (Samba), so File Explorer can open them.
+# Folder sharing: the movies and shows folders as Windows network folders (Samba), so File Explorer can open them.
 # Installed only by `homelab-setup share`. Only the home network and Tailscale may connect, and the login is the lab user's name with the admin password.
 
-SHARES = (("movies", "/mnt/storage/movies"), ("shows", "/mnt/storage/shows"), ("downloads", DOWNLOADS_FOLDER))
+SHARES = (("movies", "/mnt/storage/movies"), ("shows", "/mnt/storage/shows"))
 SHARE_CONF = "/etc/samba/homelab.conf"
 SHARE_MAIN_CONF = "/etc/samba/smb.conf"
 SHARE_INCLUDE = "include = " + SHARE_CONF
@@ -13,7 +13,7 @@ def share_wanted():
 
 
 def share_config_text():
-    """The Samba file for the three folders. Every file is created as the lab user, so Jellyfin, Radarr, Sonarr and qBittorrent can use what Windows adds."""
+    """The Samba file for the two folders. Every file is created as the lab user, so Jellyfin can use what Windows adds."""
     out_lines = ["# Written by homelab-setup (sudo homelab-setup share). Changes made here are overwritten; remove the shares with: sudo homelab-setup share remove", ""]
     for name, path in SHARES:
         out_lines += ["[%s]" % name, "   path = %s" % path, "   browseable = yes", "   read only = no", "   valid users = %s" % Ctx.user,
@@ -60,7 +60,7 @@ class SharePackage(Step):
 @step
 class ShareFolders(Step):
     id, group = "share-folders", "Services"
-    title = "The movies, shows and downloads folders exist and belong to the lab user"
+    title = "The movies and shows folders exist and belong to the lab user"
     needs = ("folders",)
 
     def applies(self):
@@ -82,7 +82,7 @@ class ShareFolders(Step):
 @step
 class ShareConfig(Step):
     id, group = "share-config", "Services"
-    title = "Share the movies, shows and downloads folders (home network and Tailscale only)"
+    title = "Share the movies and shows folders (home network and Tailscale only)"
     needs = ("share-package", "share-folders")
 
     def applies(self):

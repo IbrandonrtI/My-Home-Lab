@@ -14,7 +14,7 @@ try:
 except ImportError:
     sync_playwright = None
 
-APPS = ("seerr", "radarr", "sonarr", "prowlarr", "flaresolverr", "qbittorrent", "metube", "downtify")
+APPS = ("metube", "downtify")
 PLAYERS = ("navidrome", "jellyfin", "watching")
 PAGE = ('<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="custom.css"></head><body>'
         '<div id="inner_wrapper" style="--lk-side:14px"><div id="layout-groups"><div class="services-group"><ul class="services-list">%s</ul></div></div></div>'
@@ -40,7 +40,7 @@ class DownloadersDropdown(unittest.TestCase):
                  "nohead.html": PLAYERS + APPS,
                  "noapps.html": PLAYERS + ("downloaders", "adguard"),
                  "one.html": PLAYERS + ("downloaders", "metube", "adguard"),
-                 "other.html": ("downloaders", "adguard", "navidrome", "seerr")}
+                 "other.html": ("downloaders", "adguard", "navidrome", "metube")}
         for name, cards in pages.items():
             with open(cls.dir + "/" + name, "w") as f:
                 f.write(page(*cards))
@@ -93,7 +93,7 @@ class DownloadersDropdown(unittest.TestCase):
         pg = self.open()
         self.assertEqual(self.apps_shown(pg), [])
         self.assertTrue(self.shown(pg, "downloaders"))
-        self.assertEqual(pg.inner_text("#hl-downloaders"), "Downloaders\n8 apps")
+        self.assertEqual(pg.inner_text("#hl-downloaders"), "Downloaders\n2 apps")
         self.assertEqual(pg.get_attribute("#hl-downloaders", "aria-expanded"), "false")
 
     def test_a_click_opens_it_and_another_click_closes_it(self):
@@ -118,7 +118,7 @@ class DownloadersDropdown(unittest.TestCase):
                 pg.wait_for_timeout(500)
                 opened = pg.evaluate("[scrollY, document.getElementById('hl-downloaders').getBoundingClientRect().top, document.querySelector('#g0x0-card').getBoundingClientRect().top]")
                 self.assertEqual(opened[:2], before[:2])
-                self.assertGreater(opened[2], before[2] + 100)
+                self.assertGreater(opened[2], before[2] + 20)
                 pg.click("#hl-downloaders")
                 pg.wait_for_timeout(500)
                 self.assertEqual(pg.evaluate("[scrollY, document.getElementById('hl-downloaders').getBoundingClientRect().top]"), before[:2])
@@ -193,10 +193,10 @@ class DownloadersDropdown(unittest.TestCase):
 
     def test_an_app_in_a_different_list_than_the_row_is_left_alone(self):
         pg = self.open("home.html")
-        pg.evaluate("""() => { const g = document.createElement('div'); g.className = 'services-group'; g.innerHTML = '<ul class="services-list"><li id="seerr-card" class="service">x</li></ul>';
-            document.getElementById('seerr-card').remove(); document.getElementById('layout-groups').appendChild(g); }""")
+        pg.evaluate("""() => { const g = document.createElement('div'); g.className = 'services-group'; g.innerHTML = '<ul class="services-list"><li id="metube-card" class="service">x</li></ul>';
+            document.getElementById('metube-card').remove(); document.getElementById('layout-groups').appendChild(g); }""")
         pg.wait_for_timeout(500)
-        self.assertEqual(pg.evaluate("document.getElementById('seerr-card').className.includes('hl-dl-shut')"), False)
+        self.assertEqual(pg.evaluate("document.getElementById('metube-card').className.includes('hl-dl-shut')"), False)
 
     def test_the_row_is_drawn_once_when_the_page_is_updated(self):
         pg = self.open()

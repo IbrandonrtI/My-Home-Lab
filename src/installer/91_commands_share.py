@@ -14,7 +14,7 @@ def share_how_to_open():
 
 
 def cmd_share(rest):
-    """`share`: share the movies, shows and downloads folders with Windows. Also handles status, password and remove."""
+    """`share`: share the movies and shows folders with Windows. Also handles status, password and remove."""
     load_all()
     if Mode.existing:
         say("This machine was built by hand, so the installer only reads it. The folders are not shared here.")
@@ -30,9 +30,7 @@ def cmd_share(rest):
         return share_password()
     if rest:
         raise Abort("Unknown word '%s'. Use: homelab-setup share   or   share status | password | remove" % word)
-    say("This shares three folders with Windows, so they open in File Explorer like normal folders:\n"
-        "  - movies and shows: the Jellyfin library. Radarr and Sonarr put finished files there.\n"
-        "  - downloads: what qBittorrent has downloaded.\n"
+    say("This shares the movies and shows folders (the Jellyfin library) with Windows, so they open in File Explorer like normal folders. "
         "You can copy, rename and delete files in them from Windows. Files stay owned by %s, so the apps keep working. "
         "Only devices on your home network and on Tailscale can connect. The login is the user name %s with the admin password; "
         "Samba keeps its own scrambled copy of that password." % (Ctx.user, Ctx.user))
@@ -84,9 +82,9 @@ def share_remove():
         say("The folders are not shared. Nothing to remove.")
         return
     if Opt.dry:
-        say("This is a dry run: it would stop sharing the three folders and remove the login. Nothing was changed.")
+        say("This is a dry run: it would stop sharing the two folders and remove the login. Nothing was changed.")
         return
-    if not yesno("Stop sharing the movies, shows and downloads folders with Windows (the files stay where they are)?", False):
+    if not yesno("Stop sharing the movies and shows folders with Windows (the files stay where they are)?", False):
         say("Nothing was changed.")
         return
     main = read_file(P(SHARE_MAIN_CONF))

@@ -10,7 +10,6 @@ This is a walk through everything the lab runs, one service at a time: what it's
 - [Files and photos](#files-and-photos)
 - [Music](#music)
 - [Movies and shows](#movies-and-shows)
-- [Requests](#requests)
 - [Where the data lives](#where-the-data-lives)
 - [What runs by itself](#what-runs-by-itself)
 
@@ -32,11 +31,6 @@ This is a walk through everything the lab runs, one service at a time: what it's
 | AudioMuse-AI | 8100 | the local network, and Tailscale on its own port |
 | NaviList | 8200 | the local network, and Tailscale on its own port |
 | Jellyfin | 8096 (web) and 7359 (UDP, app discovery) | the local network, and Tailscale on its own port |
-| Seerr | 5055 | the local network, and Tailscale on its own port |
-| Radarr | 7878 | the local network, and Tailscale on its own port |
-| Sonarr | 8989 | the local network, and Tailscale on its own port |
-| Prowlarr | 9696 | the local network, and Tailscale on its own port |
-| qBittorrent | 8085 (web) and 6881 (torrent traffic) | the local network, and Tailscale on its own port |
 | Downtify | 8000 | the local network, and Tailscale on its own port |
 | MeTube | 8185 | the local network, and Tailscale on its own port |
 
@@ -198,51 +192,21 @@ The Custom CSS also ends with one rule that sets the slideshow height to zero wh
 
 If you already run a Jellyfin of your own, the installer leaves it as it is and does not add a second one.
 
-### Requests
-
-An optional set of six apps that lets people ask for a movie or show. They are not part of the normal install, because together they use roughly 2 GB of memory. Set them up with:
-
-```bash
-sudo homelab-setup requests
-```
-
-It asks first, then installs one stack called `requests` ([`stacks/requests.yaml`](../stacks/requests.yaml)) and links the apps. It needs Jellyfin, and it asks for the admin password once.
-
-- **Seerr** is the page people use. Everyone signs in with their Jellyfin login, searches for a title and presses Request.
-- **Radarr** (movies) and **Sonarr** (shows) keep the list of what was asked for and file finished downloads into the `movies` and `shows` folders.
-- **Prowlarr** keeps the indexers in one place and sends them to Radarr and Sonarr, so you add each one only once.
-- **FlareSolverr** lets Prowlarr open indexers that sit behind a Cloudflare check. It has no login and no settings of its own.
-- **qBittorrent** is the download client. Its downloads go to the `downloads` folder on the Main pool.
-
-The installer gives Radarr, Sonarr, Prowlarr and qBittorrent the admin login, adds the root folders and qBittorrent to Radarr and Sonarr, links Prowlarr to both, adds FlareSolverr to Prowlarr as an indexer proxy with the tag `flaresolverr`, and signs Seerr in to Jellyfin and links it to Radarr and Sonarr. It adds no indexers and no download sources. Until you add your own in Prowlarr (Indexers), a request is only a note on a list. Each app gets its own dashboard card within a few minutes. On the dashboard the apps sit in the closed Downloaders row together with MeTube and Downtify (see [the dashboard](homepage.md)). An install that was set up while Sonarr was out gets it back with the next `sudo homelab-setup refresh`: the stack starts it again, and Prowlarr and Seerr are linked to it (this asks for the admin password). If Seerr will not let the installer sign in, the installer finishes the rest and prints the steps to add Sonarr in Seerr by hand.
-
-Prowlarr only uses FlareSolverr for an indexer that has the proxy's tag, which is `flaresolverr` when the installer made the proxy. When an indexer reports a Cloudflare check, open it in Prowlarr (Indexers), add that tag under Tags and save. The installer does not tag any indexer for you. A FlareSolverr container that you started by hand (named `flaresolverr`) is removed by the next `sudo homelab-setup refresh`, because the stack needs its name and its port 8191; the stack starts its own, and the card and the Tailscale address are made for it. If Prowlarr already has a FlareSolverr proxy that points somewhere else, its address is changed to the stack's container.
-
-Radarr, Sonarr and qBittorrent run as the lab user, so the setup makes the `movies`, `shows` and `downloads` folders belong to that user if they belonged to someone else. They see the Main pool as `/data`, so the downloads folder and the library are in one place. Keep the `downloads` folder on the same drive as `movies` and `shows` (the Move Folders option on the Drives screen does that), so finished files are moved into the library instead of copied.
-
-The six images follow their newest version, so `sudo homelab-update` keeps them current. The settings are in the `requests` folder of the home folder.
-
-| Command | What it does |
-| :--- | :--- |
-| `sudo homelab-setup requests` | Sets the apps up, or checks them and finishes anything that is missing |
-| `sudo homelab-setup requests status` | Shows whether each app runs and is linked |
-| `sudo homelab-setup requests remove` | Removes the six containers; their settings and the downloads folder stay |
-
-**JDownloader.** Earlier versions also installed JDownloader. The next `sudo homelab-setup refresh` removes its container, its settings folder in the `requests` folder and its dashboard card. It never touches files in `movies`, `shows` or `downloads`; an empty `downloads/direct` folder is removed, and one that holds files is left alone.
+**Older request apps.** Earlier versions also installed Seerr, Radarr, Sonarr, Prowlarr, FlareSolverr and qBittorrent. They are no longer part of HomeLab. The next `sudo homelab-setup refresh` removes their containers, their images and their dashboard cards. It never touches files in `movies`, `shows` or `downloads`, and it keeps their settings in the `requests` folder of the home folder. Delete those yourself if you don't need them, for example `sudo rm -rf ~/requests`.
 
 ### Windows network folders
 
-An optional share that lets File Explorer on a Windows PC open the `movies`, `shows` and `downloads` folders of the Main pool like normal folders. It uses Samba, which is a normal program on the server and not a container. Set it up with:
+An optional share that lets File Explorer on a Windows PC open the `movies` and `shows` folders of the Main pool like normal folders. It uses Samba, which is a normal program on the server and not a container. Set it up with:
 
 ```bash
 sudo homelab-setup share
 ```
 
-It asks first and then asks for the admin password once. It installs Samba, shares the three folders and gives your user name a Samba login with the admin password. Samba keeps its own scrambled copy of that password, so after you change the admin password run `sudo homelab-setup share password` to update it.
+It asks first and then asks for the admin password once. It installs Samba, shares the two folders and gives your user name a Samba login with the admin password. Samba keeps its own scrambled copy of that password, so after you change the admin password run `sudo homelab-setup share password` to update it.
 
 To open the folders, type `\\192.168.X.X\movies` in the File Explorer address bar, using the address of the server (the command prints it). Or right-click This PC, choose Map network drive, and use the same address to get a drive letter. When Windows asks for a login, use your user name on the server and the admin password, and tick the box to remember it. Away from home, use the Tailscale name of the server, for example `\\pc.your-tailnet.ts.net\movies`; the PC must be connected to Tailscale.
 
-You can copy, rename and delete files from Windows. Whatever Windows adds belongs to the lab user, so Jellyfin, Radarr, Sonarr and qBittorrent can use it. Only devices on the home network and on Tailscale can connect; every other address is refused. The shares are not open to guests.
+You can copy, rename and delete files from Windows. Whatever Windows adds belongs to the lab user, so Jellyfin can use it. Only devices on the home network and on Tailscale can connect; every other address is refused. The shares are not open to guests. Earlier versions also shared the `downloads` folder; the next `sudo homelab-setup refresh` stops sharing it.
 
 | Command | What it does |
 | :--- | :--- |

@@ -212,13 +212,13 @@ def services_with_new_downloaders(text, handled):
 
 @step
 class DownloadersCard(Step):
-    """Add a closed Downloaders dropdown under the players and put the download apps under it. Apps that get their card later (Sonarr, say) are put there once too. After that the order is set on the Cards screen."""
+    """Add a closed Downloaders dropdown under the players and put the download apps under it. Apps that get their card later (MeTube, say) are put there once too. After that the order is set on the Cards screen."""
     id, group = "downloaders-card", "Homepage"
     title = "Downloaders dropdown under the players (apps are put in once; change it on the Cards screen)"
-    needs = ("homepage-files", "stack-requests", "stack-music-downloader", "watching-card")
+    needs = ("homepage-files", "stack-music-downloader", "watching-card")
 
     def applies(self):
-        return BY_ID["stack-requests"].applies() or BY_ID["stack-music-downloader"].applies()
+        return BY_ID["stack-music-downloader"].applies()
 
     def probe(self):
         return "todo" if downloaders_card_wanted(read_file(hp_path("services.yaml"))) else "done"

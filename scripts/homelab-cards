@@ -68,15 +68,15 @@ KEYWORDS = {
         "mealie tandoor",
         "files file photos photo cloud backup drive pdf docs notes storage"),
     "Media & Entertainment": (
-        "metube downtify jellyfin plex emby sonarr radarr lidarr readarr bazarr prowlarr flaresolverr jackett qbittorrent transmission deluge "
-        "sabnzbd nzbget navidrome audiomuse navilist audiobookshelf kavita calibre calibreweb komga tubearchivist spotdl ytdl ytdlp youtubedl overseerr seerr "
+        "metube downtify jellyfin plex emby lidarr readarr bazarr jackett transmission deluge "
+        "sabnzbd nzbget navidrome audiomuse navilist audiobookshelf kavita calibre calibreweb komga tubearchivist spotdl ytdl ytdlp youtubedl overseerr "
         "jellyseerr tautulli stash romm tdarr handbrake ersatztv owncast airsonic funkwhale subsonic koel mstream lazylibrarian "
         "minecraft",
         "music video movies movie media download downloader spotify youtube podcast games game tv"),
 }
 
-KNOWN_COLORS = {"jellyfin": (170, 92, 195), "plex": (229, 160, 13), "emby": (82, 181, 75), "sonarr": (53, 197, 244),
-                "radarr": (255, 194, 40), "seerr": (126, 87, 194), "lidarr": (0, 164, 129), "prowlarr": (225, 102, 59), "flaresolverr": (222, 66, 47), "qbittorrent": (47, 103, 177),
+KNOWN_COLORS = {"jellyfin": (170, 92, 195), "plex": (229, 160, 13), "emby": (82, 181, 75),
+                "lidarr": (0, 164, 129),
                 "grafana": (244, 104, 0), "uptimekuma": (92, 221, 139), "pihole": (150, 6, 24), "syncthing": (3, 144, 214),
                 "navidrome": (0, 150, 255), "paperless": (23, 65, 54), "vaultwarden": (23, 93, 220), "metube": (255, 0, 0),
                 "downtify": (0, 255, 0)}
@@ -85,12 +85,12 @@ PALETTE = [(255, 171, 0), (0, 188, 212), (156, 39, 176), (255, 87, 34), (233, 30
 
 KNOWN_DESCRIPTIONS = {
     "metube": "YouTube video downloader", "downtify": "Spotify music downloader", "jellyfin": "Movies, shows and music server",
-    "plex": "Movies, shows and music server", "emby": "Movies, shows and music server", "sonarr": "TV show manager",
-    "radarr": "Movie manager", "lidarr": "Music manager", "readarr": "Book manager", "prowlarr": "Search indexer manager", "flaresolverr": "Helps Prowlarr open protected indexers",
-    "bazarr": "Subtitle manager", "jackett": "Torrent search indexer", "qbittorrent": "Torrent downloader",
+    "plex": "Movies, shows and music server", "emby": "Movies, shows and music server",
+    "lidarr": "Music manager", "readarr": "Book manager",
+    "bazarr": "Subtitle manager", "jackett": "Torrent search indexer",
     "transmission": "Torrent downloader", "deluge": "Torrent downloader", "sabnzbd": "Usenet downloader",
     "navidrome": "Music Streaming Server", "audiomuse": "Finds similar songs for Navidrome", "navilist": "Playlists from ListenBrainz and Last.fm", "audiobookshelf": "Audiobooks and podcasts", "kavita": "Book and comic reader",
-    "komga": "Comic and book server", "calibreweb": "Ebook library", "overseerr": "Media requests", "jellyseerr": "Media requests", "seerr": "Media requests",
+    "komga": "Comic and book server", "calibreweb": "Ebook library", "overseerr": "Media requests", "jellyseerr": "Media requests",
     "tautulli": "Plex statistics", "tubearchivist": "YouTube archive", "stash": "Media organiser", "tdarr": "Video converter",
     "grafana": "Dashboards and graphs", "prometheus": "Metrics database", "uptimekuma": "Uptime monitor", "glances": "System monitor",
     "dozzle": "Live container logs", "watchtower": "Automatic image updates", "homeassistant": "Home automation",
@@ -109,7 +109,7 @@ GITHUB_API = os.environ.get("HOMELAB_DESC_GITHUB", "https://api.github.com").rst
 
 ICON_CDN = os.environ.get("HOMELAB_ICON_CDN", "https://cdn.jsdelivr.net").rstrip("/")
 GENERIC_ICON = "mdi-docker"
-KNOWN_ICONS = {"navilist": "mdi-playlist-music", "audiomuse": "mdi-music-box-multiple", "seerr": "mdi-movie-search-outline"}
+KNOWN_ICONS = {"navilist": "mdi-playlist-music", "audiomuse": "mdi-music-box-multiple"}
 
 
 def lab_user():

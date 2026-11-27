@@ -16,8 +16,7 @@ ROOT = helpers.ROOT
 
 # Images allowed to follow a moving tag. Add to this list only on purpose: a pinned version is what makes an update something you choose.
 FLOATING_IMAGES = {"henriquesebastiao/downtify:latest", "ghcr.io/alexta69/metube:latest", "netdata/netdata:stable", "redis:alpine",
-                   "ghcr.io/immich-app/immich-server:release", "ghcr.io/immich-app/immich-machine-learning:release",
-                   "ghcr.io/seerr-team/seerr:latest", "lscr.io/linuxserver/radarr:latest", "lscr.io/linuxserver/sonarr:latest", "lscr.io/linuxserver/prowlarr:latest", "ghcr.io/flaresolverr/flaresolverr:latest", "lscr.io/linuxserver/qbittorrent:latest"}
+                   "ghcr.io/immich-app/immich-server:release", "ghcr.io/immich-app/immich-machine-learning:release"}
 
 try:
     import yaml
@@ -141,17 +140,17 @@ class PageScripts(unittest.TestCase):
         self.assertIn("li#watching-card", css)
 
     def test_the_downloaders_dropdown_names_the_same_cards_everywhere(self):
-        """The installer groups eight cards under the Downloaders card; the dashboard script hides and shows the same eight by id, and the stylesheet sizes the row by its id."""
+        """The installer groups two cards under the Downloaders card; the dashboard script hides and shows the same two by id, and the stylesheet sizes the row by its id."""
         js, css, setup, panel = read("homepage-config/custom.js"), read("homepage-config/custom.css"), read("installer/homelab-setup"), read("scripts/homelab-panel")
         installer = re.search(r"DOWNLOADERS_MEMBERS = \(([^)]*)\)", setup).group(1)
         script = re.search(r"var DL_APPS = \[([^\]]*)\]", js).group(1)
         self.assertEqual(re.findall(r'"([^"]+)"', installer), re.findall(r'"([^"]+)"', script))
-        self.assertEqual(len(re.findall(r'"([^"]+)"', script)), 8)
+        self.assertEqual(len(re.findall(r'"([^"]+)"', script)), 2)
         self.assertIn('DOWNLOADERS_ID = "downloaders-card"', setup)
         self.assertIn('getElementById("downloaders-card")', js)
         self.assertIn("li#downloaders-card", css)
         self.assertIn('("watching-card", "downloaders-card")', panel)
-        stacks = read("stacks/requests.yaml") + read("stacks/music-downloader.yaml")
+        stacks = read("stacks/music-downloader.yaml")
         for card in re.findall(r'"([^"]+)"', script):
             self.assertRegex(stacks, r"container_name:\s*%s\s" % card[:-len("-card")], "the card %s should belong to a container of the same name" % card)
 

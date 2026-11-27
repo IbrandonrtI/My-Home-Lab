@@ -772,7 +772,7 @@ AUTO_EVERY = 20 * 60
 AUTO_RETRY = 3 * 3600
 
 
-LOCKED_COMMANDS = ("install", "refresh", "fill", "uninstall", "growdisk", "adguard", "filebrowser", "homepage", "audiomuse", "navilist", "requests", "share", "lastfm", "cards", "done", "skip", "unskip")
+LOCKED_COMMANDS = ("install", "refresh", "fill", "uninstall", "growdisk", "adguard", "filebrowser", "homepage", "audiomuse", "navilist", "share", "lastfm", "cards", "done", "skip", "unskip")
 COMMAND_LOCK = P("/run/homelab-setup-command.lock")
 command_lock_fd = None
 
@@ -888,8 +888,7 @@ Commands:
   lastfm                   save your free Last.fm key so Navidrome can suggest similar songs; also: lastfm remove
   audiomuse                set up AudioMuse-AI (Navidrome suggests songs that sound alike); also: audiomuse memory | pause | resume | status | remove
   navilist                 set up naviList (Navidrome playlists from your ListenBrainz and Last.fm listening); also: navilist subscribe | status | remove
-  requests                 set up Seerr, Radarr, Sonarr, Prowlarr and qBittorrent so people can ask for movies and shows; also: requests status | remove
-  share                    share the movies, shows and downloads folders with Windows, so File Explorer can open them; also: share status | password | remove
+  share                    share the movies and shows folders with Windows, so File Explorer can open them; also: share status | password | remove
   uninstall                take HomeLab off this machine; asks whether to keep or wipe the apps' data and the drives (Tailscale, Docker and the drive programs stay); wiping also deletes the downloaded repository folder; add --dry-run to look first
   done STEP | skip STEP    mark a manual step as done, or as not wanted
   unskip STEP              take a skipped step back (only steps that wait for a person can be marked)

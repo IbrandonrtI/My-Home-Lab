@@ -137,10 +137,10 @@ def main(argv):
             pos.append(a)
         i += 1
     cmd = pos[0] if pos else "checklist"
-    if cmd not in COMMANDS and cmd not in ("done", "skip", "unskip", "cards", "lastfm", "audiomuse", "navilist", "requests", "share"):
+    if cmd not in COMMANDS and cmd not in ("done", "skip", "unskip", "cards", "lastfm", "audiomuse", "navilist", "share"):
         out("Unknown command '%s', so nothing was done. Try: homelab-setup help" % cmd)
         return 2
-    if len(pos) > 1 and cmd not in ("done", "skip", "unskip", "cards", "lastfm", "audiomuse", "navilist", "requests", "share"):
+    if len(pos) > 1 and cmd not in ("done", "skip", "unskip", "cards", "lastfm", "audiomuse", "navilist", "share"):
         out("'%s' does not take the word '%s', so nothing was done. Try: homelab-setup help" % (cmd, pos[1][:40]))
         return 2
     if (Opt.wipe_data or Opt.wipe_drives) and cmd != "uninstall":
@@ -166,8 +166,6 @@ def main(argv):
             return cmd_audiomuse(pos[1:])
         elif cmd == "navilist":
             return cmd_navilist(pos[1:])
-        elif cmd == "requests":
-            return cmd_requests(pos[1:])
         elif cmd == "share":
             return cmd_share(pos[1:])
         else:
