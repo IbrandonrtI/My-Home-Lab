@@ -140,7 +140,7 @@ Motion is Subtle by default. A device that is set to reduce motion always gets n
 
 ## On a phone
 
-On a phone the cards stack in one column. It's the same dashboard, so the services and the player work the same way. The gauges at the top sit in one compact panel of two columns, and Network has its own row under a thin line, with its graph reaching across to the edge. If you added a logo, it sits centered at the top of that panel, above a thin line. The tab names are sized to fit the width of the screen. The Continue Watching row scrolls sideways.
+On a tablet or a narrow browser window (up to about 1180 pixels wide) the gauges at the top sit in one panel of three columns, with Network on its own row. On a phone the cards stack in one column. It's the same dashboard, so the services and the player work the same way. The gauges at the top sit in one compact panel of two columns, and Network has its own row under a thin line, with its graph reaching across to the edge. If you added a logo, it sits centered at the top of that panel, above a thin line. The tab names are sized to fit the width of the screen. The Continue Watching row scrolls sideways.
 
 <img src="images/homepage-phone.png" alt="The dashboard on a phone" width="300">
 

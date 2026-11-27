@@ -1,4 +1,4 @@
-"""The dashboard on a phone: the gauges sit in one compact panel instead of a stack of tiles, the header fills the width, the tab names fit whole next to the bell and the
+"""The dashboard on a phone and at in-between widths: the gauges sit in one compact panel instead of a stack of tiles, the header fills the width, the tab names fit whole next to the bell and the
 status pill, and nothing makes the page scroll sideways. Needs Python Playwright and a Chromium browser, and is skipped without them."""
 import os
 import shutil
@@ -167,6 +167,24 @@ class PhoneLayout(unittest.TestCase):
             return { line: [a.display, a.height, a.position], room: row.top - above.bottom }; }""")
         self.assertEqual(r["line"], ["block", "1px", "absolute"])
         self.assertGreaterEqual(r["room"], 6, "the line has room above Network")
+
+    def test_in_between_widths_show_the_gauge_panel_and_not_the_original_tiles(self):
+        for width in (701, 800, 1000, 1180):
+            with self.subTest(width=width):
+                p = self.open(width, "logo.html")
+                r = p.evaluate("""() => { const s = document.getElementById('hl-stats'), l = document.getElementById('hl-logo'), a = l.getBoundingClientRect(), b = s.getBoundingClientRect(), c = getComputedStyle(s);
+                    return { display: c.display, cols: c.gridTemplateColumns.split(' ').length, gauges: s.querySelectorAll('.hl-g').length, gap: b.top - a.bottom, scroll: document.documentElement.scrollWidth,
+                      tiles: [...document.querySelectorAll('#widgets-wrap > .widget-container')].filter(e => getComputedStyle(e).display !== 'none').length }; }""")
+                self.assertEqual(r["display"], "grid", "the gauges are missing")
+                self.assertEqual(r["cols"], 3)
+                self.assertEqual(r["gauges"], 7)
+                self.assertEqual(r["tiles"], 0, "the original tiles show next to the gauges")
+                self.assertLessEqual(abs(r["gap"]), 1, "the logo and the gauges are one panel, with no gap")
+                self.assertLessEqual(r["scroll"], width)
+
+    def test_the_panel_changes_from_three_columns_to_two_at_700_pixels(self):
+        cols = {w: self.open(w).evaluate("getComputedStyle(document.getElementById('hl-stats')).gridTemplateColumns.split(' ').length") for w in (700, 701)}
+        self.assertEqual(cols, {700: 2, 701: 3})
 
 
 if __name__ == "__main__":

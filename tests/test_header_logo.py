@@ -77,7 +77,7 @@ class HeaderLogoTests(unittest.TestCase):
                 self.assertTrue(logo[2] <= name[0] + 1 or logo[3] <= name[1] + 1, "the logo and the name overlap: %s %s" % (logo, name))
 
     def test_a_thin_line_separates_the_logo_from_what_follows(self):
-        """On a wide screen the logo is followed by a separator line with room on both sides; stacked above the name it has none."""
+        """On a wide screen the logo is followed by a separator line with room on both sides; below 1181 pixels the logo is the top of the gauge panel and the line runs under it instead."""
         line = "(() => { const c = getComputedStyle(document.getElementById('hl-logo'), '::after'); return [c.content, c.display, c.width]; })()"
         for hello in ('"Brandon"', '"off"'):
             for width in (1700, 1300):
@@ -93,7 +93,9 @@ class HeaderLogoTests(unittest.TestCase):
                     img = self.box(p, "#hl-logo img")
                     self.assertGreaterEqual(logo[2] - img[2], 12, "too little room before the line")
         p = self.open(page(), 900)
-        self.assertEqual(p.evaluate(line)[1], "none")
+        under = p.evaluate("(() => { const c = getComputedStyle(document.getElementById('hl-logo'), '::after'); return [c.display, c.height]; })()")
+        self.assertEqual(under, ["block", "1px"])
+        self.assertNotEqual(p.evaluate(line)[2], "1px", "the line runs along the bottom, not down the side")
 
     def test_phone_shows_the_logo(self):
         """The name is left out on a phone by design; the logo stays."""

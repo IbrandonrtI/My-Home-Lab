@@ -1349,40 +1349,38 @@ html[data-hl-fit="1440"] #information-widgets { zoom: 0.80; }
   #inner_wrapper #hl-stats { display: flex; order: 0; flex: 0 0 100%; box-sizing: border-box; align-items: center; justify-content: space-between; padding: 2px 6px; }
   #inner_wrapper #hl-stats[hidden] { display: none; }
 }
-/* The gauges look the same on a wide screen and on a phone. */
+/* The gauges look the same at every width. */
 #inner_wrapper #hl-stats .hl-ic { display: none; }
-@media (min-width: 1181px), (max-width: 700px) {
-  #inner_wrapper #hl-stats .hl-g { --g: var(--lk-accent); position: relative; flex: 1 1 0; min-width: 0; display: flex; align-items: center; justify-content: flex-start; gap: 11px; padding: 3px 12px 3px 16px; font-variant-numeric: tabular-nums; }
-  #inner_wrapper #hl-stats .hl-g-net { flex-grow: 1.7; }
-  #inner_wrapper #hl-stats .hl-g-net .hl-gt { min-width: 10.5em; }
-  #inner_wrapper #hl-stats .hl-g-up { flex-grow: 0.7; }
-  #inner_wrapper #hl-stats .hl-gt { overflow: hidden; }
-  #inner_wrapper #hl-stats .hl-gn, #inner_wrapper #hl-stats .hl-gv, #inner_wrapper #hl-stats .hl-gs2 { overflow: hidden; text-overflow: ellipsis; }
-  #inner_wrapper #hl-stats .hl-g + .hl-g::before { content: ""; position: absolute; left: 0; top: 12%; bottom: 12%; width: 1px; background: rgba(var(--lk-ink, 255, 255, 255), 0.1); }
-  #inner_wrapper #hl-stats .hl-g-cpu { --g: 74, 222, 128; }
-  #inner_wrapper #hl-stats .hl-g-mem { --g: 34, 211, 238; }
-  #inner_wrapper #hl-stats .hl-g-temp { --g: 242, 176, 94; }
-  #inner_wrapper #hl-stats .hl-g-bak { --g: 167, 139, 250; }
-  #inner_wrapper #hl-stats .hl-g.hl-warn { --g: 251, 191, 36; }
-  #inner_wrapper #hl-stats .hl-g.hl-bad { --g: 248, 113, 113; }
-  #inner_wrapper #hl-stats .hl-ring { flex: 0 0 auto; width: 38px; height: 38px; }
-  #inner_wrapper #hl-stats .hl-ring .t { fill: none; stroke: rgba(var(--lk-ink, 255, 255, 255), 0.12); stroke-width: 5; }
-  #inner_wrapper #hl-stats .hl-ring .a { fill: none; stroke: rgb(var(--g)); stroke-width: 5; stroke-linecap: round; transition: stroke-dashoffset calc(0.8s * var(--lk-mo, 1)) ease, stroke 0.3s ease; }
-  #inner_wrapper #hl-stats .hl-gt { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
-  #inner_wrapper #hl-stats .hl-gn { font-size: 11.5px; letter-spacing: 0.03em; color: var(--lk-muted); white-space: nowrap; }
-  #inner_wrapper #hl-stats .hl-gv { font-size: 15px; font-weight: 650; color: var(--lk-text); white-space: nowrap; }
-  #inner_wrapper #hl-stats .hl-gv i { font-style: normal; color: rgb(34, 211, 238); }
-  #inner_wrapper #hl-stats .hl-gv i.u { color: rgb(167, 139, 250); }
-  #inner_wrapper #hl-stats .hl-gs2 { font-size: 11px; color: var(--lk-muted); white-space: nowrap; }
-  #inner_wrapper #hl-stats .hl-gs2[hidden] { display: none; }
-  #inner_wrapper #hl-stats .hl-gs { flex: 0 0 auto; width: 56px; height: 26px; }
-  #inner_wrapper #hl-stats .hl-gt { flex: 0 1 auto; }
-  #inner_wrapper #hl-stats .hl-gs .hl-sl { fill: none; stroke-width: 1.4; vector-effect: non-scaling-stroke; stroke-linejoin: round; opacity: 0.85; }
-}
-/* On a phone the gauges replace the stack of separate tiles: two columns inside one glass panel, so the first screen holds the services. */
-@media (max-width: 700px) {
+#inner_wrapper #hl-stats .hl-g { --g: var(--lk-accent); position: relative; flex: 1 1 0; min-width: 0; display: flex; align-items: center; justify-content: flex-start; gap: 11px; padding: 3px 12px 3px 16px; font-variant-numeric: tabular-nums; }
+#inner_wrapper #hl-stats .hl-g-net { flex-grow: 1.7; }
+#inner_wrapper #hl-stats .hl-g-net .hl-gt { min-width: 10.5em; }
+#inner_wrapper #hl-stats .hl-g-up { flex-grow: 0.7; }
+#inner_wrapper #hl-stats .hl-gt { overflow: hidden; }
+#inner_wrapper #hl-stats .hl-gn, #inner_wrapper #hl-stats .hl-gv, #inner_wrapper #hl-stats .hl-gs2 { overflow: hidden; text-overflow: ellipsis; }
+#inner_wrapper #hl-stats .hl-g + .hl-g::before { content: ""; position: absolute; left: 0; top: 12%; bottom: 12%; width: 1px; background: rgba(var(--lk-ink, 255, 255, 255), 0.1); }
+#inner_wrapper #hl-stats .hl-g-cpu { --g: 74, 222, 128; }
+#inner_wrapper #hl-stats .hl-g-mem { --g: 34, 211, 238; }
+#inner_wrapper #hl-stats .hl-g-temp { --g: 242, 176, 94; }
+#inner_wrapper #hl-stats .hl-g-bak { --g: 167, 139, 250; }
+#inner_wrapper #hl-stats .hl-g.hl-warn { --g: 251, 191, 36; }
+#inner_wrapper #hl-stats .hl-g.hl-bad { --g: 248, 113, 113; }
+#inner_wrapper #hl-stats .hl-ring { flex: 0 0 auto; width: 38px; height: 38px; }
+#inner_wrapper #hl-stats .hl-ring .t { fill: none; stroke: rgba(var(--lk-ink, 255, 255, 255), 0.12); stroke-width: 5; }
+#inner_wrapper #hl-stats .hl-ring .a { fill: none; stroke: rgb(var(--g)); stroke-width: 5; stroke-linecap: round; transition: stroke-dashoffset calc(0.8s * var(--lk-mo, 1)) ease, stroke 0.3s ease; }
+#inner_wrapper #hl-stats .hl-gt { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; }
+#inner_wrapper #hl-stats .hl-gn { font-size: 11.5px; letter-spacing: 0.03em; color: var(--lk-muted); white-space: nowrap; }
+#inner_wrapper #hl-stats .hl-gv { font-size: 15px; font-weight: 650; color: var(--lk-text); white-space: nowrap; }
+#inner_wrapper #hl-stats .hl-gv i { font-style: normal; color: rgb(34, 211, 238); }
+#inner_wrapper #hl-stats .hl-gv i.u { color: rgb(167, 139, 250); }
+#inner_wrapper #hl-stats .hl-gs2 { font-size: 11px; color: var(--lk-muted); white-space: nowrap; }
+#inner_wrapper #hl-stats .hl-gs2[hidden] { display: none; }
+#inner_wrapper #hl-stats .hl-gs { flex: 0 0 auto; width: 56px; height: 26px; }
+#inner_wrapper #hl-stats .hl-gt { flex: 0 1 auto; }
+#inner_wrapper #hl-stats .hl-gs .hl-sl { fill: none; stroke-width: 1.4; vector-effect: non-scaling-stroke; stroke-linejoin: round; opacity: 0.85; }
+/* Below 1181 pixels the gauges replace the stack of separate tiles, inside one glass panel: three columns on a tablet, two on a phone. */
+@media (max-width: 1180px) {
   #inner_wrapper #widgets-wrap.hl-stats-on > .widget-container { display: none !important; }
-  #inner_wrapper #hl-stats { display: grid; grid-column: 1 / -1; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 0; box-sizing: border-box; padding: 8px 4px; border-radius: 16px;
+  #inner_wrapper #hl-stats { display: grid; grid-column: 1 / -1; flex: 0 0 100%; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px 0; box-sizing: border-box; padding: 8px 4px; border-radius: 16px;
     background: rgba(var(--lk-glass), var(--lk-glass-a)); border: 1px solid var(--lk-line);
     box-shadow: var(--lk-rim, 0 0 0 0 transparent), 0 0 var(--lk-glowr, 0px) rgba(var(--accent, var(--lk-accent)), var(--lk-glowa, 0));
     -webkit-backdrop-filter: blur(var(--lk-blur, 14px)) saturate(var(--lk-sat, 125%)); backdrop-filter: blur(var(--lk-blur, 14px)) saturate(var(--lk-sat, 125%)); }
@@ -1390,7 +1388,7 @@ html[data-hl-fit="1440"] #information-widgets { zoom: 0.80; }
   #inner_wrapper #widgets-wrap.hl-stats-on.hl-has-logo > #hl-logo { grid-column: 1 / -1; box-sizing: border-box; margin: 0; padding: 12px 12px 14px; border-radius: 16px 16px 0 0; border: 1px solid var(--lk-line); border-bottom: 0;
     background: rgba(var(--lk-glass), var(--lk-glass-a)); -webkit-backdrop-filter: blur(var(--lk-blur, 14px)) saturate(var(--lk-sat, 125%)); backdrop-filter: blur(var(--lk-blur, 14px)) saturate(var(--lk-sat, 125%)); }
   #inner_wrapper #widgets-wrap.hl-stats-on.hl-has-logo > #hl-logo::after { display: block; content: ""; position: absolute; left: 14px; right: 14px; top: auto; bottom: 0; width: auto; height: 1px; background: rgba(var(--lk-ink, 255, 255, 255), 0.12); }
-  #inner_wrapper #widgets-wrap.hl-stats-on.hl-has-logo > #hl-stats { margin-top: -8px; padding-top: 6px; border-top: 0; border-radius: 0 0 16px 16px; }
+  #inner_wrapper #widgets-wrap.hl-stats-on.hl-has-logo > #hl-stats { margin-top: -10px; padding-top: 6px; border-top: 0; border-radius: 0 0 16px 16px; }
   #inner_wrapper #hl-stats[hidden] { display: none; }
   #inner_wrapper #hl-stats .hl-g { gap: 9px; padding: 5px 8px 5px 12px; }
   #inner_wrapper #hl-stats .hl-g + .hl-g::before { display: none; }
@@ -1416,6 +1414,11 @@ html[data-hl-fit="1440"] #information-widgets { zoom: 0.80; }
   #inner_wrapper #hl-stats .hl-g-net .hl-gt { min-width: 0; flex: 0 0 auto; }
   #inner_wrapper #hl-stats .hl-g-net .hl-gs { flex: 1 1 0; width: auto; min-width: 36px; height: 32px; margin: 0 6px 0 2px; }
   #inner_wrapper #hl-stats { order: -1; }
+}
+/* On a phone the panel has two columns, so the first screen holds the services. */
+@media (max-width: 700px) {
+  #inner_wrapper #hl-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #inner_wrapper #widgets-wrap.hl-stats-on.hl-has-logo > #hl-stats { margin-top: -8px; }
   #inner_wrapper #information-widgets-right > [class*="information-widget-datetime"], #inner_wrapper #information-widgets-right > [class*="information-widget-openmeteo"] { min-height: 48px !important; padding: 6px 10px !important; }
   #inner_wrapper #information-widgets-right > [class*="information-widget-datetime"] *, #inner_wrapper #information-widgets-right > [class*="information-widget-openmeteo"] * { font-size: 13px !important; }
   #inner_wrapper #hl-search-btn { grid-column: 1 / -1; min-height: 46px; }
