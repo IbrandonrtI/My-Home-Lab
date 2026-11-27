@@ -150,6 +150,30 @@ class RenameTests(unittest.TestCase):
         self.do()
         self.assertEqual(self.tree(self.shows), {"Doctor Who (2005)/Season 01/Doctor Who S01E01.mkv", "Doctor Who (2005)/Season 01/Doctor Who S01E02.mkv"})
 
+    def test_a_bare_episode_number_in_a_season_folder_is_read(self):
+        """Anime releases often number episodes only as "Title - 01" or "Title_-_01_(1080p)"; the season comes from the folder."""
+        self.touch(self.shows, "The Eminence in Shadow", "Season 2", "[DB]Kage no Jitsuryokusha ni Naritakute! 2nd Season_-_01_(Dual Audio_10bit_BD1080p_x265).mkv")
+        self.touch(self.shows, "The Eminence in Shadow", "Season 2", "[DB]Kage no Jitsuryokusha ni Naritakute! 2nd Season_-_12_(Dual Audio_10bit_BD1080p_x265).mkv")
+        self.touch(self.shows, "The Misfit of Demon King Academy", "Season 2", "[Yameii] Maou Gakuin no Futekigousha II - 04  The Misfit of Demon King Academy II [English Dub] [CR WEB-DL 1080p] [49C8ECD6].mkv")
+        self.do()
+        self.assertEqual(self.tree(self.shows), {
+            "The Eminence in Shadow/Season 02/The Eminence in Shadow S02E01.mkv", "The Eminence in Shadow/Season 02/The Eminence in Shadow S02E12.mkv",
+            "The Misfit of Demon King Academy/Season 02/The Misfit of Demon King Academy S02E04.mkv"})
+
+    def test_a_resolution_after_a_dash_is_not_taken_for_an_episode_number(self):
+        self.touch(self.shows, "Show W", "Season 1", "Show W - 720p x265 - GRP.mkv")
+        self.touch(self.shows, "Show W", "Season 1", "Show W - 10bit.mkv")
+        (done, _f, _l), groups = self.do()
+        self.assertEqual(done, 0)
+        self.assertEqual(len(groups[1][4]), 2)
+
+    def test_small_words_stay_in_lower_case_when_an_all_capitals_name_is_tidied(self):
+        self.touch(self.shows, "MASHLE - MAGIC AND MUSCLES", "Season 1", "MASHLE - MAGIC AND MUSCLES - S01E01.mp4")
+        self.touch(self.movies, "THE LORD OF THE RINGS.2001.1080p.mkv")
+        self.do()
+        self.assertEqual(self.tree(self.shows), {"Mashle - Magic and Muscles/Season 01/Mashle - Magic and Muscles S01E01.mp4"})
+        self.assertEqual(self.tree(self.movies), {"The Lord of the Rings (2001)/The Lord of the Rings (2001).mkv"})
+
     def test_a_file_without_an_episode_number_is_left_alone(self):
         self.touch(self.shows, "Show X", "random video.mkv")
         (done, _f, _l), groups = self.do()
