@@ -1952,6 +1952,81 @@ def drop_layout_group(tx, group):
         tx.put(SETTINGS, layout_write(text, left))
 
 
+def card_move(tx, lines, group, name, to, tab=None, before=None, keep_empty=False):
+    """Move a card to another group, or to another place in its own group, as part of the change that `tx` is collecting. A group left without cards is removed unless keep_empty is set."""
+    g, c = find_card(lines, group, name)
+    mv = card_public(lines, c, g["name"])
+    if mv["locked"]:
+        raise Fail("This card is part of the panel itself and cannot be moved here.")
+    to = check_group_name(to or g["name"])
+    if to in PROTECTED:
+        raise Fail("The group '%s' is part of the panel itself. Choose another group." % to)
+    if mv["hl"] or g["name"] in AUTOMATIC or to in AUTOMATIC:
+        hl_adopt(lines)
+    block = lines[c["start"]:c["end"]]
+    del lines[c["start"]:c["end"]]
+    tidy_blank(lines, c["start"])
+    card_insert(lines, to, block, before=before)
+    left = next((x for x in services_parse(lines) if x["name"] == g["name"]), None)
+    if left is not None and not left["cards"] and not keep_empty:
+        del lines[left["start"]:left["end"]]
+        drop_layout_group(tx, g["name"])
+    tx.put(SERVICES, "\n".join(lines))
+    ensure_layout_group(tx, to, tab)
+
+
+def api_arrange(body):
+    """Apply an arrangement made on the dashboard itself: the order of the groups on one tab and the cards in each group. It is one change, so Undo takes it back in one step."""
+    tab = clean_text(body.get("tab"), "The tab name", 24)
+    want = body.get("groups")
+    if not isinstance(want, list) or not want or len(want) > 60:
+        raise Fail("The arrangement is missing.")
+    tx = Tx("Dashboard arranged")
+    lines = tx.get(SERVICES).split("\n")
+    have = {g["name"]: [c["name"] for c in g["cards"]] for g in services_parse(lines)}
+    names, asked = [], []
+    for g in want:
+        cards = g.get("cards") if isinstance(g, dict) else None
+        n = g.get("name") if isinstance(g, dict) else None
+        if n not in have or n in names or not isinstance(cards, list):
+            raise Fail("The group '%s' is not known (or is listed twice). Reload the dashboard and try again." % n)
+        if n in PROTECTED:
+            raise Fail("The group '%s' is part of the panel itself and cannot be arranged here." % n)
+        names.append(n)
+        asked.extend(c if isinstance(c, str) else None for c in cards)
+    if len(set(asked)) != len(asked) or sorted(map(str, asked)) != sorted(c for n in names for c in have[n]):
+        raise Fail("The cards changed while you were arranging. Reload the dashboard and try again.")
+    for g in want:
+        cards = g["cards"]
+        for i in range(len(cards) - 1, -1, -1):
+            nxt = cards[i + 1] if i + 1 < len(cards) else None
+            now = {x["name"]: [c["name"] for c in x["cards"]] for x in services_parse(lines)}
+            where = next(x for x in now if cards[i] in now[x])
+            cur = now[g["name"]] if g["name"] in now else []
+            at = cur.index(cards[i]) if where == g["name"] else -1
+            if at >= 0 and (cur[at + 1] == nxt if at + 1 < len(cur) else nxt is None):
+                continue
+            card_move(tx, lines, where, cards[i], g["name"], tab, nxt, keep_empty=True)
+    for x in reversed(services_parse(lines)):
+        if x["name"] in names and not x["cards"]:
+            del lines[x["start"]:x["end"]]
+            drop_layout_group(tx, x["name"])
+    tx.put(SERVICES, "\n".join(lines))
+    text = tx.get(SETTINGS)
+    cur = layout_groups(text)
+    slots = [i for i, g in enumerate(cur) if (g["props"].get("tab") or "Home") == tab]
+    here = [cur[i]["name"] for i in slots]
+    order = [n for n in names if n in here] + [n for n in here if n not in names]
+    if order != here:
+        by = {g["name"]: g for g in cur}
+        out = list(cur)
+        for i, n in zip(slots, order):
+            out[i] = by[n]
+        tx.put(SETTINGS, layout_write(text, out))
+    tx.commit()
+    return {}
+
+
 def api_card(body):
     """Add, edit, remove or move cards in services.yaml."""
     op = body.get("op")
@@ -2024,25 +2099,7 @@ def api_card(body):
         else:
             tx.put(SERVICES, "\n".join(lines))
     elif op == "move":
-        g, c = find_card(lines, body.get("group"), body.get("name"))
-        mv = card_public(lines, c, g["name"])
-        if mv["locked"]:
-            raise Fail("This card is part of the panel itself and cannot be moved here.")
-        to = check_group_name(body.get("to") or g["name"])
-        if to in PROTECTED:
-            raise Fail("The group '%s' is part of the panel itself. Choose another group." % to)
-        if mv["hl"] or g["name"] in AUTOMATIC or to in AUTOMATIC:
-            hl_adopt(lines)
-        block = lines[c["start"]:c["end"]]
-        del lines[c["start"]:c["end"]]
-        tidy_blank(lines, c["start"])
-        card_insert(lines, to, block, before=body.get("before"))
-        left = next((x for x in services_parse(lines) if x["name"] == g["name"]), None)
-        if left is not None and not left["cards"]:
-            del lines[left["start"]:left["end"]]
-            drop_layout_group(tx, g["name"])
-        tx.put(SERVICES, "\n".join(lines))
-        ensure_layout_group(tx, to, body.get("tab"))
+        card_move(tx, lines, body.get("group"), body.get("name"), body.get("to"), body.get("tab"), body.get("before"))
     else:
         raise Fail("Unknown action.")
     tx.commit()
@@ -4443,7 +4500,7 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/location/search":
                 return self.send(200, dict(api_location_search(body), ok=True))
             routes = {"/api/location": api_location_save, "/api/look": api_look_save, "/api/look/css": api_look_css, "/api/look/reset": api_look_reset, "/api/background": api_bg_save,
-                      "/api/layout": api_layout_save, "/api/card": api_card, "/api/hlcards/restore": api_hl_restore, "/api/mytheme": api_mytheme, "/api/schedule": api_schedule, "/api/link": api_link, "/api/group": api_group,
+                      "/api/layout": api_layout_save, "/api/card": api_card, "/api/arrange": api_arrange, "/api/hlcards/restore": api_hl_restore, "/api/mytheme": api_mytheme, "/api/schedule": api_schedule, "/api/link": api_link, "/api/group": api_group,
                       "/api/undo": lambda b: {"undone": undo()}}
             fn = routes.get(path)
             if not fn:

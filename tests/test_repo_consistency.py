@@ -154,6 +154,24 @@ class PageScripts(unittest.TestCase):
         for card in re.findall(r'"([^"]+)"', script):
             self.assertRegex(stacks, r"container_name:\s*%s\s" % card[:-len("-card")], "the card %s should belong to a container of the same name" % card)
 
+    def test_edit_mode_and_the_panel_agree_on_the_frame_the_messages_and_the_route(self):
+        """Edit mode on the dashboard talks to a hidden copy of the panel. The page script, the panel script, the stylesheet and the panel server must use the same names."""
+        js, css, ui, panel = read("homepage-config/custom.js"), read("homepage-config/custom.css"), read("panel/ui/app.js"), read("scripts/homelab-panel")
+        self.assertIn('"hl-edit-bridge"', js)
+        self.assertIn("#hl-edit-bridge", css)
+        self.assertIn('"/?only=edit"', js)
+        self.assertIn('ONLY === "edit"', ui)
+        for word in ("edit-ready", "edit-login", "edit-reply"):
+            self.assertIn('"%s"' % word, js)
+            self.assertIn('"%s"' % word, ui)
+        self.assertIn("hle: 1", js)
+        self.assertIn("d.hle !== 1", ui)
+        for op in ("state", "arrange"):
+            self.assertIn('call("%s"' % op, js)
+            self.assertRegex(ui, r"\b%s: async" % op)
+        self.assertIn('"/api/arrange"', ui)
+        self.assertIn('"/api/arrange": api_arrange', panel)
+
     def test_the_browser_scripts_parse(self):
         for rel in ("homepage-config/custom.js", "panel/ui/app.js"):
             r = subprocess.run(["node", "--check", os.path.join(ROOT, rel)], capture_output=True, text=True)

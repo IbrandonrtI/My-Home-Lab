@@ -30,6 +30,8 @@ The words this repository uses, and what each one means here. Use these words in
 
 ## The Customize panel
 
+**Edit mode.** The Edit button at the bottom of the dashboard page. It lets you drag cards and groups on the page itself and save the result. It uses a hidden copy of the Customize panel to sign in and to save (see `dev/decisions.md`).
+
 **Customize panel (the panel).** The small control panel (`scripts/homelab-panel`). It listens on port 8300 of this machine only. Tailscale Serve gives it an HTTPS address on port 1100. It has its own password. Its screens are Look, Layout, Cards, Drives and Updates.
 
 ## The installer

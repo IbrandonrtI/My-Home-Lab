@@ -250,6 +250,7 @@ function showLogin(passwordSet = true, msg = "") {
       h("p", {}, "No password is set. On the server, open a terminal and run: ", h("b", {}, "homelab panel password")),
     framed ? h("p", { class: "muted small" }, "If the login is not kept, the browser may be blocking it inside the dashboard. ", h("a", { href: location.href, target: "_blank", rel: "noopener" }, "Open the panel in its own tab"), ".") : null));
   if (passwordSet) pw.focus();
+  if (ONLY === "edit") send({ type: "edit-login" });
 }
 
 window.addEventListener("hashchange", () => {

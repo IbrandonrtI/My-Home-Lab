@@ -250,6 +250,7 @@ function showLogin(passwordSet = true, msg = "") {
       h("p", {}, "No password is set. On the server, open a terminal and run: ", h("b", {}, "homelab panel password")),
     framed ? h("p", { class: "muted small" }, "If the login is not kept, the browser may be blocking it inside the dashboard. ", h("a", { href: location.href, target: "_blank", rel: "noopener" }, "Open the panel in its own tab"), ".") : null));
   if (passwordSet) pw.focus();
+  if (ONLY === "edit") send({ type: "edit-login" });
 }
 
 window.addEventListener("hashchange", () => {
@@ -3113,6 +3114,31 @@ function viewItems(kind) {
     listEl);
 }
 
+// Edit mode on the dashboard talks to the panel through a hidden copy of this page (?only=edit). Only the page that framed it can ask, and every call still needs the panel login.
+function dashboardOrigin() {
+  try { if (location.ancestorOrigins && location.ancestorOrigins.length) return location.ancestorOrigins[0]; } catch (e) {  }
+  try { return new URL(document.referrer).origin; } catch (e) { return ""; }
+}
+const EDIT_OPS = {
+  state: async () => {
+    S = await api("GET", "/api/state");
+    return { services: S.services.map(g => ({ group: g.group, locked: !!g.locked, automatic: !!g.automatic, cards: g.cards.map(c => ({ name: c.name, locked: !!c.locked, fixed: !!c.fixed })) })), undo: S.undo || "" };
+  },
+  arrange: async d => {
+    await api("POST", "/api/arrange", { tab: d.tab, groups: d.groups });
+    S = await api("GET", "/api/state");
+    return { undo: S.undo || "" };
+  }
+};
+window.addEventListener("message", async e => {
+  const home = dashboardOrigin(), d = e.data;
+  if (ONLY !== "edit" || !framed || !home || e.source !== window.parent || e.origin !== home) return;
+  if (!d || d.hle !== 1 || typeof d.id !== "number" || !Object.prototype.hasOwnProperty.call(EDIT_OPS, d.op)) return;
+  let out;
+  try { out = Object.assign({ ok: true }, await EDIT_OPS[d.op](d)); }
+  catch (err) { out = { ok: false, login: /log in/i.test(err.message || ""), error: err.message || "Something went wrong." }; }
+  window.parent.postMessage(Object.assign({ hlp: 1, type: "edit-reply", id: d.id }, out), home);
+});
 // The draft of the Links screen. It is the saved list plus the changes made since, and only Save sends it (all at once).
 const NAME_OK = /^[^"'\\{};<>/*:#\[\]|`]+$/;
 function startLinks() {
@@ -3158,6 +3184,7 @@ async function start() {
   try { s = await api("GET", "/api/session"); } catch (e) { root.replaceChildren(h("p", { class: "loading" }, e.message)); return; }
   if (!s.loggedIn) return showLogin(s.passwordSet);
   try { S = await api("GET", "/api/state"); } catch (e) { return; }
+  if (ONLY === "edit") { put(root, h("p", { class: "loading" }, "Ready.")); send({ type: "edit-ready" }); return; }
   render();
 }
 start();

@@ -43,6 +43,7 @@ async function start() {
   try { s = await api("GET", "/api/session"); } catch (e) { root.replaceChildren(h("p", { class: "loading" }, e.message)); return; }
   if (!s.loggedIn) return showLogin(s.passwordSet);
   try { S = await api("GET", "/api/state"); } catch (e) { return; }
+  if (ONLY === "edit") { put(root, h("p", { class: "loading" }, "Ready.")); send({ type: "edit-ready" }); return; }
   render();
 }
 start();

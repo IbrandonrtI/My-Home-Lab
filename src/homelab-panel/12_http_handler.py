@@ -451,7 +451,7 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/location/search":
                 return self.send(200, dict(api_location_search(body), ok=True))
             routes = {"/api/location": api_location_save, "/api/look": api_look_save, "/api/look/css": api_look_css, "/api/look/reset": api_look_reset, "/api/background": api_bg_save,
-                      "/api/layout": api_layout_save, "/api/card": api_card, "/api/hlcards/restore": api_hl_restore, "/api/mytheme": api_mytheme, "/api/schedule": api_schedule, "/api/link": api_link, "/api/group": api_group,
+                      "/api/layout": api_layout_save, "/api/card": api_card, "/api/arrange": api_arrange, "/api/hlcards/restore": api_hl_restore, "/api/mytheme": api_mytheme, "/api/schedule": api_schedule, "/api/link": api_link, "/api/group": api_group,
                       "/api/undo": lambda b: {"undone": undo()}}
             fn = routes.get(path)
             if not fn:
