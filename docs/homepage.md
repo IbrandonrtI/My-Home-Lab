@@ -147,7 +147,7 @@ On a tablet or a narrow browser window (up to about 1180 pixels wide) the gauges
 
 ## Edit mode
 
-Each tab that shows groups of cards (Home and Stats) has an **Edit** button at the bottom of the page. It lets you rearrange the page itself instead of using the Customize panel.
+Each tab that shows groups of cards (Home and Stats) has an **Edit** button at the end of the page, under the last group. It lets you rearrange the page itself instead of using the Customize panel.
 
 1. Press **Edit**. A small window asks for the Customize panel password the first time, and again whenever that login has run out.
 2. Drag a card to move it inside its group or into another group. Drag a group by the handle at its top right corner to change the order of the groups. With the keyboard, focus a handle and press an arrow key.
@@ -156,6 +156,8 @@ Each tab that shows groups of cards (Home and Stats) has an **Edit** button at t
 What to know:
 
 - Nothing is written until you press Save. A save is one change, so **Undo** in the Customize panel takes it back in one step.
+- While you edit, the Save and Cancel bar stays at the bottom of the window as you scroll. Dragging a card close to the top or bottom edge of the window scrolls the page.
+- The Jellyfin library that can be open inside its card does not react to the mouse while you edit, so a card can be dropped anywhere, including over it.
 - The tab buttons are locked while you edit. Save or cancel first.
 - The group that holds Navidrome and the Calendar group stay where they are on the page, so they have no handle. Cards that belong to the panel itself cannot be moved.
 - A group that has no cards left when you press Save is removed, as on the Cards screen. Moving a card that HomeLab fills in (on the Stats tab) marks its block as customized, the same as on the Cards screen, so `sudo homelab-setup upgrade` stops rewriting it.

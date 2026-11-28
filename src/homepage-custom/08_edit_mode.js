@@ -157,6 +157,7 @@
   }
   function draw() {
     if (!bar) return;
+    place();
     bar.hidden = !visible();
     parts.edit.hidden = mode;
     parts.msg.hidden = !mode && !busy && !parts.msg.textContent;
@@ -170,6 +171,10 @@
   function refresh() {
     dirty = mode && JSON.stringify(read()) !== start;
     draw();
+  }
+  function place() {
+    var host = document.getElementById("inner_wrapper") || document.body;
+    if (bar.parentNode !== host) host.appendChild(bar);
   }
   function buildBar() {
     bar = el("div", "hl-editbar");
@@ -188,15 +193,7 @@
     parts.save.addEventListener("click", save);
     parts.cancel.addEventListener("click", cancel);
     [parts.edit, parts.msg, parts.save, parts.cancel].forEach(function (n) { bar.appendChild(n); });
-    document.body.appendChild(bar);
-    var inner = document.getElementById("inner_wrapper");
-    if (inner) {
-      var cs = window.getComputedStyle(inner);
-      ["--lk-accent", "--lk-glass", "--lk-glass-a", "--lk-text", "--lk-muted", "--lk-ink", "--lk-hi", "--lk-radius", "--lk-font"].forEach(function (k) {
-        var v = cs.getPropertyValue(k);
-        if (v && v.trim()) bar.style.setProperty(k, v.trim());
-      });
-    }
+    place();
   }
 
   function begin() {
@@ -319,7 +316,8 @@
     }
     drag.ghost.style.transform = "translate(" + (e.clientX + 14) + "px," + (e.clientY + 14) + "px)";
     if (drag.kind === "group") placeGroup(drag, e.clientX, e.clientY); else placeCard(drag, e.clientX, e.clientY);
-    if (e.clientY < 60) window.scrollBy(0, -16); else if (e.clientY > window.innerHeight - 60) window.scrollBy(0, 16);
+    var step = e.clientY < 60 ? -16 : e.clientY > window.innerHeight - 60 ? 16 : 0, page = document.getElementById("inner_wrapper");
+    if (step) { if (page && page.scrollHeight > page.clientHeight) page.scrollTop += step; else window.scrollBy(0, step); }
   }
   function onUp(e) {
     if (!drag || e.pointerId !== drag.id) return;

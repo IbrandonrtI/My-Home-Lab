@@ -91,10 +91,10 @@ def page_html():
         lis = "".join('<li id="%s-card" class="service" data-name="%s"><div class="service-card"><a class="service-title-text" href="http://x.test/%s">%s</a></div></li>' % (i, n, i, n) for i, n in cards)
         out.append('<div class="services-group"><button><h2 class="service-group-name">%s</h2></button><div><ul class="services-list">%s</ul></div></div>' % (name.replace("&", "&amp;"), lis))
     return ('<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="custom.css"><style>'
-            'body{margin:0}#inner_wrapper{min-height:100vh}#layout-groups{display:flex;flex-wrap:wrap;align-items:flex-start;margin:16px}.services-group{flex:1 1 30%;min-width:260px;padding:4px}'
+            'html,body{height:100%;margin:0}#inner_wrapper{height:100%;overflow:auto;-webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px)}#layout-groups{display:flex;flex-wrap:wrap;align-items:flex-start;margin:16px}.services-group{flex:1 1 30%;min-width:260px;padding:4px}'
             'ul{list-style:none;padding:0;margin:0}li.service{margin:0 0 8px}.service-card{height:54px;padding:8px}</style></head><body><div id="inner_wrapper">'
             '<div id="tabs"><ul id="myTab"><li><button id="Home-tab" aria-selected="true">Home</button></li><li><button id="Customize-tab" aria-selected="false">Customize</button></li></ul></div>'
-            '<div id="layout-groups">' + "".join(out) + '</div></div><script src="custom.js"></script></body></html>')
+            '<div id="layout-groups">' + "".join(out) + '</div><div style="height:1500px"></div></div><script src="custom.js"></script></body></html>')
 
 
 @unittest.skipUnless(sync_playwright, "Python Playwright is not installed")
@@ -196,6 +196,7 @@ class EditMode(unittest.TestCase):
         frame.locator("input[type=password]").fill(PASSWORD)
         frame.locator("input[type=password]").press("Enter")
         page.wait_for_selector("html.hl-editing", timeout=15000)
+        page.evaluate("document.getElementById('inner_wrapper').scrollTop = 0")
 
     def file_cards(self):
         with open(self.services, encoding="utf-8") as f:
@@ -232,6 +233,58 @@ class EditMode(unittest.TestCase):
         self.assertEqual(page.locator("#hl-editbar button:visible").all_inner_texts(), ["Edit"])
         page.set_viewport_size({"width": 600, "height": 900})
         self.assertFalse(page.locator("#hl-editbar").is_visible())
+
+    def where(self, page):
+        return page.evaluate("""() => { const b = document.getElementById('hl-editbar').getBoundingClientRect(), w = document.getElementById('inner_wrapper');
+            return { top: b.top, bottom: b.bottom, height: window.innerHeight, scroll: w.scrollTop, end: w.scrollHeight - w.clientHeight, host: document.getElementById('hl-editbar').parentNode.id }; }""")
+
+    def test_the_edit_button_sits_at_the_end_of_the_page(self):
+        page = self.open()
+        at = self.where(page)
+        self.assertEqual(at["host"], "inner_wrapper")
+        self.assertGreater(at["top"], at["height"], "at the top of a long page the button is below the screen, not floating over the cards")
+        page.evaluate("document.getElementById('inner_wrapper').scrollTop = 1e6")
+        at = self.where(page)
+        self.assertEqual(at["scroll"], at["end"])
+        self.assertTrue(0 < at["top"] and at["bottom"] <= at["height"], "scrolled to the end the button is on screen")
+        self.assertGreater(page.evaluate("document.getElementById('hl-editbar').getBoundingClientRect().top - document.getElementById('layout-groups').getBoundingClientRect().bottom"), 0, "and below the last group")
+
+    def test_dragging_near_the_bottom_edge_scrolls_the_page(self):
+        page = self.open()
+        self.edit(page)
+        x, y = self.centre(page, "#tailscale-card")
+        page.mouse.move(x, y)
+        page.mouse.down()
+        page.mouse.move(x + 8, y + 8, steps=3)
+        page.mouse.move(x, 880, steps=6)
+        for _ in range(12):
+            page.mouse.move(x, 884)
+        page.mouse.up()
+        self.assertGreater(self.where(page)["scroll"], 100)
+
+    def test_jellyfin_and_navidrome_can_swap_places_while_their_frames_are_on_the_page(self):
+        page = self.open(1400)
+        page.evaluate("""() => { for (const id of ['navidrome-card', 'jellyfin-card']) { const c = document.getElementById(id).querySelector('.service-card'), d = document.createElement('div');
+            d.innerHTML = '<iframe src="/index.html#x" style="height:200px;width:100%"></iframe>'; c.appendChild(d); } }""")
+        self.edit(page)
+        self.assertGreater(page.locator("#hl-jf-frame iframe").count(), 0, "the Jellyfin library is open over its card, as it is on the real page")
+        self.drag(page, "#navidrome-card", "#jellyfin-card")
+        self.assertEqual(page.locator(".services-group:has(#navidrome-card) li.service").evaluate_all("els => els.map(e => e.getAttribute('data-name'))"), ["Jellyfin", "Navidrome"])
+        self.btn(page, "Save").click()
+        for _ in range(60):
+            if self.file_cards()["Media & Entertainment"] == ["Jellyfin", "Navidrome"]:
+                break
+            time.sleep(0.2)
+        self.assertEqual(self.file_cards()["Media & Entertainment"], ["Jellyfin", "Navidrome"])
+        self.assertEqual(self.errors, [])
+
+    def test_while_editing_the_bar_stays_at_the_bottom_of_the_window_wherever_the_page_is_scrolled(self):
+        page = self.open()
+        self.edit(page)
+        for top in (0, 300, 1e6):
+            page.evaluate("t => { document.getElementById('inner_wrapper').scrollTop = t; }", top)
+            at = self.where(page)
+            self.assertTrue(at["height"] - 80 < at["bottom"] <= at["height"], "scrolled to %s: %s" % (top, at))
 
     def test_the_edit_button_appears_when_homepage_draws_the_groups_after_the_script_ran(self):
         page = self.open()
