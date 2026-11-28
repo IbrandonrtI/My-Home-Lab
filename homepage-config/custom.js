@@ -2398,8 +2398,7 @@
     draw();
   }
   function place() {
-    var host = document.getElementById("inner_wrapper") || document.body;
-    if (bar.parentNode !== host) host.appendChild(bar);
+    if (bar.parentNode !== document.body) document.body.appendChild(bar);
   }
   function buildBar() {
     bar = el("div", "hl-editbar");
@@ -2419,6 +2418,14 @@
     parts.cancel.addEventListener("click", cancel);
     [parts.edit, parts.msg, parts.save, parts.cancel].forEach(function (n) { bar.appendChild(n); });
     place();
+    var inner = document.getElementById("inner_wrapper");
+    if (inner) {
+      var cs = window.getComputedStyle(inner);
+      ["--lk-accent", "--lk-glass", "--lk-glass-a", "--lk-text", "--lk-muted", "--lk-ink", "--lk-hi", "--lk-radius", "--lk-font"].forEach(function (k) {
+        var v = cs.getPropertyValue(k);
+        if (v && v.trim()) bar.style.setProperty(k, v.trim());
+      });
+    }
   }
 
   function begin() {

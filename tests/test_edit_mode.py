@@ -236,18 +236,26 @@ class EditMode(unittest.TestCase):
 
     def where(self, page):
         return page.evaluate("""() => { const b = document.getElementById('hl-editbar').getBoundingClientRect(), w = document.getElementById('inner_wrapper');
-            return { top: b.top, bottom: b.bottom, height: window.innerHeight, scroll: w.scrollTop, end: w.scrollHeight - w.clientHeight, host: document.getElementById('hl-editbar').parentNode.id }; }""")
+            return { top: b.top, right: b.right, bottom: b.bottom, width: window.innerWidth, height: window.innerHeight, scroll: w.scrollTop, host: document.getElementById('hl-editbar').parentNode.tagName }; }""")
 
-    def test_the_edit_button_sits_at_the_end_of_the_page(self):
+    def assert_bottom_right(self, page, note):
+        at = self.where(page)
+        self.assertEqual(at["host"], "BODY", note)
+        self.assertTrue(at["height"] - 40 < at["bottom"] <= at["height"], "%s: %s" % (note, at))
+        self.assertTrue(at["width"] - 40 < at["right"] <= at["width"], "%s: %s" % (note, at))
+
+    def test_the_edit_button_stays_in_the_bottom_right_corner_while_the_page_scrolls(self):
         page = self.open()
-        at = self.where(page)
-        self.assertEqual(at["host"], "inner_wrapper")
-        self.assertGreater(at["top"], at["height"], "at the top of a long page the button is below the screen, not floating over the cards")
-        page.evaluate("document.getElementById('inner_wrapper').scrollTop = 1e6")
-        at = self.where(page)
-        self.assertEqual(at["scroll"], at["end"])
-        self.assertTrue(0 < at["top"] and at["bottom"] <= at["height"], "scrolled to the end the button is on screen")
-        self.assertGreater(page.evaluate("document.getElementById('hl-editbar').getBoundingClientRect().top - document.getElementById('layout-groups').getBoundingClientRect().bottom"), 0, "and below the last group")
+        for top in (0, 400, 1e6):
+            page.evaluate("t => { document.getElementById('inner_wrapper').scrollTop = t; }", top)
+            self.assert_bottom_right(page, "button, scrolled to %s" % top)
+
+    def test_while_editing_the_bar_stays_in_the_bottom_right_corner_wherever_the_page_is_scrolled(self):
+        page = self.open()
+        self.edit(page)
+        for top in (0, 300, 1e6):
+            page.evaluate("t => { document.getElementById('inner_wrapper').scrollTop = t; }", top)
+            self.assert_bottom_right(page, "bar, scrolled to %s" % top)
 
     def test_dragging_near_the_bottom_edge_scrolls_the_page(self):
         page = self.open()
@@ -277,14 +285,6 @@ class EditMode(unittest.TestCase):
             time.sleep(0.2)
         self.assertEqual(self.file_cards()["Media & Entertainment"], ["Jellyfin", "Navidrome"])
         self.assertEqual(self.errors, [])
-
-    def test_while_editing_the_bar_stays_at_the_bottom_of_the_window_wherever_the_page_is_scrolled(self):
-        page = self.open()
-        self.edit(page)
-        for top in (0, 300, 1e6):
-            page.evaluate("t => { document.getElementById('inner_wrapper').scrollTop = t; }", top)
-            at = self.where(page)
-            self.assertTrue(at["height"] - 80 < at["bottom"] <= at["height"], "scrolled to %s: %s" % (top, at))
 
     def test_the_edit_button_appears_when_homepage_draws_the_groups_after_the_script_ran(self):
         page = self.open()

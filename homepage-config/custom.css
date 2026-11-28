@@ -1605,10 +1605,10 @@ html.hl-player-min #inner_wrapper #navidrome-card .service-title::after { conten
   #hl-downloaders { padding: 9px 12px; }
 }
 
-/* Edit mode: a bar at the end of the page that stays in view while you edit, a handle on every card and group that can move, and a small login window for the control panel. It is hidden on a phone. */
+/* Edit mode: a bar in the bottom right corner of the window, a handle on every card and group that can move, and a small login window for the control panel. It is hidden on a phone. */
 #hl-editbar {
-  position: relative; z-index: 1500; width: fit-content; margin: 30px auto 26px;
-  display: flex; align-items: center; gap: 10px; box-sizing: border-box; max-width: calc(100% - 24px); padding: 8px 10px 8px 14px;
+  position: fixed; z-index: 1500; right: max(18px, env(safe-area-inset-right, 0px)); bottom: max(18px, env(safe-area-inset-bottom, 0px));
+  display: flex; align-items: center; gap: 10px; box-sizing: border-box; max-width: min(620px, calc(100vw - 36px)); padding: 8px 10px 8px 14px;
   border-radius: 999px; border: 1px solid rgba(var(--lk-accent, 138, 180, 255), 0.4);
   background: color-mix(in srgb, rgba(var(--lk-glass, 13, 18, 30), 0.92) 100%, transparent);
   color: var(--lk-text, #eef2f9); font: 500 14px/1.3 var(--lk-font, system-ui, sans-serif);
@@ -1616,7 +1616,7 @@ html.hl-player-min #inner_wrapper #navidrome-card .service-title::after { conten
   -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
 }
 #hl-editbar[hidden] { display: none; }
-#hl-editbar .hl-edit-msg { max-width: min(560px, 52vw); color: var(--lk-muted, #a9b4c7); font-weight: 400; font-size: 13px; }
+#hl-editbar .hl-edit-msg { flex: 1 1 auto; min-width: 0; max-width: 380px; color: var(--lk-muted, #a9b4c7); font-weight: 400; font-size: 13px; }
 #hl-editbar .hl-edit-msg.bad { color: #fca5a5; }
 #hl-editbar .hl-eb {
   font: inherit; cursor: pointer; padding: 7px 16px; border-radius: 999px; color: var(--lk-text, #eef2f9);
@@ -1629,7 +1629,7 @@ html.hl-player-min #inner_wrapper #navidrome-card .service-title::after { conten
 #hl-editbar .hl-eb:focus-visible { outline: 2px solid rgba(var(--lk-accent, 138, 180, 255), 0.9); outline-offset: 2px; }
 @media (max-width: 700px) { #hl-editbar { display: none !important; } }
 
-html.hl-editing #hl-editbar { position: sticky; bottom: max(14px, env(safe-area-inset-bottom, 0px)); margin-bottom: 14px; }
+html.hl-editing #inner_wrapper { padding-bottom: 90px; }
 html.hl-editing #myTab button { pointer-events: none; opacity: 0.55; }
 html.hl-editing iframe:not(#hl-edit-bridge) { pointer-events: none; }
 html.hl-editing li.service, html.hl-editing li.service a, html.hl-editing li.service img { -webkit-user-select: none; user-select: none; -webkit-user-drag: none; }
