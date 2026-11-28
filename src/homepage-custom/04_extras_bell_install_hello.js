@@ -341,45 +341,11 @@
     });
   }
 
-  /* A small pill at the end of the tab bar that says whether every service answers ("13/13"). It counts the status dots of the cards on the page. A tab with no dots
-     (Stats, Links, Customize) keeps showing the count from the last time the Home tab was open, and the details say how long ago that was. Pressing the pill lists what
-     is not answering, and each name scrolls to its card (it goes back to the Home tab first when needed). Just after the page opens, a red dot is shown as "checking",
-     because services that are still starting look the same. */
-  var SKEY = "hl-status-last", STALE_MAX = 12 * 3600000, statusLast = null;
-  function statusSave(up, down) {
-    var names = down.map(function (x) { return { id: x.id, name: x.name }; });
-    if (statusLast && statusLast.up === up && JSON.stringify(statusLast.down) === JSON.stringify(names) && Date.now() - statusLast.at < 30000) return;
-    statusLast = { up: up, at: Date.now(), down: names };
-    try { window.sessionStorage.setItem(SKEY, JSON.stringify(statusLast)); } catch (e) { /* private window: the count is kept in memory only */ }
-  }
-  function statusHeld() {
-    var m = statusLast;
-    if (!m) { try { m = JSON.parse(window.sessionStorage.getItem(SKEY) || "null"); } catch (e) { m = null; } }
-    var ok = m && typeof m.up === "number" && typeof m.at === "number" && Array.isArray(m.down) && Date.now() - m.at < STALE_MAX &&
-      m.down.every(function (x) { return x && typeof x.name === "string" && typeof x.id === "string"; });
-    return ok ? m : null;
-  }
-  function statusAgo(ms) { var m = Math.floor(ms / 60000); return m < 1 ? "just now" : m < 60 ? m + " min ago" : Math.floor(m / 60) + " h ago"; }
-  function statusReveal(id) {
-    function show(e) {
-      e.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "center" });
-      e.classList.add("hl-flash");
-      window.setTimeout(function () { e.classList.remove("hl-flash"); }, 1800);
-    }
-    var here = id && document.getElementById(id);
-    if (here && here.offsetParent) { show(here); return; }
-    var home = document.getElementById("home-tab") || document.querySelector("#myTab button");
-    if (home) home.click();
-    var tries = 0, t = window.setInterval(function () {
-      var e = id && document.getElementById(id);
-      if (e && e.offsetParent) { window.clearInterval(t); show(e); } else if (++tries > 25) window.clearInterval(t);
-    }, 150);
-  }
-  /* The notification, install and status popups hang from their button. When the button is not at the edge of the screen (the bell sits in the middle of the bar on a phone)
+  /* The notification and install popups hang from their button. When the button is not at the edge of the screen (the bell sits in the middle of the bar on a phone)
      a popup that is wider than the room beside it would run off the screen, so it is slid back inside with a small margin. */
   function fitPops() {
     var vw = document.documentElement.clientWidth, gap = 8;
-    all("#hl-bell.hl-open, #hl-install.hl-open, #hl-status.hl-open").forEach(function (b) {
+    all("#hl-bell.hl-open, #hl-install.hl-open").forEach(function (b) {
       var pop = b.querySelector(".hl-bellpop");
       if (!pop || pop.offsetWidth === 0) return;
       var was = Number(pop.getAttribute("data-dx")) || 0, r = pop.getBoundingClientRect(), left = r.left - was, right = r.right - was, dx = 0;
@@ -390,80 +356,6 @@
     });
   }
   document.addEventListener("click", function () { window.setTimeout(fitPops, 0); window.setTimeout(fitPops, 150); });
-  function status() {
-    var tabs = document.getElementById("tabs"), box = document.getElementById("hl-status"), up = 0, down = [];
-    all(".service").forEach(function (li) {
-      var seen = "";
-      all('[class*="-status"] > div', li).forEach(function (d) {
-        if (d.offsetWidth > 20) return;
-        var c = typeof d.className === "string" ? d.className : "";
-        if (/rose|red/.test(c)) seen = "down"; else if (seen !== "down" && /emerald|green|lime/.test(c)) seen = "up";
-      });
-      if (seen === "up") up++;
-      else if (seen === "down") { var a = li.querySelector(".service-title-text, .service-title a, .service-name"); down.push({ id: li.id, name: ((a && a.textContent) || li.id.replace(/-card$/, "")).trim() }); }
-    });
-    var total = up + down.length, held = null;
-    if (total === 0) {
-      held = statusHeld();
-      if (held) { up = held.up; down = held.down.slice(); total = up + down.length; }
-    }
-    if (!tabs || total === 0) { if (box && !box.hidden) box.hidden = true; return; }
-    var waiting = !held && down.length && Date.now() - T0 < GRACE;
-    if (!held && !waiting) statusSave(up, down);
-    var state = !down.length ? "ok" : (waiting ? "wait" : "bad");
-    var ago = held ? statusAgo(Date.now() - held.at) : "";
-    var key = state + "|" + up + "|" + down.map(function (x) { return x.name; }).join(",") + "|" + ago;
-    if (!box) {
-      box = el("div", "hl-stwrap");
-      box.id = "hl-status";
-      var btn = el("button");
-      btn.type = "button";
-      btn.setAttribute("aria-haspopup", "true");
-      btn.setAttribute("aria-expanded", "false");
-      btn.appendChild(el("span", "hl-st-dot"));
-      btn.appendChild(el("span", "hl-st-n"));
-      btn.onclick = function () {
-        var open = !box.classList.contains("hl-open");
-        box.classList.toggle("hl-open", open);
-        btn.setAttribute("aria-expanded", String(open));
-      };
-      box.appendChild(btn);
-      var pop = el("div", "hl-bellpop");
-      pop.setAttribute("role", "region");
-      pop.setAttribute("aria-label", "Service status");
-      box.appendChild(pop);
-      document.addEventListener("click", function (e) { var b = document.getElementById("hl-status"); if (b && !b.contains(e.target)) { b.classList.remove("hl-open"); b.querySelector("button").setAttribute("aria-expanded", "false"); } });
-      document.addEventListener("keydown", function (e) { if (e.key === "Escape") { var b = document.getElementById("hl-status"); if (b) b.classList.remove("hl-open"); } });
-    }
-    if (box.getAttribute("data-key") !== key) {
-      box.setAttribute("data-key", key);
-      ["ok", "wait", "bad"].forEach(function (k) { box.classList.toggle("hl-st-" + k, k === state); });
-      var head = state === "ok" ? "All services are healthy" : state === "wait" ? "Checking the services…" : down.length + (down.length === 1 ? " service is" : " services are") + " not answering";
-      var sub = state === "ok" ? up + " of " + total + " answering" : state === "wait" ? "Some services are still starting." : "";
-      if (held) sub += (sub ? ". " : "") + "Last checked " + ago + ", on the Home tab.";
-      box.querySelector(".hl-st-n").textContent = state === "ok" ? up + "/" + total : state === "wait" ? "…" : down.length + " down";
-      box.querySelector("button").setAttribute("aria-label", head + (sub ? ". " + sub : ""));
-      box.querySelector("button").title = head;
-      var pop2 = box.querySelector(".hl-bellpop"), top = el("div", "hl-sthead");
-      pop2.textContent = "";
-      top.appendChild(el("b", "", head));
-      if (sub) top.appendChild(el("small", "", sub));
-      pop2.appendChild(top);
-      if (state === "bad") {
-        var list = el("div", "hl-stlist");
-        down.forEach(function (x) {
-          var b = el("button", "hl-st-chip", x.name);
-          b.type = "button";
-          b.addEventListener("click", function () { box.classList.remove("hl-open"); statusReveal(x.id); });
-          list.appendChild(b);
-        });
-        pop2.appendChild(list);
-      }
-    }
-    if (tabs.lastElementChild !== box) tabs.appendChild(box);
-    if (box.hidden) box.hidden = false;
-  }
-
   /* Greeting above the tabs. */
   function hello() {
     var tabs = document.getElementById("tabs"), wrap = document.getElementById("widgets-wrap"), box = document.getElementById("hl-hello"), raw = quoted("--hl-hello");

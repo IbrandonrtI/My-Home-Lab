@@ -1,4 +1,4 @@
-"""The small status pill in the tab bar ("13/13", and which services are not answering when you press it) and the music player that starts as a slim bar. Needs Python
+"""The music player that starts as a slim bar. Needs Python
 Playwright and a Chromium browser, and is skipped without them."""
 import os
 import shutil
@@ -59,112 +59,6 @@ class HomeStripAndPlayerBar(unittest.TestCase):
         page_.goto("file://" + os.path.join(self.dir, name))
         page_.wait_for_timeout(600)
         return page_
-
-    def later(self, page_):
-        """Pretend the page has been open for a minute, so a red dot is no longer 'still starting'."""
-        page_.evaluate("(n => { Date.now = () => n() + 60000; })(Date.now)")
-
-    def poke(self, page_):
-        """Homepage changes a dot's class without adding anything, which the page notices on its 3 second tick. A new element makes it look at once."""
-        page_.evaluate("document.body.appendChild(document.createElement('i'))")
-        page_.wait_for_timeout(300)
-
-    def strip(self, page_):
-        return page_.evaluate("(() => { const e = document.getElementById('hl-status'); return !e || e.hidden ? '' : e.textContent; })()")
-
-    def pill(self, page_):
-        return page_.eval_on_selector("#hl-status > button", "e => e.textContent.trim()")
-
-    def test_all_services_up(self):
-        page_ = self.open(page([card("a", "Alpha", "up"), card("b", "Beta", "up")]))
-        self.assertIn("All services are healthy", self.strip(page_))
-        self.assertIn("2 of 2 answering", self.strip(page_))
-        self.assertEqual(self.pill(page_), "2/2")
-        self.assertEqual(page_.evaluate("document.getElementById('hl-status').parentNode.id"), "tabs", "it sits in the tab bar, not above the cards")
-        box = page_.eval_on_selector("#hl-status", "e => { const r = e.getBoundingClientRect(); return [r.width, r.height]; }")
-        self.assertLess(box[0], 120)
-        self.assertLess(box[1], 60)
-        self.assertFalse(page_.is_visible("#hl-status .hl-bellpop"), "the details stay closed until it is pressed")
-        page_.click("#hl-status > button")
-        self.assertTrue(page_.is_visible("#hl-status .hl-bellpop"))
-        page_.keyboard.press("Escape")
-        self.assertFalse(page_.is_visible("#hl-status .hl-bellpop"))
-
-    def test_a_down_service_is_named_and_the_chip_points_to_its_card(self):
-        page_ = self.open(page([card("a", "Alpha", "up"), card("b", "Beta", "down")]))
-        self.assertIn("Checking the services", self.strip(page_), "just after the page opens a red dot is not yet an alarm")
-        self.assertEqual(self.pill(page_), "…")
-        self.later(page_)
-        self.poke(page_)
-        text = self.strip(page_)
-        self.assertIn("1 service is not answering", text)
-        self.assertIn("Beta", text)
-        self.assertNotIn("Alpha", text)
-        self.assertEqual(self.pill(page_), "1 down")
-        page_.click("#hl-status > button")
-        page_.click("#hl-status .hl-st-chip")
-        self.assertTrue(page_.evaluate("document.getElementById('b-card').classList.contains('hl-flash')"))
-
-    def test_the_pill_follows_the_dots_and_hides_without_any(self):
-        page_ = self.open(page([card("a", "Alpha", "up"), card("b", "Beta", "up")]))
-        self.later(page_)
-        page_.evaluate("document.querySelector('#a-card .site-monitor-status div').className = 'bg-rose-500'")
-        page_.evaluate("document.querySelector('#b-card .site-monitor-status div').className = 'bg-rose-500'")
-        self.poke(page_)
-        self.assertIn("2 services are not answering", self.strip(page_))
-        self.assertEqual(self.pill(page_), "2 down")
-        page_.evaluate("document.querySelectorAll('.site-monitor-status').forEach(e => e.remove())")
-        page_.wait_for_timeout(300)
-        self.assertEqual(self.pill(page_), "2 down", "a tab without status dots keeps the last count")
-        self.assertIn("Last checked", self.strip(page_))
-        self.assertIn("on the Home tab", self.strip(page_))
-
-    def test_a_page_that_never_had_dots_has_no_pill(self):
-        page_ = self.open(page([]))
-        self.assertEqual(self.strip(page_), "")
-
-    def test_the_count_carries_over_to_a_tab_without_dots(self):
-        page_ = self.open(page([card("a", "Alpha", "up"), card("b", "Beta", "up")]))
-        self.assertEqual(self.pill(page_), "2/2")
-        with open(os.path.join(self.dir, "links.html"), "w", encoding="utf-8") as f:
-            f.write(page([]))
-        page_.goto("file://" + os.path.join(self.dir, "links.html"))
-        page_.wait_for_timeout(600)
-        self.assertEqual(self.pill(page_), "2/2")
-        self.assertIn("All services are healthy", self.strip(page_))
-        self.assertIn("Last checked just now, on the Home tab.", self.strip(page_))
-        self.assertEqual(page_.evaluate("document.getElementById('hl-status').parentNode.id"), "tabs")
-
-    def test_a_name_on_a_tab_without_dots_takes_you_back_to_its_card(self):
-        page_ = self.open(page([card("a", "Alpha", "up"), card("b", "Beta", "down")]))
-        self.later(page_)
-        self.poke(page_)
-        self.assertEqual(self.pill(page_), "1 down")
-        other = page([]).replace('<button id="home-tab" aria-selected="true">Home</button>', '<button id="home-tab">Home</button>').replace(
-            "</body>", "<script>document.getElementById('home-tab').addEventListener('click', function () { document.querySelector('.services-list').innerHTML = '%s'; });</script></body>" % card("b", "Beta", "down").replace("'", "\\'"))
-        with open(os.path.join(self.dir, "links2.html"), "w", encoding="utf-8") as f:
-            f.write(other)
-        page_.goto("file://" + os.path.join(self.dir, "links2.html"))
-        page_.wait_for_timeout(600)
-        self.assertEqual(self.pill(page_), "1 down")
-        page_.click("#hl-status > button")
-        page_.click("#hl-status .hl-st-chip")
-        page_.wait_for_timeout(500)
-        self.assertTrue(page_.evaluate("document.getElementById('b-card') !== null && document.getElementById('b-card').classList.contains('hl-flash')"))
-
-    def test_a_popup_that_hangs_from_a_button_in_the_middle_of_a_phone_stays_on_screen(self):
-        html = page([card("a", "Alpha", "up"), card("b", "Beta", "up")]).replace("</head>", "<style>#tabs{padding-right:190px !important}</style></head>")
-        page_ = self.open(html, "narrow.html", width=390)
-        page_.click("#hl-status > button")
-        page_.wait_for_timeout(400)
-        r = page_.eval_on_selector("#hl-status .hl-bellpop", "e => { const b = e.getBoundingClientRect(); return [b.left, b.right, document.documentElement.clientWidth]; }")
-        self.assertGreaterEqual(r[0], 0, "the popup runs off the left edge")
-        self.assertLessEqual(r[1], r[2], "the popup runs off the right edge")
-        page_.click("#hl-status > button")
-        page_.click("#hl-status > button")
-        page_.wait_for_timeout(400)
-        r = page_.eval_on_selector("#hl-status .hl-bellpop", "e => { const b = e.getBoundingClientRect(); return [b.left, b.right]; }")
-        self.assertGreaterEqual(r[0], 0, "still on screen when opened again")
 
     def test_the_player_starts_as_a_slim_bar_and_remembers_the_choice(self):
         page_ = self.open(page([card("a", "Alpha", "up")], player=True), "player.html")

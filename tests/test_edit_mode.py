@@ -184,11 +184,11 @@ class EditMode(unittest.TestCase):
         page = ctx.new_page()
         page.on("pageerror", lambda e: self.errors.append(str(e)))
         page.goto("http://127.0.0.1:%d/index.html" % self.web_port)
-        page.wait_for_selector("#hl-editbar", state="attached")
+        page.wait_for_selector("#hl-editbtn", state="attached")
         return page
 
     def btn(self, page, name):
-        return page.locator("#hl-editbar").get_by_role("button", name=name, exact=True)
+        return page.locator("#hl-editbtn, #hl-editbar").get_by_role("button", name=name, exact=True)
 
     def edit(self, page):
         self.btn(page, "Edit").click()
@@ -229,8 +229,9 @@ class EditMode(unittest.TestCase):
 
     def test_the_edit_button_is_there_on_a_desktop_and_gone_on_a_phone(self):
         page = self.open(1200)
-        self.assertTrue(page.locator("#hl-editbar").is_visible())
-        self.assertEqual(page.locator("#hl-editbar button:visible").all_inner_texts(), ["Edit"])
+        self.assertTrue(page.locator("#hl-editbtn").is_visible())
+        self.assertEqual(page.locator("#hl-editbtn button").all_inner_texts(), ["Edit"])
+        self.assertFalse(page.locator("#hl-editbar").is_visible(), "the Save and Cancel bar only shows while editing")
         page.set_viewport_size({"width": 600, "height": 900})
         self.assertFalse(page.locator("#hl-editbar").is_visible())
 
@@ -244,11 +245,14 @@ class EditMode(unittest.TestCase):
         self.assertTrue(at["height"] - 40 < at["bottom"] <= at["height"], "%s: %s" % (note, at))
         self.assertTrue(at["width"] - 40 < at["right"] <= at["width"], "%s: %s" % (note, at))
 
-    def test_the_edit_button_stays_in_the_bottom_right_corner_while_the_page_scrolls(self):
+    def test_the_edit_button_sits_in_the_tab_bar_and_the_status_pill_is_gone(self):
         page = self.open()
-        for top in (0, 400, 1e6):
-            page.evaluate("t => { document.getElementById('inner_wrapper').scrollTop = t; }", top)
-            self.assert_bottom_right(page, "button, scrolled to %s" % top)
+        self.assertEqual(page.evaluate("document.getElementById('hl-editbtn').parentNode.id"), "tabs")
+        self.assertEqual(page.evaluate("document.getElementById('hl-status')"), None)
+        box = page.locator("#hl-editbtn").bounding_box()
+        tab = page.locator("#myTab").bounding_box()
+        self.assertGreater(box["x"], tab["x"] + tab["width"] - 1, "it is at the end of the bar, after the tabs")
+        self.assertLess(box["y"], 200, "and at the top of the page")
 
     def test_while_editing_the_bar_stays_in_the_bottom_right_corner_wherever_the_page_is_scrolled(self):
         page = self.open()
@@ -289,8 +293,8 @@ class EditMode(unittest.TestCase):
     def test_the_edit_button_appears_when_homepage_draws_the_groups_after_the_script_ran(self):
         page = self.open()
         html = page.evaluate("(() => { const b = document.getElementById('layout-groups'); const h = b.innerHTML; b.innerHTML = ''; return h; })()")
-        page.wait_for_function("document.getElementById('hl-editbar').hidden === false ? false : true")
-        self.assertFalse(page.locator("#hl-editbar").is_visible())
+        page.wait_for_function("document.getElementById('hl-editbtn').hidden === false ? false : true")
+        self.assertFalse(page.locator("#hl-editbtn").is_visible())
         page.evaluate("h => { document.getElementById('layout-groups').innerHTML = h; }", html)
         self.btn(page, "Edit").wait_for(state="visible", timeout=5000)
 
@@ -298,6 +302,8 @@ class EditMode(unittest.TestCase):
         page = self.open()
         self.edit(page)
         self.assertEqual(page.locator("#hl-editbar button:visible").all_inner_texts(), ["Save", "Cancel"])
+        self.assertEqual(page.locator("#hl-editbtn button").all_inner_texts(), ["Editing"])
+        self.assertTrue(page.locator("#hl-editbtn button").is_disabled())
         self.assertTrue(self.btn(page, "Save").is_disabled())
         self.assertEqual(page.locator("li.service .hl-cgrip").count(), 6)
         self.assertEqual(page.locator(".services-group > .hl-ggrip").count(), 2, "the group with Navidrome stays at the top and has no handle")

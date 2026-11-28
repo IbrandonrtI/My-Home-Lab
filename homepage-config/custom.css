@@ -933,7 +933,7 @@ html[data-hl-fit="1440"] #information-widgets { zoom: 0.80; }
   #inner_wrapper li[id^="stat-"] .service-block-value { overflow-wrap: anywhere; }
 }
 #inner_wrapper #tabs { gap: 8px; }
-#hl-bell, #hl-install, #hl-status {
+#hl-bell, #hl-install, #hl-editbtn {
   position: relative;
   flex: 0 0 auto;
   display: flex;
@@ -945,7 +945,7 @@ html[data-hl-fit="1440"] #information-widgets { zoom: 0.80; }
   -webkit-backdrop-filter: blur(var(--lk-blur, 14px)) saturate(var(--lk-sat, 125%));
   backdrop-filter: blur(var(--lk-blur, 14px)) saturate(var(--lk-sat, 125%));
 }
-#hl-bell > button, #hl-install > button, #hl-status > button {
+#hl-bell > button, #hl-install > button, #hl-editbtn > button {
   position: relative;
   display: flex;
   align-items: center;
@@ -960,9 +960,9 @@ html[data-hl-fit="1440"] #information-widgets { zoom: 0.80; }
   cursor: pointer;
   transition: background-color 0.2s ease, color 0.2s ease, border-color 0.2s ease;
 }
-#hl-bell > button:hover, #hl-install > button:hover, #hl-status > button:hover { color: var(--lk-hi, #fff); background: rgba(var(--lk-ink, 255, 255, 255), 0.05); }
-#hl-bell.hl-open > button, #hl-install.hl-open > button, #hl-status.hl-open > button { background: rgba(var(--lk-accent), 0.16); border-color: rgba(var(--lk-accent), 0.35); color: var(--lk-hi, #fff); }
-#hl-bell > button:focus-visible, #hl-install > button:focus-visible, #hl-status > button:focus-visible { outline: 2px solid rgba(var(--lk-accent), 0.8); outline-offset: 2px; }
+#hl-bell > button:hover, #hl-install > button:hover, #hl-editbtn > button:hover { color: var(--lk-hi, #fff); background: rgba(var(--lk-ink, 255, 255, 255), 0.05); }
+#hl-bell.hl-open > button, #hl-install.hl-open > button, #hl-editbtn.hl-open > button { background: rgba(var(--lk-accent), 0.16); border-color: rgba(var(--lk-accent), 0.35); color: var(--lk-hi, #fff); }
+#hl-bell > button:focus-visible, #hl-install > button:focus-visible, #hl-editbtn > button:focus-visible { outline: 2px solid rgba(var(--lk-accent), 0.8); outline-offset: 2px; }
 #hl-bell .hl-bell-n {
   position: absolute;
   top: 2px;
@@ -981,7 +981,7 @@ html[data-hl-fit="1440"] #information-widgets { zoom: 0.80; }
 }
 #hl-bell .hl-bell-n.hl-lv-bad { background: #ff7b7b; }
 #hl-bell .hl-bell-n.hl-lv-warn { background: #ffbf5e; }
-#hl-bell .hl-bellpop, #hl-install .hl-bellpop, #hl-status .hl-bellpop {
+#hl-bell .hl-bellpop, #hl-install .hl-bellpop {
   display: none;
   position: absolute;
   top: calc(100% + 8px);
@@ -1004,7 +1004,7 @@ html[data-hl-fit="1440"] #information-widgets { zoom: 0.80; }
   text-shadow: none;
   color: var(--hl-pop-text);
 }
-#hl-bell.hl-open .hl-bellpop, #hl-install.hl-open .hl-bellpop, #hl-status.hl-open .hl-bellpop { display: block; }
+#hl-bell.hl-open .hl-bellpop, #hl-install.hl-open .hl-bellpop { display: block; }
 @media (min-width: 701px) {
   #inner_wrapper #tabs { position: relative; z-index: 30; }
   #information-widgets .information-widget-search:focus-within,
@@ -1091,8 +1091,8 @@ html[data-hl-fit="1440"] #information-widgets { zoom: 0.80; }
 #hl-install .hl-st-failed .hl-stepmark { color: #ff7b7b; }
 @media (max-width: 700px) {
   #inner_wrapper #myTab { flex: 1 1 auto; min-width: 0; }
-  #hl-bell, #hl-install, #hl-status { pointer-events: auto; box-shadow: 0 -8px 28px -10px rgba(var(--lk-shadow, 0, 0, 0), 0.7); }
-  #hl-bell .hl-bellpop, #hl-install .hl-bellpop, #hl-status .hl-bellpop { top: auto; bottom: calc(100% + 10px); }
+  #hl-bell, #hl-install { pointer-events: auto; box-shadow: 0 -8px 28px -10px rgba(var(--lk-shadow, 0, 0, 0), 0.7); }
+  #hl-bell .hl-bellpop, #hl-install .hl-bellpop { top: auto; bottom: calc(100% + 10px); }
 }
 @media (max-width: 520px) {
   #inner_wrapper #myTab li > button, #inner_wrapper #myTab li > a { min-width: 0; max-width: 100%; padding-left: 8px !important; padding-right: 8px !important; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.86rem; }
@@ -1268,15 +1268,15 @@ html[data-hl-fit="1440"] #information-widgets { zoom: 0.80; }
   }
   #inner_wrapper #myTab li { flex: 1 1 auto !important; }
   #inner_wrapper #myTab { background: none !important; border: 0 !important; box-shadow: none !important; -webkit-backdrop-filter: none !important; backdrop-filter: none !important; padding: 0 !important; }
-  #inner_wrapper #hl-bell, #inner_wrapper #hl-install, #inner_wrapper #hl-status, #inner_wrapper #hl-dock, #inner_wrapper #hl-find {
+  #inner_wrapper #hl-bell, #inner_wrapper #hl-install, #inner_wrapper #hl-editbtn, #inner_wrapper #hl-dock, #inner_wrapper #hl-find {
     position: relative; margin-left: 8px; padding: 0 0 0 9px;
     background: none; border: 0; border-radius: 0; box-shadow: none;
     -webkit-backdrop-filter: none; backdrop-filter: none;
   }
-  #inner_wrapper #hl-bell::before, #inner_wrapper #hl-install::before, #inner_wrapper #hl-status::before, #inner_wrapper #hl-dock::before, #inner_wrapper #hl-find::before {
+  #inner_wrapper #hl-bell::before, #inner_wrapper #hl-install::before, #inner_wrapper #hl-editbtn::before, #inner_wrapper #hl-dock::before, #inner_wrapper #hl-find::before {
     content: ""; position: absolute; left: 0; top: 12%; bottom: 12%; width: 1px; background: rgba(var(--lk-ink, 255, 255, 255), 0.14);
   }
-  #inner_wrapper #hl-bell > button, #inner_wrapper #hl-install > button, #inner_wrapper #hl-status > button { min-height: 34px; }
+  #inner_wrapper #hl-bell > button, #inner_wrapper #hl-install > button, #inner_wrapper #hl-editbtn > button { min-height: 34px; }
 }
 #hl-find { flex: 0 0 auto; display: flex; gap: 4px; padding: 4px; border-radius: 14px; background: rgba(var(--lk-glass), var(--lk-glass-a)); border: 1px solid var(--lk-line); }
 #hl-find[hidden] { display: none; }
@@ -1422,18 +1422,16 @@ html[data-hl-fit="1440"] #information-widgets { zoom: 0.80; }
   #inner_wrapper #information-widgets-right > [class*="information-widget-datetime"], #inner_wrapper #information-widgets-right > [class*="information-widget-openmeteo"] { min-height: 48px !important; padding: 6px 10px !important; }
   #inner_wrapper #information-widgets-right > [class*="information-widget-datetime"] *, #inner_wrapper #information-widgets-right > [class*="information-widget-openmeteo"] * { font-size: 13px !important; }
   #inner_wrapper #hl-search-btn { grid-column: 1 / -1; min-height: 46px; }
-  /* Tabs, bell and status share one row: smaller buttons so the tab names fit whole. */
+  /* Tabs and bell share one row: smaller buttons so the tab names fit whole. */
   #inner_wrapper #tabs { gap: 6px; }
-  #hl-bell, #hl-install, #hl-status { padding: 3px; }
-  #hl-bell > button, #hl-install > button, #hl-status > button { min-width: 38px; padding: 0 7px; }
+  #hl-bell, #hl-install { padding: 3px; }
+  #hl-bell > button, #hl-install > button { min-width: 38px; padding: 0 7px; }
   #inner_wrapper #myTab li > button, #inner_wrapper #myTab li > a { font-size: clamp(0.68rem, 3.1vw, 0.82rem) !important; letter-spacing: 0.01em !important; padding-left: 5px !important; padding-right: 5px !important; overflow: visible !important; text-overflow: clip !important; }
   #inner_wrapper #information-widgets { align-self: stretch; }
   #inner_wrapper #information-widgets > #widgets-wrap { flex: 1 1 100%; min-width: 0; }
   #inner_wrapper #myTab li { flex: 1 1 auto !important; width: auto !important; min-width: 0; }
 }
 @media (max-width: 340px) {
-  #hl-status .hl-st-n { display: none; }
-  #hl-status > button { min-width: 30px; padding: 0 6px; }
   #inner_wrapper #myTab li > button { padding-left: 3px !important; padding-right: 3px !important; }
 }
 @media (min-width: 701px) {
@@ -1542,23 +1540,6 @@ html.hl-jf-side #hl-jf-slot { display: block; flex: 1 1 auto; min-height: 340px;
 :is(#hl-docker, #hl-history) .hl-hx-wait { margin: 10px 0 6px; padding: 22px 8px; text-align: center; color: var(--lk-muted); font-size: 0.88rem; border-radius: 12px; border: 1px dashed var(--lk-line); }
 @media (max-width: 700px) { :is(#hl-docker, #hl-history) .hl-dk-plot { height: 100px; } }
 
-/* The service status pill at the end of the tab bar (it borrows the bell's look above), and the slim player bar. */
-#hl-status[hidden] { display: none; }
-#hl-status > button { gap: 7px; min-width: 0; padding: 0 11px; font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--lk-text); }
-#hl-status .hl-bellpop { width: min(300px, calc(100vw - 2 * var(--lk-side, 16px))); }
-#hl-status .hl-sthead { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px 6px; font-size: 14px; }
-#hl-status .hl-sthead small { font-size: 12px; color: var(--hl-pop-muted); }
-#hl-status .hl-stlist { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 10px 10px; }
-#hl-status .hl-st-dot { flex: none; width: 9px; height: 9px; border-radius: 50%; background: #34d399; box-shadow: 0 0 0 3px rgba(52, 211, 153, 0.22); }
-#hl-status.hl-st-wait .hl-st-dot { background: #fbbf24; box-shadow: 0 0 0 3px rgba(251, 191, 36, 0.22); animation: hl-st-pulse 1.6s ease-in-out infinite; }
-#hl-status.hl-st-bad > button { color: #f26b6b; }
-#hl-status.hl-st-bad .hl-st-dot { background: #f87171; box-shadow: 0 0 0 3px rgba(248, 113, 113, 0.25); }
-#hl-status .hl-st-chip { padding: 2px 10px; border-radius: 999px; border: 1px solid rgba(248, 113, 113, 0.5); background: rgba(248, 113, 113, 0.14); color: inherit; font: inherit; font-size: 0.85rem; cursor: pointer; }
-#hl-status .hl-st-chip:hover, #hl-status .hl-st-chip:focus-visible { background: rgba(248, 113, 113, 0.28); outline: none; }
-.service.hl-flash { animation: hl-st-flash 0.6s ease-in-out 3; }
-@keyframes hl-st-pulse { 50% { opacity: 0.35; } }
-@keyframes hl-st-flash { 50% { outline: 2px solid rgba(248, 113, 113, 0.9); outline-offset: 2px; } }
-@media (prefers-reduced-motion: reduce) { #hl-status.hl-st-wait .hl-st-dot, .service.hl-flash { animation: none; } }
 html.hl-player-min #inner_wrapper #navidrome-card .service-title { cursor: pointer; }
 html.hl-player-min #inner_wrapper #navidrome-card .service-title::after { content: "Open the player"; margin-left: 12px; font-size: 0.8rem; font-weight: 500; color: var(--lk-muted); }
 /* Continue watching: half-watched Jellyfin titles as a row of posters. It is a card (watching-card) you can move on the Cards screen; the script fills it and hides it when there is nothing to show. */
@@ -1605,7 +1586,7 @@ html.hl-player-min #inner_wrapper #navidrome-card .service-title::after { conten
   #hl-downloaders { padding: 9px 12px; }
 }
 
-/* Edit mode: a bar in the bottom right corner of the window, a handle on every card and group that can move, and a small login window for the control panel. It is hidden on a phone. */
+/* Edit mode: an Edit button at the end of the tab bar, a bar in the bottom right corner of the window while you edit, a handle on every card and group that can move, and a small login window for the control panel. It is hidden on a phone. */
 #hl-editbar {
   position: fixed; z-index: 1500; right: max(18px, env(safe-area-inset-right, 0px)); bottom: max(18px, env(safe-area-inset-bottom, 0px));
   display: flex; align-items: center; gap: 10px; box-sizing: border-box; max-width: min(620px, calc(100vw - 36px)); padding: 8px 10px 8px 14px;
@@ -1615,7 +1596,11 @@ html.hl-player-min #inner_wrapper #navidrome-card .service-title::after { conten
   box-shadow: 0 14px 40px -14px rgba(0, 0, 0, 0.8);
   -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
 }
-#hl-editbar[hidden] { display: none; }
+#hl-editbar[hidden], #hl-editbtn[hidden] { display: none; }
+#hl-editbtn { order: 99; }
+#hl-editbtn > button { min-width: 0; padding: 0 14px; font-size: 13px; font-weight: 650; white-space: nowrap; color: var(--lk-text); }
+#hl-editbtn > button:disabled { cursor: default; }
+@media (max-width: 700px) { #hl-editbtn { display: none !important; } }
 #hl-editbar .hl-edit-msg { flex: 1 1 auto; min-width: 0; max-width: 380px; color: var(--lk-muted, #a9b4c7); font-weight: 400; font-size: 13px; }
 #hl-editbar .hl-edit-msg.bad { color: #fca5a5; }
 #hl-editbar .hl-eb {

@@ -629,7 +629,7 @@
 
   function run() {
     queued = false;
-    dots(); waiting(); status(); hello(); dock(); find(); jellyfin(); stats(); dockerCharts(); historyCharts(); fillRows(); counting(); watching(); downloaders(); fitPops();
+    dots(); waiting(); hello(); dock(); find(); jellyfin(); stats(); dockerCharts(); historyCharts(); fillRows(); counting(); watching(); downloaders(); fitPops();
     if (!TR.busy && Date.now() - TR.at > 30000) trendsLoad();
   }
   function soon() { if (!queued) { queued = true; window.requestAnimationFrame(run); } }

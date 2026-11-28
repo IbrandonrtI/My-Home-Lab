@@ -5,7 +5,7 @@
   var HINT = "Drag a card or a group to move it, or focus its handle and use the arrow keys. Nothing changes until you press Save.";
   var frame = null, origin = "", ready = false, waiters = [], pending = {}, seq = 0, connectTimer = 0;
   var mode = false, busy = false, leaving = false, info = null, locked = {}, start = "", dirty = false;
-  var bar = null, parts = {}, back = null, watch = null, queued = false, drag = null, discard = 0;
+  var sayTimer = 0, bar = null, wrap = null, parts = {}, back = null, watch = null, queued = false, drag = null, discard = 0;
 
   function el(tag, cls, text) {
     var n = document.createElement(tag);
@@ -151,6 +151,8 @@
     if (!parts.msg) return;
     parts.msg.textContent = text;
     parts.msg.classList.toggle("bad", !!bad);
+    window.clearTimeout(sayTimer);
+    if (!mode && text) sayTimer = window.setTimeout(function () { if (!mode && !busy) { parts.msg.textContent = ""; draw(); } }, 8000);
   }
   function visible() {
     return mode || (!window.matchMedia(NARROW).matches && groups().some(function (g) { return !!gname(g); }));
@@ -158,12 +160,15 @@
   function draw() {
     if (!bar) return;
     place();
-    bar.hidden = !visible();
-    parts.edit.hidden = mode;
-    parts.msg.hidden = !mode && !busy && !parts.msg.textContent;
+    var shown = visible(), tabs = !!document.getElementById("tabs");
+    wrap.hidden = !shown || !tabs;
+    wrap.classList.toggle("hl-open", mode);
+    parts.edit.textContent = mode ? "Editing" : "Edit";
+    parts.edit.setAttribute("aria-pressed", String(mode));
+    bar.hidden = !mode && !busy && !parts.msg.textContent;
     parts.save.hidden = !mode;
     parts.cancel.hidden = !mode;
-    parts.edit.disabled = busy;
+    parts.edit.disabled = busy || mode;
     parts.save.disabled = !dirty || busy;
     parts.cancel.disabled = busy;
     parts.cancel.textContent = discard ? "Discard changes?" : "Cancel";
@@ -173,25 +178,30 @@
     draw();
   }
   function place() {
+    var tabs = document.getElementById("tabs");
+    if (tabs && wrap.parentNode !== tabs) tabs.appendChild(wrap);
     if (bar.parentNode !== document.body) document.body.appendChild(bar);
   }
   function buildBar() {
+    wrap = el("div", "hl-editbtn");
+    wrap.id = "hl-editbtn";
+    parts.edit = el("button", "", "Edit");
+    parts.edit.type = "button";
+    parts.edit.title = "Move the cards and groups on this page";
+    parts.edit.addEventListener("click", begin);
+    wrap.appendChild(parts.edit);
     bar = el("div", "hl-editbar");
     bar.id = "hl-editbar";
     bar.setAttribute("role", "region");
     bar.setAttribute("aria-label", "Edit this page");
-    parts.edit = el("button", "hl-eb hl-eb-main", "Edit");
-    parts.edit.type = "button";
-    parts.edit.title = "Move the cards and groups on this page";
     parts.msg = el("span", "hl-edit-msg");
     parts.msg.setAttribute("aria-live", "polite");
     parts.save = el("button", "hl-eb hl-eb-main", "Save");
     parts.cancel = el("button", "hl-eb", "Cancel");
     parts.save.type = parts.cancel.type = "button";
-    parts.edit.addEventListener("click", begin);
     parts.save.addEventListener("click", save);
     parts.cancel.addEventListener("click", cancel);
-    [parts.edit, parts.msg, parts.save, parts.cancel].forEach(function (n) { bar.appendChild(n); });
+    [parts.msg, parts.save, parts.cancel].forEach(function (n) { bar.appendChild(n); });
     place();
     var inner = document.getElementById("inner_wrapper");
     if (inner) {
