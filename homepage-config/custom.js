@@ -2120,7 +2120,7 @@
   if (window.parent !== window) return;
   var FRAME_ID = "hl-edit-bridge", NARROW = "(max-width: 700px)";
   var HINT = "Drag a card or a group to move it, or focus its handle and use the arrow keys. Nothing changes until you press Save.";
-  var frame = null, origin = "", ready = false, waiters = [], pending = {}, seq = 0, connectTimer = 0;
+  var frame = null, origin = "", ready = false, needLogin = false, waiters = [], pending = {}, seq = 0, connectTimer = 0;
   var mode = false, busy = false, leaving = false, info = null, locked = {}, start = "", dirty = false;
   var sayTimer = 0, bar = null, wrap = null, parts = {}, back = null, watch = null, queued = false, drag = null, discard = 0;
 
@@ -2215,17 +2215,26 @@
     }
     if (back) back.hidden = !on;
   }
+  function armTimer() {
+    clearTimeout(connectTimer);
+    connectTimer = setTimeout(function () {
+      if (!ready && !document.documentElement.classList.contains("hl-edit-login")) flush(new Error("The control panel did not answer. Check that it is running."));
+    }, 25000);
+  }
   function connect() {
     if (ready) return Promise.resolve();
     return new Promise(function (resolve, reject) {
       waiters.push({ ok: resolve, no: reject });
-      if (waiters.length > 1 || frame) return;
+      // The sign-in frame is kept after a cancel. The panel only announces its login once, so it is shown again from here.
+      if (frame) {
+        if (needLogin) loginBox(true);
+        armTimer();
+        return;
+      }
+      if (waiters.length > 1) return;
       findOrigin().then(function (o) {
         if (!openBridge(o)) { flush(new Error("The address of the control panel was not found.")); return; }
-        clearTimeout(connectTimer);
-        connectTimer = setTimeout(function () {
-          if (!ready && !document.documentElement.classList.contains("hl-edit-login")) flush(new Error("The control panel did not answer. Check that it is running."));
-        }, 25000);
+        armTimer();
       });
     });
   }
@@ -2254,8 +2263,8 @@
     if (!frame || e.source !== frame.contentWindow || e.origin !== origin) return;
     var d = e.data;
     if (!d || d.hlp !== 1) return;
-    if (d.type === "edit-ready") { ready = true; loginBox(false); flush(); }
-    else if (d.type === "edit-login") { ready = false; loginBox(true); }
+    if (d.type === "edit-ready") { ready = true; needLogin = false; loginBox(false); flush(); }
+    else if (d.type === "edit-login") { ready = false; needLogin = true; loginBox(true); }
     else if (d.type === "edit-reply" && pending[d.id]) {
       var p = pending[d.id];
       delete pending[d.id];
@@ -2394,8 +2403,9 @@
     window.requestAnimationFrame(function () { queued = false; decorate(); if (bar) draw(); });
   }
 
-  function isBefore(r, x, y, grid) {
-    if (!grid) return y < r.top + r.height / 2;
+  // `tie` is for a pointer exactly on the middle of a card: the card being dragged takes the place of the card it is dropped on.
+  function isBefore(r, x, y, grid, tie) {
+    if (!grid) return y < r.top + r.height / 2 || (tie && y === r.top + r.height / 2);
     return y < r.top || (y <= r.bottom && x < r.left + r.width / 2);
   }
   function placeCard(d, x, y) {
@@ -2408,7 +2418,7 @@
     var ul = listOf(g), all = cardsOf(g), others = all.filter(function (c) { return c !== d.el; });
     var cs = window.getComputedStyle(ul), grid = cs.display === "grid" && cs.gridTemplateColumns.split(" ").length > 1, ref = null;
     for (var j = 0; j < others.length; j++) {
-      if (isBefore(others[j].getBoundingClientRect(), x, y, grid)) { ref = others[j]; break; }
+      if (isBefore(others[j].getBoundingClientRect(), x, y, grid, !!(others[j].compareDocumentPosition(d.el) & Node.DOCUMENT_POSITION_FOLLOWING))) { ref = others[j]; break; }
     }
     var at = all.indexOf(d.el);
     if (at >= 0 && (all[at + 1] || null) === ref) return;
@@ -2435,7 +2445,7 @@
       if (c && c.getAttribute("data-hl-move") === "1" && (e.pointerType !== "touch" || e.target.closest(".hl-cgrip"))) { item = c; kind = "card"; }
     }
     if (!item) return;
-    drag = { el: item, kind: kind, id: e.pointerId, x: e.clientX, y: e.clientY, on: false, ghost: null };
+    drag = { el: item, kind: kind, id: e.pointerId, x: e.clientX, y: e.clientY, cx: e.clientX, cy: e.clientY, on: false, ghost: null, raf: 0 };
     e.preventDefault();
   }
   function onMove(e) {
@@ -2449,9 +2459,24 @@
       document.documentElement.classList.add("hl-dragmode");
     }
     drag.ghost.style.transform = "translate(" + (e.clientX + 14) + "px," + (e.clientY + 14) + "px)";
-    if (drag.kind === "group") placeGroup(drag, e.clientX, e.clientY); else placeCard(drag, e.clientX, e.clientY);
-    var step = e.clientY < 60 ? -16 : e.clientY > window.innerHeight - 60 ? 16 : 0, page = document.getElementById("inner_wrapper");
-    if (step) { if (page && page.scrollHeight > page.clientHeight) page.scrollTop += step; else window.scrollBy(0, step); }
+    drag.cx = e.clientX;
+    drag.cy = e.clientY;
+    put(drag);
+    if (!drag.raf) drag.raf = window.requestAnimationFrame(edgeScroll);
+  }
+  function put(d) {
+    if (d.kind === "group") placeGroup(d, d.cx, d.cy); else placeCard(d, d.cx, d.cy);
+  }
+  // Holding the pointer near the top or bottom edge keeps scrolling, even when the mouse is not moving.
+  function edgeScroll() {
+    if (!drag || !drag.on) return;
+    drag.raf = 0;
+    var step = drag.cy < 60 ? -12 : drag.cy > window.innerHeight - 60 ? 12 : 0, page = document.getElementById("inner_wrapper");
+    if (step) {
+      if (page && page.scrollHeight > page.clientHeight) page.scrollTop += step; else window.scrollBy(0, step);
+      put(drag);
+    }
+    drag.raf = window.requestAnimationFrame(edgeScroll);
   }
   function onUp(e) {
     if (!drag || e.pointerId !== drag.id) return;

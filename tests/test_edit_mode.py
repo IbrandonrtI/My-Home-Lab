@@ -245,6 +245,24 @@ class EditMode(unittest.TestCase):
         self.assertTrue(at["height"] - 40 < at["bottom"] <= at["height"], "%s: %s" % (note, at))
         self.assertTrue(at["width"] - 40 < at["right"] <= at["width"], "%s: %s" % (note, at))
 
+    def test_the_tab_bar_with_the_edit_button_never_makes_the_page_wider_than_the_window(self):
+        for width in (701, 768, 800, 860):
+            page = self.open(width)
+            # The real bar also holds two more tabs, the search and the app icons. Their width is added here so the bar is as wide as on the dashboard.
+            page.evaluate("""() => {
+                const ul = document.getElementById('myTab');
+                for (const n of ['Stats', 'Links']) { const li = document.createElement('li'); li.innerHTML = '<button id="' + n + '-tab" aria-selected="false">' + n + '</button>'; ul.insertBefore(li, ul.lastElementChild); }
+                const f = document.createElement('div'); f.style.cssText = 'flex:0 0 auto;width:150px;height:36px';
+                document.getElementById('tabs').insertBefore(f, document.getElementById('hl-editbtn'));
+            }""")
+            for editing in (False, True):
+                if editing:
+                    self.edit(page)
+                got = page.evaluate("() => { const w = document.getElementById('inner_wrapper'), e = document.querySelector('#hl-editbtn > button').getBoundingClientRect(); return [w.scrollWidth - w.clientWidth, e.left, e.right, window.innerWidth]; }")
+                self.assertEqual(got[0], 0, "sideways scroll at %d px, editing=%s" % (width, editing))
+                self.assertGreaterEqual(got[1], 0)
+                self.assertLessEqual(got[2], got[3])
+
     def test_the_edit_button_sits_in_the_tab_bar_and_the_status_pill_is_gone(self):
         page = self.open()
         self.assertEqual(page.evaluate("document.getElementById('hl-editbtn').parentNode.id"), "tabs")
@@ -273,6 +291,23 @@ class EditMode(unittest.TestCase):
             page.mouse.move(x, 884)
         page.mouse.up()
         self.assertGreater(self.where(page)["scroll"], 100)
+
+    def test_the_page_keeps_scrolling_while_the_pointer_is_held_still_at_the_edge_and_stops_on_release(self):
+        page = self.open()
+        self.edit(page)
+        x, y = self.centre(page, "#tailscale-card")
+        page.mouse.move(x, y)
+        page.mouse.down()
+        page.mouse.move(x + 8, y + 8, steps=3)
+        page.mouse.move(x, 884, steps=6)
+        first = self.where(page)["scroll"]
+        page.wait_for_timeout(1000)
+        later = self.where(page)["scroll"]
+        self.assertGreater(later, first + 100, "no mouse movement, the page still scrolls")
+        page.mouse.up()
+        stopped = self.where(page)["scroll"]
+        page.wait_for_timeout(300)
+        self.assertEqual(self.where(page)["scroll"], stopped)
 
     def test_jellyfin_and_navidrome_can_swap_places_while_their_frames_are_on_the_page(self):
         page = self.open(1400)
@@ -309,6 +344,22 @@ class EditMode(unittest.TestCase):
         self.assertEqual(page.locator(".services-group > .hl-ggrip").count(), 2, "the group with Navidrome stays at the top and has no handle")
         self.assertEqual(self.errors, [])
 
+    def test_the_login_box_comes_back_when_edit_is_pressed_again_after_cancelling_it(self):
+        page = self.open()
+        self.btn(page, "Edit").click()
+        page.wait_for_selector("html.hl-edit-login", timeout=15000)
+        page.locator(".hl-edit-cancel").click()
+        page.wait_for_function("!document.documentElement.classList.contains('hl-edit-login')")
+        self.btn(page, "Edit").wait_for(state="visible")
+        self.assertTrue(self.btn(page, "Edit").is_enabled())
+        self.btn(page, "Edit").click()
+        page.wait_for_selector("html.hl-edit-login", timeout=5000)
+        frame = page.frame_locator("#hl-edit-bridge")
+        frame.locator("input[type=password]").fill(PASSWORD)
+        frame.locator("input[type=password]").press("Enter")
+        page.wait_for_selector("html.hl-editing", timeout=15000)
+        self.assertEqual(self.errors, [])
+
     def test_a_card_dragged_into_another_group_is_saved_there(self):
         page = self.open()
         self.edit(page)
@@ -326,6 +377,15 @@ class EditMode(unittest.TestCase):
         self.assertEqual(self.file_cards()["Files & Photos"], ["Immich", "Tailscale", "Nextcloud"])
         self.btn(page, "Edit").wait_for(state="visible", timeout=10000)
         self.assertEqual(self.errors, [])
+
+    def test_a_card_dropped_on_the_exact_middle_of_another_takes_its_place(self):
+        page = self.open()
+        self.edit(page)
+        self.drag(page, "#adguard-card", "#tailscale-card")
+        names = lambda: page.locator(".services-group:has(#tailscale-card) li.service").evaluate_all("els => els.map(e => e.getAttribute('data-name'))")
+        self.assertEqual(names(), ["AdGuard Home", "Tailscale"])
+        self.drag(page, "#adguard-card", "#tailscale-card")
+        self.assertEqual(names(), ["Tailscale", "AdGuard Home"])
 
     def test_a_group_dragged_past_another_changes_the_order_on_its_tab(self):
         page = self.open()

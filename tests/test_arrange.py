@@ -148,5 +148,114 @@ class Arrange(unittest.TestCase):
             self.assertIn('"/api/arrange": api_arrange', f.read())
 
 
+TWO_TABS_SERVICES = """- Library Totals:
+
+    - Jellyfin:
+        id: stat-jellyfin
+        href: http://192.168.1.5:7
+
+- Music Library:
+
+    - Downtify:
+        id: stat-music
+        href: http://192.168.1.5:9
+
+- Files & Photos:
+
+    - Immich:
+        id: immich-card
+        href: http://192.168.1.5:4
+    - Nextcloud:
+        id: nextcloud-card
+        href: http://192.168.1.5:5
+
+- Media & Entertainment:
+
+    - Navidrome:
+        id: navidrome-card
+        href: http://192.168.1.5:6
+    - Jellyfin:
+        id: jellyfin-card
+        href: http://192.168.1.5:7
+    - Downtify:
+        id: downtify-card
+        href: http://192.168.1.5:9
+
+- Photo Library:
+
+    - Immich:
+        id: stat-immich
+        href: http://192.168.1.5:4
+    - Nextcloud:
+        id: stat-nextcloud
+        href: http://192.168.1.5:5
+"""
+
+TWO_TABS_SETTINGS = """title: Home Lab
+layout:
+  Library Totals:
+    tab: Stats
+  Music Library:
+    tab: Stats
+  Files & Photos:
+    tab: Home
+  Media & Entertainment:
+    tab: Home
+  Photo Library:
+    tab: Stats
+"""
+
+
+class ArrangeWithSameNamesOnTwoTabs(unittest.TestCase):
+    """Jellyfin, Downtify, Immich and Nextcloud each have a card on Home and another one on Stats. Saving one tab must never touch the other."""
+
+    def setUp(self):
+        self.p = helpers.panel()
+        os.makedirs(os.path.dirname(self.p.SERVICES), exist_ok=True)
+        for path, text in ((self.p.SERVICES, TWO_TABS_SERVICES), (self.p.SETTINGS, TWO_TABS_SETTINGS), (self.p.CSS, "")):
+            with open(path, "w") as f:
+                f.write(text)
+
+    def cards(self):
+        out = {}
+        for x in self.p.services_parse(self.p.read(self.p.SERVICES).split("\n")):
+            lines = self.p.read(self.p.SERVICES).split("\n")
+            out[x["name"]] = [(c["name"], self.p.card_fields(lines, c).get("id")) for c in x["cards"]]
+        return out
+
+    def test_saving_home_leaves_the_cards_of_the_stats_tab_alone(self):
+        self.p.api_arrange({"tab": "Home", "groups": [g("Files & Photos", "Immich", "Nextcloud"), g("Media & Entertainment", "Jellyfin", "Navidrome", "Downtify")]})
+        c = self.cards()
+        self.assertEqual(c["Library Totals"], [("Jellyfin", "stat-jellyfin")])
+        self.assertEqual(c["Photo Library"], [("Immich", "stat-immich"), ("Nextcloud", "stat-nextcloud")])
+        self.assertEqual(c["Music Library"], [("Downtify", "stat-music")])
+        self.assertEqual(c["Media & Entertainment"], [("Jellyfin", "jellyfin-card"), ("Navidrome", "navidrome-card"), ("Downtify", "downtify-card")])
+
+    def test_saving_the_stats_tab_leaves_the_cards_of_home_alone(self):
+        self.p.api_arrange({"tab": "Stats", "groups": [g("Library Totals", "Jellyfin"), g("Music Library", "Downtify"), g("Photo Library", "Nextcloud", "Immich")]})
+        c = self.cards()
+        self.assertEqual(c["Photo Library"], [("Nextcloud", "stat-nextcloud"), ("Immich", "stat-immich")])
+        self.assertEqual(c["Files & Photos"], [("Immich", "immich-card"), ("Nextcloud", "nextcloud-card")])
+        self.assertEqual(c["Media & Entertainment"], [("Navidrome", "navidrome-card"), ("Jellyfin", "jellyfin-card"), ("Downtify", "downtify-card")])
+
+    def test_moving_a_group_on_home_changes_only_the_layout_file(self):
+        before = self.p.read(self.p.SERVICES)
+        self.p.api_arrange({"tab": "Home", "groups": [g("Media & Entertainment", "Navidrome", "Jellyfin", "Downtify"), g("Files & Photos", "Immich", "Nextcloud")]})
+        self.assertEqual(self.p.read(self.p.SERVICES), before)
+        self.assertEqual([x["name"] for x in self.p.layout_groups(self.p.read(self.p.SETTINGS))], ["Library Totals", "Music Library", "Media & Entertainment", "Files & Photos", "Photo Library"])
+
+    def test_a_same_named_card_moves_between_groups_of_the_same_tab_only(self):
+        self.p.api_arrange({"tab": "Home", "groups": [g("Files & Photos", "Immich", "Nextcloud", "Jellyfin"), g("Media & Entertainment", "Navidrome", "Downtify")]})
+        c = self.cards()
+        self.assertEqual(c["Files & Photos"], [("Immich", "immich-card"), ("Nextcloud", "nextcloud-card"), ("Jellyfin", "jellyfin-card")])
+        self.assertEqual(c["Library Totals"][0], ("Jellyfin", "stat-jellyfin"))
+
+    def test_only_the_lines_of_the_moved_cards_change(self):
+        before = self.p.read(self.p.SERVICES).split("\n")
+        self.p.api_arrange({"tab": "Home", "groups": [g("Files & Photos", "Immich", "Nextcloud"), g("Media & Entertainment", "Jellyfin", "Navidrome", "Downtify")]})
+        after = self.p.read(self.p.SERVICES).split("\n")
+        self.assertEqual(sorted(l for l in before if l.strip()), sorted(l for l in after if l.strip()))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -155,6 +155,14 @@ docker logs --tail 50 NAME                            # what a container last sa
 
 **Fix:** open Customize, then Cards. *Add From HomeLab's List* brings back a hidden card and offers new ones, and *Put HomeLab's Cards Back* resets all of them to the shipped names, icons and groups (your own cards are kept). If the list says the cards aren't on this machine yet, run `sudo homelab-setup upgrade` once and reload the panel.
 
+### The page still shows old cards after the files were put back by hand
+
+**Symptom:** after `services.yaml` was restored from a copy, the Customize panel and `/api/services` show the right cards, but the Home or Stats tab still shows removed or duplicated cards, even after `Ctrl+F5`.
+
+**Cause:** Homepage keeps its own copy of the card list and does not always notice that the file changed behind its back. Changes made through Undo or Save in the panel do not have this problem.
+
+**Fix:** run `docker restart homepage`, then reload the page.
+
 ## Services
 
 ### Nextcloud says "Access through untrusted domain"

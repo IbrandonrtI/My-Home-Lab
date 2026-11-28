@@ -18,7 +18,7 @@ Type the control panel password at the `read` prompt. It is kept in the shell va
 
 - Do not edit anything in `~/My-Home-Lab`. Only read it. Only write the report, the screenshots, the test script and the backup folder named below.
 - Never print `HLP_PW`, never write it to a file, never pass it on a command line. Read it in the test script from the environment.
-- Before the first Save, back up the live dashboard files: copy `services.yaml`, `settings.yaml`, `custom.css`, `custom.js` and `bookmarks.yaml` from `~/homepage-config` to `~/edit-test-backup/` (keep the file modes). At the end, put the arrangement back to how it was and show that `diff -r` against the backup has no difference in `services.yaml` and `settings.yaml`. If a restore is needed, copy the files back, or use Undo in the Customize panel.
+- Before the first Save, back up the live dashboard files: copy `services.yaml`, `settings.yaml`, `custom.css`, `custom.js` and `bookmarks.yaml` from `~/homepage-config` to `~/edit-test-backup/` (keep the file modes). At the end, put the arrangement back to how it was and show that `diff -r` against the backup has no difference in `services.yaml` and `settings.yaml`. If a restore is needed, copy the files back, or use Undo in the Customize panel. After copying files back by hand, run `docker restart homepage`, because Homepage keeps its own copy of the card list.
 - Test only through the browser, as a person would. Do not call the panel's API directly, except to read the files and the state for checking.
 - A test that cannot be run is reported as BLOCKED with the reason. Never mark a test PASS without having checked it.
 - If something looks dangerous (a card disappears, a file looks cut off), stop, restore the backup, and report it first.
@@ -75,6 +75,16 @@ For each one write PASS, FAIL or BLOCKED, what was done, and what was seen.
 - **25.** Press Save while the cards in the file differ from the page (change `services.yaml` by hand in the test by adding a harmless blank card through the panel in a second browser context, then Save in the first one). The save is refused with a clear message and nothing is lost.
 - **26.** Reload the page in the middle of an edit with changes made. The browser asks before leaving.
 - **27.** Load the page at 1024 and 768 wide, press Edit, move a card, cancel. Say if anything breaks.
+
+**F. Added after the first live run** (the first run found that cards with the same name on Home and on Stats were mixed up by Save)
+
+- **28.** Save on the Stats tab. Open Stats, press Edit, drag one card to a new place in its group, Save. Then compare `services.yaml` with the backup: only that card moved, and the cards on Home with the same names (Jellyfin, Downtify, Immich, Nextcloud) are still in their Home groups with their ids. Then put it back.
+- **29.** Save a group move on Home. Drag one group to another place and Save. `services.yaml` must show no difference against the backup, and the group order for Home in `settings.yaml` changed. Then put it back.
+- **30.** Save a card that has the same name as a card on Stats. Move Jellyfin (Home) into another group on Home and Save. The Stats copy (id `stat-jellyfin`) stays in Library Totals. Then put it back.
+- **31.** Cancelled sign-in. With no panel login: press Edit, press Cancel on the login box, press Edit again. The login box comes back at once.
+- **32.** Hold the pointer still. Start dragging a card, move to the bottom edge of the window and stop moving the mouse for two seconds. The page keeps scrolling. Let go, and it stops.
+- **33.** Narrow windows. At 701, 768, 800 and 860 px wide, with and without Edit mode, the page has no sideways scroll and the whole Edit button is inside the window (on a very narrow window it may sit on a second row).
+- **34.** Drop on the middle. In a group with several cards, drag a card exactly onto the middle of another one. It takes that card's place.
 
 ## Report
 

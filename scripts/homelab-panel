@@ -1976,7 +1976,7 @@ def card_move(tx, lines, group, name, to, tab=None, before=None, keep_empty=Fals
 
 
 def api_arrange(body):
-    """Apply an arrangement made on the dashboard itself: the order of the groups on one tab and the cards in each group. It is one change, so Undo takes it back in one step."""
+    """Apply an arrangement made on the dashboard itself: the order of the groups on one tab and the cards in each group. It is one change, so Undo takes it back in one step. A card is looked up only inside the groups that were sent, because other tabs may hold a card with the same name."""
     tab = clean_text(body.get("tab"), "The tab name", 24)
     want = body.get("groups")
     if not isinstance(want, list) or not want or len(want) > 60:
@@ -2001,7 +2001,7 @@ def api_arrange(body):
         for i in range(len(cards) - 1, -1, -1):
             nxt = cards[i + 1] if i + 1 < len(cards) else None
             now = {x["name"]: [c["name"] for c in x["cards"]] for x in services_parse(lines)}
-            where = next(x for x in now if cards[i] in now[x])
+            where = next(x for x in names if cards[i] in now[x])
             cur = now[g["name"]] if g["name"] in now else []
             at = cur.index(cards[i]) if where == g["name"] else -1
             if at >= 0 and (cur[at + 1] == nxt if at + 1 < len(cur) else nxt is None):

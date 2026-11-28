@@ -156,13 +156,13 @@ Each tab that shows groups of cards (Home and Stats) has an **Edit** button at t
 What to know:
 
 - Nothing is written until you press Save. A save is one change, so **Undo** in the Customize panel takes it back in one step.
-- While you edit, the Edit button reads *Editing* and a Save and Cancel bar stays in the bottom right corner of the window as you scroll. Dragging a card close to the top or bottom edge of the window scrolls the page.
+- While you edit, the Edit button reads *Editing* and a Save and Cancel bar stays in the bottom right corner of the window as you scroll. Holding a card close to the top or bottom edge of the window keeps scrolling the page until you move away or let go. Dropping a card exactly on the middle of another card puts it in that card's place.
 - The Jellyfin library that can be open inside its card does not react to the mouse while you edit, so a card can be dropped anywhere, including over it.
 - The tab buttons are locked while you edit. Save or cancel first.
 - The group that holds Navidrome and the Calendar group stay where they are on the page, so they have no handle. Cards that belong to the panel itself cannot be moved.
 - A group that has no cards left when you press Save is removed, as on the Cards screen. Moving a card that HomeLab fills in (on the Stats tab) marks its block as customized, the same as on the Cards screen, so `sudo homelab-setup upgrade` stops rewriting it.
 - Save refuses and says so when the cards in the file no longer match the page, for example when the lab added a card while you were editing. Reload the page and arrange it again.
-- Moving a group to another tab, the Links tab, adding, renaming or removing cards and the look stay on the Customize panel for now. The Edit button is not shown on a phone.
+- Moving a group to another tab, the Links tab, adding, renaming or removing cards and the look stay on the Customize panel for now. The Edit button is not shown on a phone. On a narrow window the tab bar wraps and the Edit button moves to a second row.
 
 ## The Customize panel
 

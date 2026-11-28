@@ -1435,7 +1435,7 @@ html[data-hl-fit="1440"] #information-widgets { zoom: 0.80; }
   #inner_wrapper #myTab li > button { padding-left: 3px !important; padding-right: 3px !important; }
 }
 @media (min-width: 701px) {
-  #inner_wrapper #tabs { width: max-content; max-width: calc(100% - 2 * var(--lk-side)); }
+  #inner_wrapper #tabs { width: max-content; max-width: calc(100% - 2 * var(--lk-side)); flex-wrap: wrap; justify-content: center; }
   #inner_wrapper #myTab { display: flex !important; flex: 0 0 auto !important; width: max-content !important; min-width: 0 !important; max-width: none !important; gap: 2px !important; }
   #inner_wrapper #myTab li { flex: 0 0 auto !important; width: auto !important; min-width: 0 !important; max-width: none !important; }
   #inner_wrapper #tabs button[id$="-tab"] { width: auto !important; display: block; white-space: nowrap; padding: 9px 18px !important; }
