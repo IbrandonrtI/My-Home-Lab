@@ -387,6 +387,35 @@ class EditMode(unittest.TestCase):
         self.drag(page, "#adguard-card", "#tailscale-card")
         self.assertEqual(names(), ["Tailscale", "AdGuard Home"])
 
+    def test_a_card_dropped_on_the_exact_middle_of_another_takes_its_place_in_a_two_column_group(self):
+        page = self.open()
+        self.edit(page)
+        page.add_style_tag(content=".services-group:has(#immich-card) ul.services-list { display: grid !important; grid-template-columns: 1fr 1fr; }")
+        names = lambda: page.locator(".services-group:has(#immich-card) li.service").evaluate_all("els => els.map(e => e.getAttribute('data-name'))")
+        self.assertEqual(page.evaluate("() => { const c = getComputedStyle(document.querySelector('#immich-card').parentNode); return c.display + ' ' + c.gridTemplateColumns.split(' ').length; }"), "grid 2")
+        self.drag(page, "#nextcloud-card", "#immich-card")
+        self.assertEqual(names(), ["Nextcloud", "Immich"])
+        self.drag(page, "#nextcloud-card", "#immich-card")
+        self.assertEqual(names(), ["Immich", "Nextcloud"])
+
+    def test_after_saving_the_page_waits_until_homepage_lists_the_new_arrangement_before_it_reloads(self):
+        page = self.open()
+        self.edit(page)
+        stale = [{"name": "Network & DNS", "services": [{"name": "Tailscale"}, {"name": "AdGuard Home"}]}, {"name": "Files & Photos", "services": [{"name": "Immich"}, {"name": "Nextcloud"}]}]
+        fresh = [{"name": "Network & DNS", "services": [{"name": "AdGuard Home"}]}, {"name": "Files & Photos", "services": [{"name": "Immich"}, {"name": "Tailscale"}, {"name": "Nextcloud"}]}]
+        calls, loads = [], []
+        page.route("**/api/services*", lambda route: (calls.append(1), route.fulfill(json=stale if len(calls) <= 3 else fresh)))
+        page.on("load", lambda *_: loads.append(len(calls)))
+        self.drag(page, "#tailscale-card", "#nextcloud-card")
+        self.btn(page, "Save").click()
+        for _ in range(100):
+            if loads:
+                break
+            page.wait_for_timeout(200)
+        self.assertTrue(loads, "the page did not reload")
+        self.assertGreaterEqual(loads[0], 4, "it reloaded while Homepage still listed the old arrangement")
+        self.assertEqual(self.errors, [])
+
     def test_a_group_dragged_past_another_changes_the_order_on_its_tab(self):
         page = self.open()
         self.edit(page)

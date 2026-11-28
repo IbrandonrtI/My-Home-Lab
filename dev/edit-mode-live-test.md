@@ -71,7 +71,7 @@ For each one write PASS, FAIL or BLOCKED, what was done, and what was seen.
 **E. Errors and edge cases**
 
 - **23.** List the browser console errors and warnings from the whole run, with the page and the step. Separate the ones that also appear without Edit mode (open the page, do nothing, read the console) from the new ones.
-- **24.** Wait until the panel login has run out (or clear the panel cookie), press Save. The login box comes back, and after signing in the save goes through.
+- **24.** Wait until the panel login has run out (or clear the panel cookie), press Save. The login box comes back. The first password typed is accepted (no "The request is not valid."), and the save then goes through. Try it at least five times, because the old fault did not show every time.
 - **25.** Press Save while the cards in the file differ from the page (change `services.yaml` by hand in the test by adding a harmless blank card through the panel in a second browser context, then Save in the first one). The save is refused with a clear message and nothing is lost.
 - **26.** Reload the page in the middle of an edit with changes made. The browser asks before leaving.
 - **27.** Load the page at 1024 and 768 wide, press Edit, move a card, cancel. Say if anything breaks.
@@ -84,7 +84,8 @@ For each one write PASS, FAIL or BLOCKED, what was done, and what was seen.
 - **31.** Cancelled sign-in. With no panel login: press Edit, press Cancel on the login box, press Edit again. The login box comes back at once.
 - **32.** Hold the pointer still. Start dragging a card, move to the bottom edge of the window and stop moving the mouse for two seconds. The page keeps scrolling. Let go, and it stops.
 - **33.** Narrow windows. At 701, 768, 800 and 860 px wide, with and without Edit mode, the page has no sideways scroll and the whole Edit button is inside the window (on a very narrow window it may sit on a second row).
-- **34.** Drop on the middle. In a group with several cards, drag a card exactly onto the middle of another one. It takes that card's place.
+- **34.** Drop on the middle. In a group with several cards, drag a card exactly onto the middle of another one. It takes that card's place. Do this in a one-column group and in Media & Entertainment, where the cards sit side by side, and in both directions (a later card onto an earlier one, and the reverse).
+- **35.** After a save, the page waits for Homepage. Move Jellyfin into Files & Photos and Save. Record the network requests of the reloaded page: there is no 403 or 400 for Jellyfin's widget or site monitor, and the page never shows Jellyfin in its old group. Then put it back.
 
 ## Report
 

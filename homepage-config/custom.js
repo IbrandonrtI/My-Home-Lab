@@ -2406,7 +2406,7 @@
   // `tie` is for a pointer exactly on the middle of a card: the card being dragged takes the place of the card it is dropped on.
   function isBefore(r, x, y, grid, tie) {
     if (!grid) return y < r.top + r.height / 2 || (tie && y === r.top + r.height / 2);
-    return y < r.top || (y <= r.bottom && x < r.left + r.width / 2);
+    return y < r.top || (y <= r.bottom && (x < r.left + r.width / 2 || (tie && x === r.left + r.width / 2)));
   }
   function placeCard(d, x, y) {
     var under = document.elementsFromPoint(x, y), g = null;
@@ -2508,15 +2508,32 @@
     refresh();
   }
 
+  // Homepage keeps its own copy of the card list for a moment after the files change. The page reloads only once that list shows what was saved, or after about six seconds.
+  function listShows(saved) {
+    return fetch("/api/services", { cache: "no-store" }).then(function (r) { return r.ok ? r.json() : null; }).then(function (list) {
+      if (!Array.isArray(list)) return true;
+      return saved.every(function (g) {
+        var hit = list.filter(function (x) { return x.name === g.name; })[0];
+        return !hit || (hit.services || []).map(function (s) { return s.name; }).join("\n") === g.cards.join("\n");
+      });
+    }).catch(function () { return true; });
+  }
+  function reloadWhenListIsFresh(saved, tries) {
+    listShows(saved).then(function (ok) {
+      if (ok || tries >= 12) { window.location.reload(); return; }
+      setTimeout(function () { reloadWhenListIsFresh(saved, tries + 1); }, 500);
+    });
+  }
   function save() {
     if (!mode || !dirty || busy) return;
     busy = true;
     say("Saving...");
     draw();
-    call("arrange", { tab: activeTab(), groups: read() }).then(function () {
+    var sent = read();
+    call("arrange", { tab: activeTab(), groups: sent }).then(function () {
       say("Saved. The page reloads in a moment.");
       leaving = true;
-      setTimeout(function () { window.location.reload(); }, 900);
+      setTimeout(function () { reloadWhenListIsFresh(sent, 0); }, 900);
     }).catch(function (err) {
       busy = false;
       say(err.message, true);

@@ -4170,6 +4170,7 @@ class Handler(BaseHTTPRequestHandler):
     sys_version = ""
     protocol_version = "HTTP/1.1"
     timeout = 120
+    body_left = 0
 
     def handle(self):
         """A browser that vanishes or stalls mid-request is not an error worth a traceback."""
@@ -4200,7 +4201,24 @@ class Handler(BaseHTTPRequestHandler):
                 return v
         return ""
 
+    def settle_body(self, code):
+        """A POST can be refused before its body was read (not logged in, wrong origin). Left on the connection, that body would be taken for the next request
+        and the browser's next call would fail, so a small one is read and dropped, and any other closes the connection."""
+        left, self.body_left = self.body_left, 0
+        if left == 0 or (left == -1 and code < 400):
+            return
+        try:
+            n = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            n = -1
+        if left is None and 0 <= n <= (1 << 20):
+            if n:
+                self.rfile.read(n)
+        else:
+            self.close_connection = True
+
     def send(self, code, body, ctype="application/json", extra=None, csp=None):
+        self.settle_body(code)
         if isinstance(body, (dict, list)):
             body = json.dumps(body).encode("utf-8")
         elif isinstance(body, str):
@@ -4216,6 +4234,8 @@ class Handler(BaseHTTPRequestHandler):
                                                            "script-src 'self'; connect-src 'self'; frame-ancestors " + anc))
         for k, v in (extra or {}).items():
             self.send_header(k, v)
+        if self.close_connection:
+            self.send_header("Connection", "close")
         self.end_headers()
         if self.command != "HEAD":
             try:
@@ -4239,6 +4259,7 @@ class Handler(BaseHTTPRequestHandler):
         n = self.content_length()
         if n > limit:
             raise Fail("That is too big.", 413)
+        self.body_left = 0
         return self.rfile.read(n) if n else b""
 
     def api_guard(self):
@@ -4445,6 +4466,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_POST(self):
         """Handle POST requests: login and every change the panel can make."""
+        self.body_left = None
         try:
             if not self.host_ok():
                 return self.send(421, {"error": "Unknown address."})
@@ -4475,6 +4497,7 @@ class Handler(BaseHTTPRequestHandler):
                     res = api_bg_upload(data)
                 return self.send(200, res)
             if path in ("/api/upload/photo", "/api/upload/song"):
+                self.body_left = -1
                 return self.send(200, api_upload_stream(self, path.rsplit("/", 1)[1], urllib.parse.parse_qs(urllib.parse.urlparse(self.path).query)))
             body = json.loads(self.read_body(1 << 20) or b"{}")
             if not isinstance(body, dict):
