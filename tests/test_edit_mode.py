@@ -233,6 +233,14 @@ class EditMode(unittest.TestCase):
         page.set_viewport_size({"width": 600, "height": 900})
         self.assertFalse(page.locator("#hl-editbar").is_visible())
 
+    def test_the_edit_button_appears_when_homepage_draws_the_groups_after_the_script_ran(self):
+        page = self.open()
+        html = page.evaluate("(() => { const b = document.getElementById('layout-groups'); const h = b.innerHTML; b.innerHTML = ''; return h; })()")
+        page.wait_for_function("document.getElementById('hl-editbar').hidden === false ? false : true")
+        self.assertFalse(page.locator("#hl-editbar").is_visible())
+        page.evaluate("h => { document.getElementById('layout-groups').innerHTML = h; }", html)
+        self.btn(page, "Edit").wait_for(state="visible", timeout=5000)
+
     def test_logging_in_starts_edit_mode_and_only_cards_that_can_move_get_a_handle(self):
         page = self.open()
         self.edit(page)

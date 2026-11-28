@@ -1926,7 +1926,8 @@ JS_BEGIN, JS_END = "/* >>> homelab groups >>>", "/* <<< homelab groups <<< */"
 PLAYER_JS_BEGIN, PLAYER_JS_END = "/* >>> homelab player >>>", "/* <<< homelab player <<< */"
 EXTRAS_JS_BEGIN, EXTRAS_JS_END = "/* >>> homelab extras >>>", "/* <<< homelab extras <<< */"
 PANEL_JS_BEGIN, PANEL_JS_END = "/* >>> homelab panel >>>", "/* <<< homelab panel <<< */"
-JS_BLOCKS = [(JS_BEGIN, JS_END), (PLAYER_JS_BEGIN, PLAYER_JS_END), (EXTRAS_JS_BEGIN, EXTRAS_JS_END), (PANEL_JS_BEGIN, PANEL_JS_END)]
+EDIT_JS_BEGIN, EDIT_JS_END = "/* >>> homelab edit >>>", "/* <<< homelab edit <<< */"
+JS_BLOCKS = [(JS_BEGIN, JS_END), (PLAYER_JS_BEGIN, PLAYER_JS_END), (EXTRAS_JS_BEGIN, EXTRAS_JS_END), (PANEL_JS_BEGIN, PANEL_JS_END), (EDIT_JS_BEGIN, EDIT_JS_END)]
 
 
 def js_put_block(live, shipped, begin, end):

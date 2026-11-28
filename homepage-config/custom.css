@@ -1604,9 +1604,7 @@ html.hl-player-min #inner_wrapper #navidrome-card .service-title::after { conten
   #inner_wrapper .services-list > li#downloaders-card { margin: 0 0 12px !important; }
   #hl-downloaders { padding: 9px 12px; }
 }
-/* <<< homelab tabs <<< */
 
-/* >>> homelab edit >>> */
 /* Edit mode: a bar at the bottom of the page, a handle on every card and group that can move, and a small login window for the control panel. It is hidden on a phone. */
 #hl-editbar {
   position: fixed; left: 50%; bottom: max(14px, env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 1500;
@@ -1668,4 +1666,4 @@ html.hl-edit-login #hl-edit-bridge {
   padding: 7px 18px; border-radius: 999px; color: #eef2f9; border: 1px solid rgba(255, 255, 255, 0.25); background: rgba(255, 255, 255, 0.08);
 }
 @media (prefers-reduced-motion: reduce) { #hl-editbar, .hl-ghost { transition: none; } }
-/* <<< homelab edit <<< */
+/* <<< homelab tabs <<< */
